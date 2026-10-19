@@ -198,6 +198,7 @@ Risk score from severity: informational 10, low 21, medium 47, high 73, critical
 | PUT | `/api/rules/{id}` | `{"yaml"}` → `Rule` (admin, custom rules only) |
 | PATCH | `/api/rules/{id}` | `{"enabled": bool}` → `Rule` (admin, any rule) |
 | DELETE | `/api/rules/{id}` | custom only → `204` |
+| POST | `/api/rules/reload` | admin; re-reads the rules folder now → `{"total", "enabled", "load_errors"}` (the folder is also checked every minute) |
 | POST | `/api/rules/validate` | `{"yaml"}` → `{"ok": bool, "error"?: string, "rule"?: Rule}` |
 | POST | `/api/rules/test` | `{"yaml", "hours"?: number}` → `{"matches": Event[], "scanned": n}`: runs the rule over recent stored events |
 
