@@ -22,9 +22,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// moduleInotify is the Impl name of the inotify fallback. shared/event has no constant
-// for it yet.
-const moduleInotify = "inotify"
+// moduleInotify is the Impl name of the inotify fallback.
+const moduleInotify = event.ModuleInotify
 
 // File sensor volume controls.
 const (

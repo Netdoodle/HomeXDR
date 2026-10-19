@@ -151,6 +151,23 @@ func TestHostsAlertsCommands(t *testing.T) {
 	if _, err := s.RecordResult(ctx, "agent-1", api.CommandResult{CommandID: c.ID, Status: api.StatusFailed}); !errors.Is(err, ErrConflict) {
 		t.Fatal("final command must not change")
 	}
+
+	// A delivered command whose agent never answers is failed after expiry + grace.
+	stuck, err := s.CreateCommand(ctx, "agent-1", api.CmdFileHash, json.RawMessage(`{"path":"C:\\x"}`), "admin", "", time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.TakePendingCommands(ctx, "agent-1", 10) // too late: already expired, stays queued
+	if _, err := s.db.ExecContext(ctx, `UPDATE commands SET status = 'running', expires_at = ? WHERE id = ?`,
+		ts(time.Now().Add(-StaleResultGrace-time.Minute)), stuck.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.ExpireCommands(ctx); err != nil || n < 1 {
+		t.Fatalf("ExpireCommands = %d, %v", n, err)
+	}
+	if got, _ := s.GetCommand(ctx, stuck.ID); got.Status != api.StatusFailed || got.Error != "no result from agent" {
+		t.Fatalf("stuck command = %s %q", got.Status, got.Error)
+	}
 }
 
 func TestHunts(t *testing.T) {

@@ -59,8 +59,12 @@ object whose keys follow the artifact's `columns`) before the final result, whic
 `row_count`. `file.get` uploads the raw file to `POST /v1/commands/{id}/upload?name=<path>`
 (max 100 MiB by default) before posting the result with a `FileHashResult` as output.
 
-Response actions also emit an event (`event.module: response`, `event.action: <type>`) so
-they appear in the host timeline.
+When a command reaches a final status, the server (not the agent) records an event
+(`event.module: response`, `event.action: <type>`) so it appears in the host timeline.
+`file.restore` returns the restored file's `QuarantineResult`.
+
+Commands delivered to an agent that never posts a final result are marked `failed` by the
+server 24 hours after they expire, with the error "no result from agent".
 
 ## Downloads
 

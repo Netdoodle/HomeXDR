@@ -348,7 +348,8 @@ type QuarantineResult struct {
 	Size         int64  `json:"size"`
 }
 
-// RestoreParams for CmdFileRestore.
+// RestoreParams for CmdFileRestore. The result output is the restored file's
+// QuarantineResult.
 type RestoreParams struct {
 	ID string `json:"id"`
 }

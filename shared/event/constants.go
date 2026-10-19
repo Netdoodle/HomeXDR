@@ -84,6 +84,7 @@ const (
 	ModuleProcConn  = "procconn"  // Linux netlink proc connector fallback
 	ModuleProcfs    = "procfs"    // Linux /proc polling fallback
 	ModuleFanotify  = "fanotify"  // Linux fanotify file sensor
+	ModuleInotify   = "inotify"   // Linux inotify file sensor fallback
 	ModuleAuthLog   = "authlog"   // Linux auth log / journald
 	ModuleFIM       = "fim"       // file integrity monitoring
 	ModuleInventory = "inventory" // host inventory snapshots

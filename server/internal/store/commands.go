@@ -281,14 +281,28 @@ func (s *Store) SetUpload(ctx context.Context, id, path, name string) error {
 	return err
 }
 
-// ExpireCommands marks queued commands past their expiry as expired.
+// StaleResultGrace is how long after expiry a delivered or running command may go
+// without a final result before it is marked failed.
+const StaleResultGrace = 24 * time.Hour
+
+// ExpireCommands marks queued commands past their expiry as expired, and delivered or
+// running commands that never reported a final result as failed.
 func (s *Store) ExpireCommands(ctx context.Context) (int, error) {
+	now := time.Now()
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE commands SET status = 'expired', completed_at = ? WHERE status = 'queued' AND expires_at <= ?`,
-		ts(time.Now()), ts(time.Now()))
+		ts(now), ts(now))
 	if err != nil {
 		return 0, err
 	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
+	expired, _ := res.RowsAffected()
+	res, err = s.db.ExecContext(ctx,
+		`UPDATE commands SET status = 'failed', error = 'no result from agent', completed_at = ?
+		 WHERE status IN ('delivered', 'running') AND expires_at <= ?`,
+		ts(now), ts(now.Add(-StaleResultGrace)))
+	if err != nil {
+		return 0, err
+	}
+	stale, _ := res.RowsAffected()
+	return int(expired + stale), nil
 }
