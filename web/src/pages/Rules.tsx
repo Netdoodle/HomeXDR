@@ -9,7 +9,7 @@ import { PageHeader } from '../components/Layout'
 import { RelTime, Toggle } from '../components/Misc'
 import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
-import { formatNumber } from '../lib/format'
+import { formatNumber, plural } from '../lib/format'
 import { useDebounced, useDocumentTitle, useUrlState } from '../lib/hooks'
 import { SEVERITY_LABEL } from '../lib/severity'
 
@@ -55,7 +55,7 @@ export function RulesPage() {
     <>
       <PageHeader
         title="Detection rules"
-        subtitle={q.data ? `${formatNumber(q.data.total)} rules · Sigma format` : 'Sigma format'}
+        subtitle={q.data ? `${plural(q.data.total, 'rule')} · Sigma format` : 'Sigma format'}
         actions={
           <>
             {q.isFetching && !q.isPending ? <Spinner small /> : null}
@@ -88,6 +88,19 @@ export function RulesPage() {
           <option value="false">Disabled</option>
         </select>
       </div>
+      {q.data?.load_errors.length ? (
+        <div className="callout danger" role="alert" style={{ marginBottom: 12 }}>
+          <Icon name="warning" size={14} />
+          <div className="stack" style={{ gap: 4 }}>
+            <strong>{q.data.load_errors.length === 1 ? '1 rule failed to load' : `${q.data.load_errors.length} rules failed to load`} and is not running</strong>
+            {q.data.load_errors.slice(0, 10).map((e, i) => (
+              <span key={i} className="mono xsmall" style={{ overflowWrap: 'anywhere' }}>
+                {e.path}: {e.error}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <section className="panel">
         {q.isPending ? (
           <Loading />
@@ -97,7 +110,7 @@ export function RulesPage() {
           <EmptyState title="No rules match" />
         ) : (
           <div className="table-wrap">
-            <table className="table fixed">
+            <table className="table fixed" style={{ minWidth: 1000 }}>
               <colgroup>
                 <col style={{ width: 64 }} />
                 <col />

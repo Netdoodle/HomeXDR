@@ -47,9 +47,9 @@ type Rule struct {
 
 // LogSource is the Sigma logsource block.
 type LogSource struct {
-	Category string `yaml:"category"`
-	Product  string `yaml:"product"`
-	Service  string `yaml:"service"`
+	Category string `yaml:"category" json:"category,omitempty"`
+	Product  string `yaml:"product" json:"product,omitempty"`
+	Service  string `yaml:"service" json:"service,omitempty"`
 }
 
 // ParseRule parses and compiles one Sigma rule document.

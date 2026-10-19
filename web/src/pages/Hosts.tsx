@@ -6,7 +6,7 @@ import { AlertCount, OsLabel, StatusDot, Tags } from '../components/Badges'
 import { PageHeader } from '../components/Layout'
 import { RelTime } from '../components/Misc'
 import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
-import { formatNumber } from '../lib/format'
+import { plural } from '../lib/format'
 import { useDebounced, useDocumentTitle, useUrlState } from '../lib/hooks'
 
 export function HostsPage() {
@@ -43,7 +43,7 @@ export function HostsPage() {
     <>
       <PageHeader
         title="Hosts"
-        subtitle={q.data ? `${formatNumber(q.data.total)} hosts` : 'Enrolled agents and syslog sources'}
+        subtitle={q.data ? plural(q.data.total, 'host') : 'Enrolled agents and syslog sources'}
         actions={
           <>
             {q.isFetching && !q.isPending ? <Spinner small /> : null}
@@ -93,7 +93,7 @@ export function HostsPage() {
           )
         ) : (
           <div className="table-wrap">
-            <table className="table fixed">
+            <table className="table fixed" style={{ minWidth: 900 }}>
               <colgroup>
                 <col style={{ width: 100 }} />
                 <col style={{ width: '18%' }} />

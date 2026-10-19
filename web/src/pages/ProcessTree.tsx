@@ -301,7 +301,7 @@ function NodePanel({ node: n, hostId, host, isTarget }: { node: ProcessNode; hos
           isEmpty={(d) => d.events.length === 0}
           empty={<EmptyState title={`No ${cat === 'all' ? '' : cat + ' '}activity recorded for this process`} compact />}
         >
-          {(d) => <EventTable events={d.events} processLinks={false} />}
+          {(d) => <EventTable events={d.events} processLinks={false} dense />}
         </QueryView>
       </section>
     </div>

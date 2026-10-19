@@ -498,6 +498,12 @@ export interface Rule {
   yaml?: string
 }
 
+/** A rule file (or stored custom rule) that failed to compile; returned by GET /api/rules. */
+export interface RuleLoadError {
+  path: string
+  error: string
+}
+
 export interface RuleFilter {
   q?: string
   enabled?: string

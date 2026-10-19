@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { isApiError, setUnauthorizedHandler } from './api'
 import { RequireAuth } from './components/Auth'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { Layout } from './components/Layout'
 import { ThemeProvider } from './components/Theme'
 import { ToastProvider } from './components/Toast'
@@ -55,9 +56,10 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <ToastProvider>
-          <BrowserRouter>
+        <BrowserRouter>
+          <ToastProvider>
             <UnauthorizedBridge />
+            <ErrorBoundary>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/setup" element={<LoginPage />} />
@@ -87,8 +89,9 @@ export function App() {
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>
-          </BrowserRouter>
-        </ToastProvider>
+            </ErrorBoundary>
+          </ToastProvider>
+        </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>
   )

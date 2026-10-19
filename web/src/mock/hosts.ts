@@ -2,9 +2,9 @@
 
 import type { Host } from '../api/types'
 import { COMMAND_TYPES } from '../api/types'
-import { makeId } from './rng'
+import { makeId, NOW } from './rng'
 
-export const NOW = Date.now()
+export { NOW }
 export const SEC = 1000
 export const MIN = 60 * SEC
 export const HOUR = 60 * MIN

@@ -193,7 +193,7 @@ export function AlertsPage() {
         ) : (
           <>
             <div className="table-wrap">
-              <table className="table fixed">
+              <table className="table fixed" style={{ minWidth: 1020 }}>
                 <colgroup>
                   {canTriage ? <col style={{ width: 34 }} /> : null}
                   <col style={{ width: 96 }} />

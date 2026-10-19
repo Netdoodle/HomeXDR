@@ -81,7 +81,14 @@ function UserMenu() {
 
   return (
     <div className="menu" ref={ref}>
-      <button type="button" className="btn ghost" onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open}>
+      <button
+        type="button"
+        className="btn ghost"
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Account menu for ${user.username} (${ROLE_LABEL[user.role]})`}
+      >
         <Icon name="user" size={14} />
         <span>{user.username}</span>
         <span className="faint xsmall">{ROLE_LABEL[user.role]}</span>

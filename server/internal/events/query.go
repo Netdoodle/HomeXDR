@@ -4,7 +4,7 @@ package events
 //
 //	field:value          case-insensitive equality
 //	field:val*  *val*    wildcards (* any run, ? one character)
-//	field:"two words"    quoted value
+//	field:"two words"    quoted value, matched literally (* and ? are not wildcards)
 //	field:>10  field:<=443   numeric comparison
 //	field:*              field is present and non-empty
 //	word                 substring match on message, command line and file path
@@ -38,6 +38,8 @@ type TermNode struct {
 	Field string // "" for a bare word
 	Op    string // eq, like, gt, gte, lt, lte, exists
 	Value string
+	// Literal is set for quoted bare words: no wildcard expansion.
+	Literal bool
 }
 
 func (AndNode) node()  {}
@@ -168,9 +170,12 @@ func parseTerm(text string) (TermNode, error) {
 		}
 	}
 	if split <= 0 {
-		v, _ := unquote(text)
+		v, quoted := unquote(text)
 		if v == "" {
 			return TermNode{}, errors.New("empty term")
+		}
+		if quoted {
+			return TermNode{Op: "like", Value: unescape(v), Literal: true}, nil
 		}
 		return TermNode{Op: "like", Value: v}, nil
 	}
@@ -196,7 +201,7 @@ func parseTerm(text string) (TermNode, error) {
 	if v == "*" && !quoted {
 		return TermNode{Field: field, Op: "exists"}, nil
 	}
-	if hasWildcard(rawVal) {
+	if !quoted && hasWildcard(rawVal) {
 		return TermNode{Field: field, Op: "like", Value: v}, nil
 	}
 	return TermNode{Field: field, Op: "eq", Value: unescape(v)}, nil
@@ -416,7 +421,7 @@ func compile(n Node, d dialect) (string, []any, error) {
 func compileTerm(t TermNode, d dialect) (string, []any, error) {
 	if t.Field == "" {
 		pat := containsPattern(unescape(t.Value))
-		if hasWildcard(t.Value) {
+		if hasWildcard(t.Value) && !t.Literal {
 			pat = "%" + likePattern(t.Value) + "%"
 		}
 		parts := make([]string, len(bareFields))

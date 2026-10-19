@@ -97,10 +97,10 @@ export function OsGlyph({ platform, size = 14 }: { platform: string; size?: numb
         </svg>
       )
     case 'linux':
+      // A shell prompt: generic for Linux/Unix without using a project logo.
       return (
-        <svg {...common} fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinejoin="round">
-          <path d="M8 1.8c-1.7 0-2.6 1.4-2.6 3.2 0 1.3-.4 2-1.2 3.2-.9 1.3-1.6 2.8-1 4.3.5 1.1 1.6 1.7 4.8 1.7s4.3-.6 4.8-1.7c.6-1.5-.1-3-1-4.3-.8-1.2-1.2-1.9-1.2-3.2 0-1.8-.9-3.2-2.6-3.2Z" />
-          <path d="M6.6 5.2h.01M9.4 5.2h.01M7 6.8 8 7.6l1-.8" strokeLinecap="round" />
+        <svg {...common} fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinejoin="round" strokeLinecap="round">
+          <path d="M1.8 2.8h12.4v10.4H1.8zM4.5 6.2 6.8 8.2 4.5 10.2M8.3 10.4h3.2" />
         </svg>
       )
     case 'darwin':

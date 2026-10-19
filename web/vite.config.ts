@@ -30,6 +30,12 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       sourcemap: false,
       chunkSizeWarningLimit: 800,
+      rollupOptions: {
+        output: {
+          // Long-lived vendor chunk so app updates do not bust the library cache.
+          manualChunks: (id) => (id.includes('node_modules') ? 'vendor' : undefined),
+        },
+      },
     },
     test: {
       environment: 'node',

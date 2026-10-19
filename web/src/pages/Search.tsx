@@ -9,7 +9,7 @@ import { Pager } from '../components/Misc'
 import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
 import { TimeRangePicker } from '../components/TimeRangePicker'
 import { COLUMN_LABELS, COMMON_FIELDS, DEFAULT_SEARCH_COLUMNS, eventSummary, fieldString, leafPaths } from '../lib/fields'
-import { formatNumber } from '../lib/format'
+import { formatNumber, plural } from '../lib/format'
 import { useDocumentTitle, useLocalStorage, useUrlState } from '../lib/hooks'
 import { addTerm, validateQuery } from '../lib/query'
 import { describeRange, formatTimestamp, rangeFromParams, rangeToParams, resolveRange, type TimeRange } from '../lib/time'
@@ -23,6 +23,14 @@ const EXAMPLES = [
   'event.action:ssh-login AND event.outcome:failure',
   'file.path:"C:\\Users\\alex\\AppData\\Roaming\\*"',
 ]
+
+/** Fixed width for a column, or undefined for flexible text columns (summary, command lines). */
+function colWidth(c: string): number | undefined {
+  if (c === '@timestamp') return 178
+  if (c === 'summary' || c === 'message' || c.endsWith('command_line')) return undefined
+  if (c.endsWith('.path') || c.endsWith('executable') || c.endsWith('sha256')) return 260
+  return 140
+}
 
 function cellValue(e: Event, col: string): string {
   if (col === 'summary') return eventSummary(e)
@@ -151,7 +159,7 @@ export function SearchPage() {
           <span className="small muted">
             {search.data ? (
               <>
-                {search.data.total !== undefined ? `${formatNumber(search.data.total)} events` : `${formatNumber(events.length)}+ events`} ·{' '}
+                {search.data.total !== undefined ? plural(search.data.total, 'event') : `${formatNumber(events.length)}+ events`} ·{' '}
                 {describeRange(range).toLowerCase()} · {search.data.took_ms} ms
               </>
             ) : (
@@ -176,11 +184,11 @@ export function SearchPage() {
         ) : (
           <>
             <div className="table-wrap">
-              <table className="table fixed compact">
+              <table className="table fixed compact" style={{ minWidth: 28 + columns.reduce((n, c) => n + (colWidth(c) ?? 320), 0) }}>
                 <colgroup>
                   <col style={{ width: 28 }} />
                   {columns.map((c) => (
-                    <col key={c} style={{ width: c === '@timestamp' ? 178 : c === 'summary' || c.endsWith('command_line') || c === 'message' ? undefined : 140 }} />
+                    <col key={c} style={{ width: colWidth(c) }} />
                   ))}
                 </colgroup>
                 <thead>

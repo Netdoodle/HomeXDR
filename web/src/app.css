@@ -957,6 +957,11 @@ a.stat:hover {
   flex-wrap: wrap;
   gap: 4px;
 }
+.table td .tags {
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+}
 
 .mitre {
   display: inline-flex;
@@ -1027,6 +1032,8 @@ a.stat:hover {
   border-bottom: 1px solid var(--border);
   margin-bottom: 14px;
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 .tabs a,
 .tabs button {
@@ -1139,6 +1146,7 @@ a.stat:hover {
 /* ------------------------------------------------------------------ key/value */
 
 .kv {
+  margin: 0;
   display: grid;
   grid-template-columns: minmax(110px, max-content) minmax(0, 1fr);
   gap: 6px 16px;

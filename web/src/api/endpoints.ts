@@ -1,6 +1,7 @@
 // Typed wrappers for every endpoint in docs/api.md.
 
 import { http, rawRequest } from './client'
+import { normalizeRule, normalizeValidate } from './normalize'
 import type {
   AgentConfig,
   Alert,
@@ -27,6 +28,7 @@ import type {
   Row,
   Rule,
   RuleFilter,
+  RuleLoadError,
   RuleTestResponse,
   RuleValidateResponse,
   SearchRequest,
@@ -116,13 +118,17 @@ export const addAlertNote = (id: string, text: string) => http.post<Alert>(`/api
 
 // Rules ----------------------------------------------------------------------------------
 
-export const listRules = (f: RuleFilter = {}) => http.get<{ rules: Rule[]; total: number }>('/api/rules', { ...f })
-export const getRule = (id: string) => http.get<Rule>(`/api/rules/${enc(id)}`)
-export const createRule = (yaml: string) => http.post<Rule>('/api/rules', { yaml })
-export const updateRule = (id: string, yaml: string) => http.put<Rule>(`/api/rules/${enc(id)}`, { yaml })
-export const setRuleEnabled = (id: string, enabled: boolean) => http.patch<Rule>(`/api/rules/${enc(id)}`, { enabled })
+export const listRules = async (f: RuleFilter = {}) => {
+  const res = await http.get<{ rules: Rule[] | null; total: number; load_errors?: RuleLoadError[] | null }>('/api/rules', { ...f })
+  return { ...res, rules: (res.rules ?? []).map(normalizeRule), load_errors: res.load_errors ?? [] }
+}
+export const getRule = async (id: string) => normalizeRule(await http.get<Rule>(`/api/rules/${enc(id)}`))
+export const createRule = async (yaml: string) => normalizeRule(await http.post<Rule>('/api/rules', { yaml }))
+export const updateRule = async (id: string, yaml: string) => normalizeRule(await http.put<Rule>(`/api/rules/${enc(id)}`, { yaml }))
+export const setRuleEnabled = async (id: string, enabled: boolean) =>
+  normalizeRule(await http.patch<Rule>(`/api/rules/${enc(id)}`, { enabled }))
 export const deleteRule = (id: string) => http.del(`/api/rules/${enc(id)}`)
-export const validateRule = (yaml: string) => http.post<RuleValidateResponse>('/api/rules/validate', { yaml })
+export const validateRule = async (yaml: string) => normalizeValidate(await http.post<RuleValidateResponse>('/api/rules/validate', { yaml }))
 export const testRule = (yaml: string, hours?: number) => http.post<RuleTestResponse>('/api/rules/test', { yaml, hours })
 
 // Artifacts and hunts --------------------------------------------------------------------

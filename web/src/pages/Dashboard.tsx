@@ -225,7 +225,7 @@ function RecentAlerts({ onOpen }: { onOpen: (id: string) => void }) {
       <QueryView query={q} isEmpty={(d) => d.alerts.length === 0} empty={<EmptyState title="No open alerts" compact>Nothing needs attention.</EmptyState>} compact>
         {(d) => (
           <div className="table-wrap">
-            <table className="table fixed">
+            <table className="table fixed" style={{ minWidth: 760 }}>
               <colgroup>
                 <col style={{ width: 100 }} />
                 <col />

@@ -317,7 +317,7 @@ function HostAlerts({ host: h }: { host: Host }) {
       <QueryView query={q} isEmpty={(d) => d.alerts.length === 0} empty={<EmptyState title="No alerts for this host" />}>
         {(d) => (
           <div className="table-wrap">
-            <table className="table fixed">
+            <table className="table fixed" style={{ minWidth: 700 }}>
               <colgroup>
                 <col style={{ width: 96 }} />
                 <col />

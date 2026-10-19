@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
-import { Navigate, useNavigate, useSearchParams } from 'react-router'
+import { Navigate, useSearchParams } from 'react-router'
 import { api, errorMessage, queryKeys } from '../api'
 import { Icon } from '../components/Icon'
 import { ErrorState, Loading, Spinner } from '../components/States'
@@ -36,6 +36,9 @@ export function LoginPage() {
     }
   }, [status.data?.needs_setup])
 
+  // Where to go after this page signs someone in; set by the forms below.
+  const [signedInTo, setSignedInTo] = useState<string | null>(null)
+  if (signedInTo) return <Navigate to={signedInTo} replace />
   if (me.data) return <Navigate to={next} replace />
 
   return (
@@ -47,9 +50,9 @@ export function LoginPage() {
         ) : status.isError ? (
           <ErrorState error={status.error} onRetry={() => status.refetch()} title="Cannot reach the server" compact />
         ) : status.data.needs_setup ? (
-          <SetupForm next={next} />
+          <SetupForm onDone={() => setSignedInTo(next === '/' ? '/settings/tokens' : next)} />
         ) : (
-          <LoginForm next={next} />
+          <LoginForm onDone={() => setSignedInTo(next)} />
         )}
         {status.data ? <p className="faint xsmall" style={{ marginTop: 16, marginBottom: 0 }}>Version {status.data.version}</p> : null}
       </div>
@@ -57,16 +60,15 @@ export function LoginPage() {
   )
 }
 
-function LoginForm({ next }: { next: string }) {
+function LoginForm({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient()
-  const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const login = useMutation({
     mutationFn: () => api.login(username.trim(), password),
     onSuccess: ({ user }) => {
       qc.setQueryData(queryKeys.me, user)
-      navigate(next, { replace: true })
+      onDone()
     },
   })
   const submit = (e: FormEvent) => {
@@ -98,9 +100,8 @@ function LoginForm({ next }: { next: string }) {
   )
 }
 
-function SetupForm({ next }: { next: string }) {
+function SetupForm({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient()
-  const navigate = useNavigate()
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -113,7 +114,7 @@ function SetupForm({ next }: { next: string }) {
     onSuccess: ({ user }) => {
       qc.setQueryData(queryKeys.me, user)
       qc.setQueryData(queryKeys.setup, (s: { needs_setup: boolean; version: string } | undefined) => (s ? { ...s, needs_setup: false } : s))
-      navigate(next === '/' ? '/settings/tokens' : next, { replace: true })
+      onDone()
     },
   })
   const submit = (e: FormEvent) => {

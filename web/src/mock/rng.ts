@@ -23,10 +23,16 @@ export function int(lo: number, hi: number, r: () => number = rand): number {
 
 const B32 = '0123456789abcdefghjkmnpqrstvwxyz'
 
+/** Wall-clock time the fixtures are generated relative to. */
+export const NOW = Date.now()
+// IDs encode time relative to a fixed epoch instead of NOW, so fixture IDs (and URLs
+// that contain them) stay the same across page reloads.
+const ID_EPOCH = Date.UTC(2026, 0, 1)
+
 /** 26-char, time-ordered, lowercase Crockford base32 ID (same shape as event.NewID). */
 export function makeId(ms: number, r: () => number = rand): string {
   let out = ''
-  let t = Math.max(0, Math.floor(ms))
+  let t = Math.max(0, Math.floor(ms - NOW + ID_EPOCH))
   const time: string[] = []
   for (let i = 0; i < 10; i++) {
     time.unshift(B32[t % 32])

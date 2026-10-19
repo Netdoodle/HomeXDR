@@ -16,12 +16,15 @@ export function EventTable({
   onFilter,
   initiallyOpen,
   processLinks = true,
+  dense,
 }: {
   events: Event[]
   showHost?: boolean
   onFilter?: (path: string, value: string | number | boolean, negate: boolean) => void
   initiallyOpen?: string
   processLinks?: boolean
+  /** Narrow layout for side panels: short time, no category column. */
+  dense?: boolean
 }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState<Set<string>>(() => new Set(initiallyOpen ? [initiallyOpen] : []))
@@ -37,16 +40,16 @@ export function EventTable({
       else n.add(id)
       return n
     })
-  const cols = showHost ? 6 : 5
+  const cols = 4 + (showHost ? 1 : 0) + (dense ? 0 : 1)
   return (
     <div className="table-wrap">
-      <table className="table fixed compact">
+      <table className="table fixed compact" style={{ minWidth: dense ? 360 : showHost ? 760 : 620 }}>
         <colgroup>
           <col style={{ width: 28 }} />
-          <col style={{ width: 178 }} />
+          <col style={{ width: dense ? 112 : 178 }} />
           {showHost ? <col style={{ width: 140 }} /> : null}
-          <col style={{ width: 110 }} />
-          <col style={{ width: 120 }} />
+          {dense ? null : <col style={{ width: 110 }} />}
+          <col style={{ width: dense ? 96 : 120 }} />
           <col />
         </colgroup>
         <thead>
@@ -54,7 +57,7 @@ export function EventTable({
             <th aria-label="Expand" />
             <th>Time</th>
             {showHost ? <th>Host</th> : null}
-            <th>Category</th>
+            {dense ? null : <th>Category</th>}
             <th>Action</th>
             <th>Summary</th>
           </tr>
@@ -80,9 +83,11 @@ export function EventTable({
                       <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={12} />
                     </button>
                   </td>
-                  <td className="mono nowrap truncate">{formatTimestamp(e['@timestamp'])}</td>
+                  <td className="mono nowrap truncate" title={formatTimestamp(e['@timestamp'])}>
+                    {dense ? formatTimestamp(e['@timestamp']).slice(11, 23) : formatTimestamp(e['@timestamp'])}
+                  </td>
                   {showHost ? <td className="truncate">{e.host?.name ?? e.host?.hostname ?? '—'}</td> : null}
-                  <td className="truncate">{eventCategories(e) || '—'}</td>
+                  {dense ? null : <td className="truncate">{eventCategories(e) || '—'}</td>}
                   <td className="truncate">{e.event?.action ?? '—'}</td>
                   <td className="truncate cmd" title={summary}>
                     {summary || <span className="empty-cell">—</span>}

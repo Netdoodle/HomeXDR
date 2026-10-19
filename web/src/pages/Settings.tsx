@@ -553,7 +553,7 @@ function AuditTab() {
         {(d) => (
           <>
             <div className="table-wrap">
-              <table className="table fixed compact">
+              <table className="table fixed compact" style={{ minWidth: 820 }}>
                 <colgroup>
                   <col style={{ width: 180 }} />
                   <col style={{ width: 110 }} />

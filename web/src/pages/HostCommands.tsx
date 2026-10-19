@@ -38,7 +38,7 @@ export function HostCommands({ host }: { host: Host }) {
       >
         {(d) => (
           <div className="table-wrap">
-            <table className="table fixed">
+            <table className="table fixed" style={{ minWidth: 820 }}>
               <colgroup>
                 <col style={{ width: 28 }} />
                 <col style={{ width: 150 }} />

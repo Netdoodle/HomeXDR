@@ -120,8 +120,10 @@ type CommandRecord = {
 Query language (translated server-side into parameterized SQL; never string-concatenated):
 
 - `field:value` exact match (case-insensitive for strings), `field:val*` / `*val` / `*val*`
-  wildcards, `field:"quoted value"`, `field:>10`, `field:<=443`
-- `AND`, `OR`, `NOT`, parentheses; adjacent terms are ANDed
+  wildcards, `field:"quoted value"` (matched literally: `*` and `?` are not wildcards inside
+  quotes; `\"` and `\\` escape), `field:>10`, `field:<=443`
+- A field name ends at the first colon, so `file.path:C:\Temp\x.exe` needs no quotes
+- `AND`, `OR`, `NOT` (uppercase only), `-term`, parentheses; adjacent terms are ANDed
 - Bare words do a substring match on `message`, `process.command_line` and `file.path`
 - Field names are ECS paths from `shared/event` (`process.name`, `destination.ip`,
   `event.category`, `host.name`, `data.LogonType`, ...)
@@ -190,7 +192,7 @@ Risk score from severity: informational 10, low 21, medium 47, high 73, critical
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/rules?q=&enabled=&level=&source=` | `{"rules": Rule[], "total": n}` |
+| GET | `/api/rules?q=&enabled=&level=&source=` | `{"rules": Rule[], "total": n, "load_errors": {path, error}[]}`; `load_errors` lists rule files that could not be loaded |
 | GET | `/api/rules/{id}` | `Rule` including `yaml` |
 | POST | `/api/rules` | `{"yaml"}` → `Rule` (admin); validates and compiles first |
 | PUT | `/api/rules/{id}` | `{"yaml"}` → `Rule` (admin, custom rules only) |

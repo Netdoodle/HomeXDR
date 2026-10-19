@@ -65,7 +65,7 @@ export function HuntsPage() {
         >
           {(d) => (
             <div className="table-wrap">
-              <table className="table fixed">
+              <table className="table fixed" style={{ minWidth: 920 }}>
                 <colgroup>
                   <col style={{ width: '18%' }} />
                   <col />

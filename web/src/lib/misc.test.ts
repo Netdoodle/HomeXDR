@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ArtifactDef, Event, Host } from '../api/types'
+import type { ArtifactDef, Event, Host, Rule } from '../api/types'
 import { validateAgentConfig } from './agentConfig'
 import { artifactDefaults, normalizeArtifactParams, validateArtifactParams } from './artifacts'
 import { actionAllowed, commandParamsSummary, describeCommand } from './commands'
@@ -19,6 +19,11 @@ describe('install commands', () => {
       'https://homexdr.lan:8443',
       'https://192.168.1.10:8443',
       'https://[fd00::10]:8443',
+    ])
+    // server names inherit a non-default agent port
+    expect(agentUrlOptions({ agent_url: 'https://pc01:28443', server_names: ['pc01', 'localhost'] })).toEqual([
+      'https://pc01:28443',
+      'https://localhost:28443',
     ])
   })
 
@@ -143,5 +148,20 @@ describe('agent config validation', () => {
       spool_max_bytes: 512 << 20,
     })
     expect(problems).toHaveLength(3)
+  })
+})
+
+describe('response normalization', () => {
+  it('accepts Go-cased logsource keys and drops empty values', async () => {
+    const { normalizeLogsource, normalizeRule } = await import('../api/normalize')
+    expect(normalizeLogsource({ Category: 'process_creation', Product: 'windows', Service: '' })).toEqual({
+      category: 'process_creation',
+      product: 'windows',
+    })
+    expect(normalizeLogsource(null)).toEqual({})
+    const raw = { id: 'x', title: 't', level: 'low', enabled: true, source: 'custom', logsource: { product: 'linux' } }
+    const r = normalizeRule(raw as unknown as Rule)
+    expect(r.tags).toEqual([])
+    expect(r.mitre).toEqual([])
   })
 })
