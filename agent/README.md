@@ -34,13 +34,26 @@ cleanly. See [`docs/architecture.md`](../docs/architecture.md) and
 | network | eBPF `inet_sock_set_state` (outbound) + `inet_csk_accept` return (inbound), with PID | `/proc/net/tcp{,6}` polling |
 | file | fanotify filesystem marks (create, delete, rename, close-after-write; with PID) | recursive inotify (no PID) |
 | auth | journald (`journalctl -f -o json`, auth/authpriv facilities) | `/var/log/auth.log` or `/var/log/secure` |
-| dns, library | not implemented on Linux (reported as unavailable) | |
+| dns | eBPF on `udp_sendmsg`/`udpv6_sendmsg` (queries to port 53) and `udp_recvmsg`/`udpv6_recvmsg` (answers from port 53), with PID; BPF trampolines (fentry/fexit), else kprobes | AF_PACKET capture of UDP port 53 (`afpacket`, no PID, agent's network namespace only), reported as `degraded` |
+| library | not implemented on Linux (reported as unavailable) | |
 
 Process entity IDs use the start time in clock ticks (`/proc/<pid>/stat` field 22). The
 eBPF programs report `task->group_leader->start_boottime`, which the agent divides by
 `1e9 / USER_HZ`, giving the identical value; `TestEBPFStartKeyMatchesProc` checks this
 against a live process. PIDs are translated to the agent's own PID namespace in BPF, so
 the agent also works inside containers and WSL.
+
+The DNS sensor emits one event per query (`event.category: network`, `event.type:
+protocol`, `network.protocol: dns`): it waits up to 5 s for the answer, then reports
+`dns.type: answer` with `dns.response_code`, `dns.answers`, `dns.resolved_ip` and
+`event.duration`, or `dns.type: query` alone. The eBPF programs copy the first 512
+bytes of each message in the context of the process doing the I/O, so a lookup through
+a local stub resolver (systemd-resolved on 127.0.0.53) is attributed to the
+application, and the stub's upstream query to the stub. Messages are parsed in Go
+(`dnsparse.go`; names lowercased, without the trailing dot). Identical queries (same
+process, name and type) within 1 s are reported once. The agent's own lookups are not
+reported. Not covered: DNS over TCP, DoT and DoH (encrypted, invisible to a port 53
+hook), mDNS/LLMNR, and answers to sockets bound to port 53 (DNS servers' own sockets).
 
 Isolation uses a dedicated nftables table `inet homexdr` (or `HOMEXDR-*` iptables chains
 when `nft` is missing) that allows loopback, the server's IPs and port, DNS to the
@@ -63,7 +76,8 @@ Set the version with
 
 ### Regenerating the eBPF programs
 
-The C sources are in `internal/platform/linux/bpf/` (`process.bpf.c`, `network.bpf.c`).
+The C sources are in `internal/platform/linux/bpf/` (`process.bpf.c`, `network.bpf.c`,
+`dns.bpf.c`).
 They use CO-RE against a small hand-written header (`hx_vmlinux.h`) instead of a full
 `vmlinux.h`. After editing them, rebuild the objects and Go bindings on Linux with
 clang, llvm-strip and the libbpf headers installed (`apt install clang llvm libbpf-dev`):
@@ -77,15 +91,22 @@ This runs `bpf2go` (cilium/ebpf v0.22.0) for amd64 and arm64 and rewrites the
 `*_bpfel.go` / `*_bpfel.o` files. Commit them.
 
 The eBPF path needs kernel BTF (`/sys/kernel/btf/vmlinux`), Linux 5.8+ (ring buffer)
-and root (or CAP_BPF + CAP_PERFMON). Otherwise the agent falls back as described above.
+and root (or CAP_BPF + CAP_PERFMON). The DNS programs need 5.14+ (they read
+`iov_iter.iter_type`); they use BPF trampolines where the kernel has them (x86-64,
+arm64 6.0+) and kprobes otherwise. Otherwise the agent falls back as described above.
 
 ### Tests
 
 ```sh
 go test ./...                                           # any OS
-sudo go test ./internal/platform/linux/                 # also runs the live eBPF, fanotify, kill and journald tests
+sudo go test ./internal/platform/linux/                 # also runs the live eBPF, DNS, fanotify, kill and journald tests
 sudo HOMEXDR_NETNS_TEST=1 go test -run NFTRulesetInNetns ./internal/platform/linux/
+go test -fuzz FuzzParseDNS -fuzztime 1m ./internal/platform/linux/
 ```
+
+The live DNS tests answer their own queries with a throwaway server on 127.0.0.77:53
+(and `[::1]:53`); `TestDNSSensorGetent` also resolves example.com with `getent` through
+the host's resolver.
 
 The last one loads the generated isolation ruleset with the real `nft` binary into a
 throwaway network namespace (never the host's own) and removes it again.

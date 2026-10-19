@@ -56,6 +56,20 @@ enum {
 	TCP_CLOSE = 7,
 };
 
+/* include/uapi/linux/uio.h (a fixed ABI; read whole with bpf_probe_read_kernel). */
+struct iovec {
+	void *iov_base;
+	unsigned long iov_len;
+};
+
+/* include/linux/uio.h. The values differ between kernel versions (ITER_UBUF was added
+ * in 6.0 and the order changed since), so the programs only use them through
+ * bpf_core_enum_value(), which relocates them by name. */
+enum iter_type {
+	ITER_IOVEC,
+	ITER_UBUF,
+};
+
 #if defined(__TARGET_ARCH_x86)
 /* arch/x86/include/asm/ptrace.h (x86-64); a fixed ABI used by kprobe contexts. */
 struct pt_regs {
@@ -160,9 +174,55 @@ struct sock_common {
 	struct in6_addr skc_v6_rcv_saddr;
 };
 
+/* include/linux/skbuff.h. next is inside anonymous unions in the kernel. */
+struct sk_buff {
+	struct sk_buff *next;
+	unsigned char *head;
+	__u16 transport_header; /* offset from head */
+};
+
+/* An empty queue's next points back at the queue itself. */
+struct sk_buff_head {
+	struct sk_buff *next;
+};
+
 struct sock {
 	struct sock_common __sk_common;
 	__u16 sk_protocol; /* a bitfield before 5.6; read with BPF_CORE_READ_BITFIELD_PROBED */
+};
+
+/* More of struct sock, as a CO-RE flavour (matched against the kernel's struct sock) so
+ * that programs not using it keep the smaller struct sock above. */
+struct sock___rq {
+	struct sk_buff_head sk_receive_queue;
+};
+
+/* include/linux/udp.h (embeds struct sock at offset 0). recvmsg takes datagrams from
+ * reader_queue first and refills it from sk_receive_queue (4.13+). */
+struct udp_sock {
+	struct sk_buff_head reader_queue;
+};
+
+/* include/linux/uio.h (5.14+, when iter_type became its own field). __iov, count and
+ * ubuf sit inside anonymous unions in the kernel. */
+struct iov_iter {
+	__u8 iter_type;
+	unsigned long count;       /* bytes left */
+	const struct iovec *__iov; /* ITER_IOVEC; named iov before 6.4 */
+	void *ubuf;                /* ITER_UBUF (6.0+): a single user buffer */
+};
+
+/* The pre-6.4 name of iov_iter.__iov (a CO-RE flavour: the ___ suffix is ignored when
+ * matching against the kernel's struct iov_iter). */
+struct iov_iter___pre64 {
+	const struct iovec *iov;
+};
+
+/* include/linux/socket.h. msg_name points to a kernel copy of the address. */
+struct msghdr {
+	void *msg_name;
+	int msg_namelen;
+	struct iov_iter msg_iter;
 };
 
 #pragma clang attribute pop

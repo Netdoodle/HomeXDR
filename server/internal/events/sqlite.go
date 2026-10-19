@@ -208,6 +208,10 @@ func (s *SQLite) where(q SearchQuery) (string, []any, error) {
 	if len(q.Categories) > 0 {
 		var ors []string
 		for _, c := range q.Categories {
+			if c == CategoryDNS {
+				ors = append(ors, "dns_question != ''")
+				continue
+			}
 			e, a := sqliteDialect{}.arrayEq("category", c)
 			ors = append(ors, e)
 			args = append(args, a...)
@@ -315,7 +319,8 @@ func (s *SQLite) EntityCounts(ctx context.Context, hostID string, entityIDs []st
 		return out, nil
 	}
 	rows, err := s.r.QueryContext(ctx,
-		`SELECT e.process_entity_id, j.value, COUNT(*) FROM events e, json_each(e.category) j
+		`SELECT e.process_entity_id, CASE WHEN e.dns_question != '' THEN 'dns' ELSE j.value END, COUNT(DISTINCT e.id)
+		 FROM events e, json_each(e.category) j
 		 WHERE e.host_id = ? AND e.process_entity_id IN (`+marks(len(entityIDs))+`) AND j.value != 'process'
 		 GROUP BY 1, 2`, append([]any{hostID}, anys(entityIDs)...)...)
 	if err != nil {

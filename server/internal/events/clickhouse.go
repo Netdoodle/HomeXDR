@@ -212,8 +212,24 @@ func (c *ClickHouse) where(q SearchQuery) (string, []any, error) {
 		args = append(args, q.EntityID)
 	}
 	if len(q.Categories) > 0 {
-		parts = append(parts, "hasAny(category, ?)")
-		args = append(args, q.Categories)
+		var cats []string
+		dns := false
+		for _, c := range q.Categories {
+			if c == CategoryDNS {
+				dns = true
+			} else {
+				cats = append(cats, c)
+			}
+		}
+		var ors []string
+		if len(cats) > 0 {
+			ors = append(ors, "hasAny(category, ?)")
+			args = append(args, cats)
+		}
+		if dns {
+			ors = append(ors, "dns_question != ''")
+		}
+		parts = append(parts, "("+strings.Join(ors, " OR ")+")")
 	}
 	return strings.Join(parts, " AND "), args, nil
 }
@@ -311,7 +327,7 @@ func (c *ClickHouse) EntityCounts(ctx context.Context, hostID string, entityIDs 
 	if len(entityIDs) == 0 {
 		return out, nil
 	}
-	rows, err := c.conn.Query(ctx, "SELECT process_entity_id, arrayJoin(category) AS cat, count() FROM "+c.table+
+	rows, err := c.conn.Query(ctx, "SELECT process_entity_id, arrayJoin(if(dns_question != '', ['dns'], category)) AS cat, count() FROM "+c.table+
 		" WHERE host_id = ? AND process_entity_id IN ? GROUP BY process_entity_id, cat HAVING cat != 'process'",
 		hostID, entityIDs)
 	if err != nil {

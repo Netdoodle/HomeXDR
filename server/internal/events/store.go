@@ -11,6 +11,11 @@ import (
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
+// CategoryDNS is a pseudo-category for SearchQuery.Categories and EntityCounts: events
+// with a DNS question. DNS events are ECS category "network", so they are counted and
+// filtered separately from other network events.
+const CategoryDNS = "dns"
+
 // ErrNotFound is returned by Get when no event has the ID.
 var ErrNotFound = errors.New("event not found")
 

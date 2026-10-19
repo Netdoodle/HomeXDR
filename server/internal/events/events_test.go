@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -153,6 +154,25 @@ func testStore(t *testing.T, s Store, h1, h2 string, purges bool) {
 	counts, err := s.EntityCounts(ctx, h1, []string{"e-ps"})
 	if err != nil || counts["e-ps"]["network"] != 1 {
 		t.Fatalf("EntityCounts = %v, %v", counts, err)
+	}
+
+	// DNS events are ECS "network" but are counted and filtered as "dns".
+	h3 := h1 + "-dns"
+	q := sample(h3, "e-dig", "", "dig", "dig example.com", []string{"network"}, "protocol", now.Add(-5*time.Minute))
+	q.DNS = &event.DNS{Type: "answer", Question: event.DNSQuestion{Name: "example.com", Type: "A"}, ResolvedIP: []string{"192.0.2.1"}}
+	conn3 := sample(h3, "e-dig", "", "dig", "", []string{"network"}, "connection", now.Add(-5*time.Minute))
+	if err := s.Insert(ctx, []*event.Event{q, conn3}); err != nil {
+		t.Fatal(err)
+	}
+	counts, err = s.EntityCounts(ctx, h3, []string{"e-dig"})
+	if err != nil || counts["e-dig"]["dns"] != 1 || counts["e-dig"]["network"] != 1 {
+		t.Fatalf("EntityCounts with DNS = %v, %v", counts, err)
+	}
+	for cats, want := range map[string]int64{"dns": 1, "network": 2, "dns,process": 1} {
+		res, err := s.Search(ctx, SearchQuery{HostID: h3, Categories: strings.Split(cats, ","), From: now.Add(-time.Hour)})
+		if err != nil || res.Total != want {
+			t.Fatalf("Search categories %s = %v, %v (want %d)", cats, res, err, want)
+		}
 	}
 	st, err := s.Stats(ctx, now.Add(-24*time.Hour), now.Add(time.Minute))
 	if err != nil || st.Total < 5 || len(st.Categories) < 2 {

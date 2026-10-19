@@ -1,8 +1,9 @@
 //go:build linux
 
-// Package linux is the Linux platform: eBPF process and network sensors (with netlink
-// and /proc fallbacks), a fanotify/inotify file sensor, an auth log sensor, nftables or
-// iptables isolation, the artifact collectors, and systemd integration.
+// Package linux is the Linux platform: eBPF process, network and DNS sensors (with
+// netlink, /proc and packet-capture fallbacks), a fanotify/inotify file sensor, an auth
+// log sensor, nftables or iptables isolation, the artifact collectors, and systemd
+// integration.
 package linux
 
 import (
@@ -35,8 +36,8 @@ func (*Platform) Paths() platform.Paths {
 // HostInfo returns host details.
 func (*Platform) HostInfo(ctx context.Context) api.HostInfo { return hostInfo(ctx) }
 
-// Sensors returns the Linux sensors for the enabled kinds. DNS and library-load
-// telemetry are not implemented on Linux; the core reports them as unavailable.
+// Sensors returns the Linux sensors for the enabled kinds. Library-load telemetry is
+// not implemented on Linux; the core reports it as unavailable.
 func (p *Platform) Sensors(cfg api.SensorsConfig, env platform.Env) []platform.Sensor {
 	var out []platform.Sensor
 	if cfg.Process.Enabled {
@@ -44,6 +45,9 @@ func (p *Platform) Sensors(cfg api.SensorsConfig, env platform.Env) []platform.S
 	}
 	if cfg.Network.Enabled {
 		out = append(out, newNetworkSensor(env))
+	}
+	if cfg.DNS.Enabled {
+		out = append(out, newDNSSensor(env))
 	}
 	if cfg.File.Enabled {
 		out = append(out, newFileSensor(cfg.File, p.Paths().FileDefaults, env))

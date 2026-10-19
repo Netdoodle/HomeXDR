@@ -1,9 +1,9 @@
 //go:build linux
 
-// Package bpf holds the eBPF programs of the Linux process and network sensors and their
-// bpf2go-generated loaders. The compiled objects (*_bpfel.o) and generated Go files are
-// committed, so a normal `go build` needs no clang. To rebuild them after editing the C
-// sources (needs clang, llvm-strip and the libbpf headers, e.g. `apt install clang llvm
+// Package bpf holds the eBPF programs of the Linux process, network and DNS sensors and
+// their bpf2go-generated loaders. The compiled objects (*_bpfel.o) and generated Go files
+// are committed, so a normal `go build` needs no clang. To rebuild them after editing the
+// C sources (needs clang, llvm-strip and the libbpf headers, e.g. `apt install clang llvm
 // libbpf-dev`), run from this directory:
 //
 //	go generate ./...
@@ -14,3 +14,4 @@ package bpf
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go@v0.22.0 -cc clang -cflags "-O2 -g -Wall -Werror" -target amd64,arm64 -tags linux Process process.bpf.c -- -I/usr/include
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go@v0.22.0 -cc clang -cflags "-O2 -g -Wall -Werror" -target amd64,arm64 -tags linux Network network.bpf.c -- -I/usr/include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go@v0.22.0 -cc clang -cflags "-O2 -g -Wall -Werror" -target amd64,arm64 -tags linux Dns dns.bpf.c -- -I/usr/include
