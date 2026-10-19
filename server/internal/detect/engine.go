@@ -1,6 +1,8 @@
 package detect
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"
@@ -57,9 +59,8 @@ type LoadError struct {
 	Err  string `json:"error"`
 }
 
-// LoadDir parses every .yml/.yaml file under dir. Files that fail are reported, not
-// fatal. Rules with duplicate IDs keep the first one found (in path order).
-func LoadDir(dir string) ([]*Rule, []LoadError) {
+// ruleFiles returns the .yml/.yaml files under dir in path order.
+func ruleFiles(dir string) []string {
 	var paths []string
 	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -72,6 +73,27 @@ func LoadDir(dir string) ([]*Rule, []LoadError) {
 		return nil
 	})
 	sort.Strings(paths)
+	return paths
+}
+
+// DirFingerprint summarizes the rule files under dir (names, sizes, modification times)
+// so callers can cheaply tell whether anything changed since the last load.
+func DirFingerprint(dir string) string {
+	h := sha256.New()
+	for _, p := range ruleFiles(dir) {
+		st, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(h, "%s|%d|%d\n", p, st.Size(), st.ModTime().UnixNano())
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// LoadDir parses every .yml/.yaml file under dir. Files that fail are reported, not
+// fatal. Rules with duplicate IDs keep the first one found (in path order).
+func LoadDir(dir string) ([]*Rule, []LoadError) {
+	paths := ruleFiles(dir)
 	var rules []*Rule
 	var errs []LoadError
 	seen := map[string]bool{}

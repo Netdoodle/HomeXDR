@@ -130,6 +130,11 @@ export const setRuleEnabled = async (id: string, enabled: boolean) =>
 export const deleteRule = (id: string) => http.del(`/api/rules/${enc(id)}`)
 export const validateRule = async (yaml: string) => normalizeValidate(await http.post<RuleValidateResponse>('/api/rules/validate', { yaml }))
 export const testRule = (yaml: string, hours?: number) => http.post<RuleTestResponse>('/api/rules/test', { yaml, hours })
+/** Re-read the server's rules folder now (it is also checked once a minute). */
+export const reloadRules = async () => {
+  const res = await http.post<{ total: number; enabled: number; load_errors?: RuleLoadError[] | null }>('/api/rules/reload', {})
+  return { ...res, load_errors: res.load_errors ?? [] }
+}
 
 // Artifacts and hunts --------------------------------------------------------------------
 

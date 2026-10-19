@@ -97,6 +97,10 @@ func (c *Core) RunMaintenance(ctx context.Context) {
 		if err := c.State.PurgeExpired(ctx); err != nil {
 			c.Log.Warn("purge sessions", "err", err)
 		}
+		// Pick up rule files added or changed in the rules folder without a restart.
+		if _, err := c.Rules.ReloadIfChanged(ctx); err != nil {
+			c.Log.Warn("reload rules", "err", err)
+		}
 		if time.Since(lastPurge) > 6*time.Hour {
 			before := time.Now().AddDate(0, 0, -c.Cfg.RetentionDays)
 			if err := c.Events.Purge(ctx, before); err != nil {

@@ -50,6 +50,17 @@ export function RulesPage() {
   }
   const q = useQuery({ queryKey: queryKeys.rules(filter), queryFn: () => api.listRules(filter), placeholderData: keepPreviousData })
   const toggle = useToggleRule()
+  const qc = useQueryClient()
+  const toast = useToast()
+  const reload = useMutation({
+    mutationFn: api.reloadRules,
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: queryKeys.rules() })
+      const errs = r.load_errors.length ? `, ${plural(r.load_errors.length, 'file')} failed to load` : ''
+      toast.success(`Reloaded ${plural(r.total, 'rule')} (${formatNumber(r.enabled)} enabled)${errs}`)
+    },
+    onError: (e) => toast.error(e),
+  })
 
   return (
     <>
@@ -60,9 +71,20 @@ export function RulesPage() {
           <>
             {q.isFetching && !q.isPending ? <Spinner small /> : null}
             {isAdmin ? (
-              <Link className="btn primary" to="/rules/new">
-                <Icon name="plus" size={14} /> New custom rule
-              </Link>
+              <>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => reload.mutate()}
+                  disabled={reload.isPending}
+                  title="Re-read the server's rules folder now. Changes there are also picked up automatically within a minute."
+                >
+                  <Icon name="refresh" size={14} /> Reload rules folder
+                </button>
+                <Link className="btn primary" to="/rules/new">
+                  <Icon name="plus" size={14} /> New custom rule
+                </Link>
+              </>
             ) : null}
           </>
         }

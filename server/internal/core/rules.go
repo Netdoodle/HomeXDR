@@ -50,6 +50,7 @@ type RuleSet struct {
 	mu         sync.RWMutex
 	entries    map[string]*ruleEntry
 	loadErrors []detect.LoadError
+	dirPrint   string // detect.DirFingerprint of the rules folder at the last load
 }
 
 // NewRuleSet returns an empty rule set.
@@ -57,8 +58,31 @@ func NewRuleSet(c *Core) *RuleSet {
 	return &RuleSet{c: c, entries: map[string]*ruleEntry{}}
 }
 
+// ReloadIfChanged reloads when files in the rules folder were added, removed or modified
+// since the last load. It reports whether a reload happened.
+func (rs *RuleSet) ReloadIfChanged(ctx context.Context) (bool, error) {
+	fp := detect.DirFingerprint(rs.c.Cfg.RulesDir)
+	rs.mu.RLock()
+	same := fp == rs.dirPrint
+	rs.mu.RUnlock()
+	if same {
+		return false, nil
+	}
+	rs.c.Log.Info("rules folder changed; reloading", "dir", rs.c.Cfg.RulesDir)
+	return true, rs.Reload(ctx)
+}
+
+// Stats returns the number of loaded and enabled rules.
+func (rs *RuleSet) Stats() (total, enabled int) {
+	rs.mu.RLock()
+	total = len(rs.entries)
+	rs.mu.RUnlock()
+	return total, len(rs.c.Engine.Rules())
+}
+
 // Reload reads built-in rules from disk and custom rules and overrides from the database.
 func (rs *RuleSet) Reload(ctx context.Context) error {
+	fp := detect.DirFingerprint(rs.c.Cfg.RulesDir)
 	builtin, errs := detect.LoadDir(rs.c.Cfg.RulesDir)
 	// Large community rule sets contain rules this engine cannot run (aggregations,
 	// unsupported modifiers); log a few and keep the rest at debug level.
@@ -103,6 +127,7 @@ func (rs *RuleSet) Reload(ctx context.Context) error {
 	rs.mu.Lock()
 	rs.entries = entries
 	rs.loadErrors = errs
+	rs.dirPrint = fp
 	rs.mu.Unlock()
 	rs.sync()
 	rs.c.Log.Info("rules loaded", "total", len(entries), "enabled", len(rs.c.Engine.Rules()), "errors", len(errs))

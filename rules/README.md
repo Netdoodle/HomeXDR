@@ -31,6 +31,17 @@ every event. Rules that use features the engine does not support yet (aggregatio
 correlations, `|expand`, `|fieldref`) are skipped and listed on the **Rules** page with the
 reason. Disable noisy rules from the console; the setting is kept across restarts.
 
+## Keeping rules up to date
+
+The server checks the rules folder once a minute and reloads it when a file is added,
+removed or changed, so no restart is needed. Admins can also apply changes immediately with
+**Rules → Reload rules folder** (or `POST /api/rules/reload`).
+
+To keep a mounted folder current automatically, update it from the host on a schedule
+(for example a cron job or an Unraid User Script that syncs the rule repository you use).
+HomeXDR picks up the new files on its next check. Enabled/disabled choices are stored by
+rule ID, so they survive updates.
+
 ## Writing rules
 
 Use Sigma's `logsource` categories (`process_creation`, `network_connection`,

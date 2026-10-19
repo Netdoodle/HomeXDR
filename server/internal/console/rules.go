@@ -104,6 +104,19 @@ func (h *Handler) deleteRule(w http.ResponseWriter, r *http.Request, u *store.Us
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// reloadRules re-reads the rules folder now instead of waiting for the next
+// once-a-minute change check.
+func (h *Handler) reloadRules(w http.ResponseWriter, r *http.Request, u *store.User) {
+	if err := h.c.Rules.Reload(r.Context()); err != nil {
+		h.fail(w, err)
+		return
+	}
+	total, enabled := h.c.Rules.Stats()
+	errs := h.c.Rules.LoadErrors()
+	h.c.Audit(r.Context(), u.Username, "rules.reload", "", strconv.Itoa(total)+" rules, "+strconv.Itoa(len(errs))+" errors")
+	writeJSON(w, http.StatusOK, map[string]any{"total": total, "enabled": enabled, "load_errors": errs})
+}
+
 func (h *Handler) validateRule(w http.ResponseWriter, r *http.Request, _ *store.User) {
 	var req yamlBody
 	if !decode(w, r, &req) {

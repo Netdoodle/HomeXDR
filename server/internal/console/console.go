@@ -69,6 +69,7 @@ func New(c *core.Core) *Handler {
 	h.route("PATCH /api/rules/{id}", admin, h.patchRule)
 	h.route("DELETE /api/rules/{id}", admin, h.deleteRule)
 	h.route("POST /api/rules/validate", analyst, h.validateRule)
+	h.route("POST /api/rules/reload", admin, h.reloadRules)
 	h.route("POST /api/rules/test", analyst, h.testRule)
 
 	h.route("GET /api/artifacts", viewer, h.listArtifacts)

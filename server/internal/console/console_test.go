@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -243,6 +244,24 @@ func TestConsoleFlow(t *testing.T) {
 	}
 	if code, _ := admin.do("DELETE", "/api/rules/custom-1", nil, true); code != 204 {
 		t.Fatalf("delete custom = %d", code)
+	}
+
+	// Files added to the rules folder are picked up without a restart.
+	if changed, _ := c.Rules.ReloadIfChanged(ctx); changed {
+		t.Fatal("reloaded although nothing changed")
+	}
+	extra := strings.Replace(rule, "6f1b1a52-0000-4000-8000-000000000002", "folder-rule-1", 1)
+	if err := os.WriteFile(filepath.Join(c.Cfg.RulesDir, "extra.yml"), []byte(extra), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := c.Rules.ReloadIfChanged(ctx); !changed || err != nil {
+		t.Fatalf("ReloadIfChanged = %v, %v", changed, err)
+	}
+	if code, _ := viewer.do("POST", "/api/rules/reload", nil, true); code != http.StatusForbidden {
+		t.Fatalf("viewer reload = %d", code)
+	}
+	if code, rr := admin.do("POST", "/api/rules/reload", nil, true); code != 200 || rr["total"].(float64) != 2 {
+		t.Fatalf("reload = %d %v", code, rr)
 	}
 
 	// Hunts queue a command per matching host.

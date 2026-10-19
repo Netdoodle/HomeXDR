@@ -864,6 +864,16 @@ route(
   { role: 'admin' },
 )
 
+route(
+  'POST',
+  '/api/rules/reload',
+  ({ user }) => {
+    logAudit(user, 'rules.reload', `${rules.length} rules, 0 errors`, null)
+    return { total: rules.length, enabled: rules.filter((r) => r.enabled).length, load_errors: [] }
+  },
+  { role: 'admin' },
+)
+
 route('POST', '/api/rules/validate', ({ body }) => {
   const res = parseRuleYaml(String(obj(body).yaml ?? ''))
   return res.ok ? { ok: true, rule: res.rule } : { ok: false, error: res.error }
