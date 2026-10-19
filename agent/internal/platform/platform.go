@@ -103,6 +103,14 @@ type Paths struct {
 	FileDefaults []string
 }
 
+// PathProtector is optionally implemented by a Platform whose file permissions are not
+// expressed by Unix mode bits (Windows ACLs). The core calls ProtectPath on the data dir
+// and the config file after creating them, so only the agent's account (SYSTEM /
+// Administrators) can read them. Platforms without it rely on 0700/0600 modes.
+type PathProtector interface {
+	ProtectPath(path string) error
+}
+
 // Platform is the OS-specific part of the agent.
 type Platform interface {
 	Name() string // event.PlatformLinux, event.PlatformWindows, event.PlatformDarwin

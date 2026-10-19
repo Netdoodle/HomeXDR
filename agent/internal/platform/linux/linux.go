@@ -1,17 +1,16 @@
 //go:build linux
 
-// Package linux is the Linux platform.
+// Package linux is the Linux platform: eBPF process and network sensors (with netlink
+// and /proc fallbacks), a fanotify/inotify file sensor, an auth log sensor, nftables or
+// iptables isolation, the artifact collectors, and systemd integration.
 package linux
 
 import (
 	"context"
-	"os"
-	"runtime"
 
 	"github.com/Doodlebug12/homexdr/agent/internal/platform"
 	"github.com/Doodlebug12/homexdr/shared/api"
 	"github.com/Doodlebug12/homexdr/shared/event"
-	"golang.org/x/sys/unix"
 )
 
 // Platform implements platform.Platform for Linux.
@@ -34,26 +33,32 @@ func (*Platform) Paths() platform.Paths {
 }
 
 // HostInfo returns host details.
-func (*Platform) HostInfo(context.Context) api.HostInfo {
-	h, _ := os.Hostname()
-	info := api.HostInfo{Hostname: h, OS: event.OS{Platform: event.PlatformLinux}, Arch: runtime.GOARCH, CPUs: runtime.NumCPU()}
-	var u unix.Utsname
-	if unix.Uname(&u) == nil {
-		info.OS.Kernel = unix.ByteSliceToString(u.Release[:])
-	}
-	return info
-}
+func (*Platform) HostInfo(ctx context.Context) api.HostInfo { return hostInfo(ctx) }
 
-// Sensors returns the Linux sensors.
-func (*Platform) Sensors(api.SensorsConfig, platform.Env) []platform.Sensor { return nil }
+// Sensors returns the Linux sensors for the enabled kinds. DNS and library-load
+// telemetry are not implemented on Linux; the core reports them as unavailable.
+func (p *Platform) Sensors(cfg api.SensorsConfig, env platform.Env) []platform.Sensor {
+	var out []platform.Sensor
+	if cfg.Process.Enabled {
+		out = append(out, newProcessSensor(cfg.Process, env))
+	}
+	if cfg.Network.Enabled {
+		out = append(out, newNetworkSensor(env))
+	}
+	if cfg.File.Enabled {
+		out = append(out, newFileSensor(cfg.File, p.Paths().FileDefaults, env))
+	}
+	if cfg.Auth.Enabled {
+		out = append(out, newAuthSensor(env))
+	}
+	return out
+}
 
 // Responder returns the Linux responder.
-func (*Platform) Responder(platform.Env) platform.Responder { return platform.UnsupportedResponder{} }
+func (*Platform) Responder(env platform.Env) platform.Responder { return &responder{env: env} }
 
 // Collectors returns the Linux artifact collectors.
-func (*Platform) Collectors(platform.Env) map[string]platform.Collector {
-	return map[string]platform.Collector{}
-}
+func (*Platform) Collectors(env platform.Env) map[string]platform.Collector { return collectors(env) }
 
 // Service returns the systemd integration.
-func (*Platform) Service() platform.Service { return platform.UnsupportedService{} }
+func (*Platform) Service() platform.Service { return systemdService{} }
