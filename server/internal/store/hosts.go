@@ -119,14 +119,11 @@ func hostStatus(h *Host) string {
 
 // CreateEndpoint registers a newly enrolled agent.
 func (s *Store) CreateEndpoint(ctx context.Context, id string, info api.HostInfo, labels []string, certSerial string) (*Host, error) {
-	if labels == nil {
-		labels = []string{}
-	}
 	now := time.Now().UTC()
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO hosts(id, kind, hostname, platform, info, labels, enrolled_at, last_seen, cert_serial)
 		 VALUES(?,?,?,?,?,?,?,?,?)`,
-		id, HostEndpoint, info.Hostname, info.OS.Platform, mustJSON(info), mustJSON(labels), ts(now), ts(now), certSerial)
+		id, HostEndpoint, info.Hostname, info.OS.Platform, mustJSON(info), mustJSON(cleanLabels(labels)), ts(now), ts(now), certSerial)
 	if err != nil {
 		return nil, err
 	}
@@ -215,8 +212,8 @@ func (s *Store) TouchHost(ctx context.Context, id string) error {
 	return err
 }
 
-// SetLabels replaces a host's labels.
-func (s *Store) SetLabels(ctx context.Context, id string, labels []string) (*Host, error) {
+// cleanLabels trims labels and drops empty, overlong and case-insensitive duplicates.
+func cleanLabels(labels []string) []string {
 	clean := []string{}
 	for _, l := range labels {
 		l = strings.TrimSpace(l)
@@ -224,7 +221,12 @@ func (s *Store) SetLabels(ctx context.Context, id string, labels []string) (*Hos
 			clean = append(clean, l)
 		}
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE hosts SET labels = ? WHERE id = ?`, mustJSON(clean), id)
+	return clean
+}
+
+// SetLabels replaces a host's labels.
+func (s *Store) SetLabels(ctx context.Context, id string, labels []string) (*Host, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE hosts SET labels = ? WHERE id = ?`, mustJSON(cleanLabels(labels)), id)
 	if err != nil {
 		return nil, err
 	}

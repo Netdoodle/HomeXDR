@@ -91,9 +91,12 @@ func TestHostsAlertsCommands(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
 	info := api.HostInfo{Hostname: "desk", OS: event.OS{Platform: "windows", Name: "Windows 11"}, IPs: []string{"192.168.1.20"}}
-	h, err := s.CreateEndpoint(ctx, "agent-1", info, []string{"gaming"}, "abc")
+	h, err := s.CreateEndpoint(ctx, "agent-1", info, []string{"gaming", " Gaming ", "lab", ""}, "abc")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(h.Labels) != 2 || h.Labels[0] != "gaming" || h.Labels[1] != "lab" {
+		t.Fatalf("labels not cleaned: %q", h.Labels)
 	}
 	if h.Status != "online" || h.Hostname != "desk" || h.OS.Platform != "windows" {
 		t.Fatalf("unexpected host %+v", h)
