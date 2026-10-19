@@ -25,7 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/fsutil"
+	"github.com/Netdoodle/homexdr/agent/internal/fsutil"
 )
 
 // File names inside the data dir.

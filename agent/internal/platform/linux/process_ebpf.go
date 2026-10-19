@@ -11,9 +11,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
-	"github.com/Doodlebug12/homexdr/agent/internal/platform/linux/bpf"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/platform/linux/bpf"
+	"github.com/Netdoodle/homexdr/shared/event"
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"

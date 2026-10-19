@@ -8,7 +8,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // ErrNotFound is returned by Get when no event has the ID.

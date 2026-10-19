@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/fsutil"
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/fsutil"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
 )
 
 // MaxHashBytes caps hashing in file.find.

@@ -22,10 +22,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/core"
-	"github.com/Doodlebug12/homexdr/server/internal/store"
-	"github.com/Doodlebug12/homexdr/shared/api"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/server/internal/core"
+	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 type ctxKey struct{}

@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
-	"github.com/Doodlebug12/homexdr/shared/api"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // Artifacts are the collectors run for inventory, in order.

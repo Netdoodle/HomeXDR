@@ -3,8 +3,8 @@
 package osplatform
 
 import (
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
-	"github.com/Doodlebug12/homexdr/agent/internal/platform/linux"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/platform/linux"
 )
 
 // Current returns the platform this binary was built for.

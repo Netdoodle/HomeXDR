@@ -11,7 +11,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // ClickHouse is the default event store. Retention uses a table TTL.

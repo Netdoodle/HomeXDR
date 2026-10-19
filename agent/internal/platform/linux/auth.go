@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
-	"github.com/Doodlebug12/homexdr/agent/internal/sensors/logtail"
-	"github.com/Doodlebug12/homexdr/agent/internal/tail"
-	"github.com/Doodlebug12/homexdr/shared/api"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/sensors/logtail"
+	"github.com/Netdoodle/homexdr/agent/internal/tail"
+	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // authLogFiles are the classic syslog destinations for the auth facilities.

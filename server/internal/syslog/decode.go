@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/shared/communityid"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/communityid"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // Decode turns a syslog message into an event. kind reports what was recognized:

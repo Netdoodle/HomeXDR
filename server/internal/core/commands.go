@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/store"
-	"github.com/Doodlebug12/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/shared/api"
 )
 
 // ErrNotAllowed is returned when a host's local policy does not permit an action.

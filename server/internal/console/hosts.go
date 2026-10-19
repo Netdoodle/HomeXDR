@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/events"
-	"github.com/Doodlebug12/homexdr/server/internal/store"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/server/internal/events"
+	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 func (h *Handler) listHosts(w http.ResponseWriter, r *http.Request, _ *store.User) {

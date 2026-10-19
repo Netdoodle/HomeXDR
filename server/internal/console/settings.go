@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/store"
-	"github.com/Doodlebug12/homexdr/shared/api"
-	"github.com/Doodlebug12/homexdr/shared/version"
+	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/version"
 )
 
 func (h *Handler) serverSettings(w http.ResponseWriter, r *http.Request, _ *store.User) {

@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/fsutil"
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/fsutil"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
 )
 
 // autorunRow builds a persistence.autoruns row.

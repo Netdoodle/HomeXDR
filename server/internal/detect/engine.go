@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // Engine evaluates events against the enabled rule set. SetRules swaps the set

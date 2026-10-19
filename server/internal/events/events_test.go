@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 func TestParseQuery(t *testing.T) {

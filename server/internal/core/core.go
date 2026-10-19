@@ -9,12 +9,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/config"
-	"github.com/Doodlebug12/homexdr/server/internal/detect"
-	"github.com/Doodlebug12/homexdr/server/internal/events"
-	"github.com/Doodlebug12/homexdr/server/internal/pki"
-	"github.com/Doodlebug12/homexdr/server/internal/store"
-	"github.com/Doodlebug12/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/server/internal/config"
+	"github.com/Netdoodle/homexdr/server/internal/detect"
+	"github.com/Netdoodle/homexdr/server/internal/events"
+	"github.com/Netdoodle/homexdr/server/internal/pki"
+	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/shared/api"
 )
 
 // Core wires the server's components together.

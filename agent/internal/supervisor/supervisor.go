@@ -14,10 +14,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/backoff"
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
-	"github.com/Doodlebug12/homexdr/shared/api"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/agent/internal/backoff"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // Spec is a sensor plus a fingerprint of the config it was built from. A sensor is

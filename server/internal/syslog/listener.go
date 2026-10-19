@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/core"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/server/internal/core"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 const (

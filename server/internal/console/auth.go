@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/store"
-	"github.com/Doodlebug12/homexdr/shared/version"
+	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/shared/version"
 )
 
 func (h *Handler) setupStatus(w http.ResponseWriter, r *http.Request) {

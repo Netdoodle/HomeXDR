@@ -13,8 +13,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/fsutil"
-	"github.com/Doodlebug12/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/agent/internal/fsutil"
+	"github.com/Netdoodle/homexdr/shared/api"
 )
 
 // Local is the on-disk config file (JSON, 0600).

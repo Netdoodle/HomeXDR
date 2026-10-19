@@ -22,10 +22,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/identity"
-	"github.com/Doodlebug12/homexdr/agent/internal/transport"
-	"github.com/Doodlebug12/homexdr/shared/api"
-	"github.com/Doodlebug12/homexdr/shared/version"
+	"github.com/Netdoodle/homexdr/agent/internal/identity"
+	"github.com/Netdoodle/homexdr/agent/internal/transport"
+	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/version"
 )
 
 // Options for Enroll.

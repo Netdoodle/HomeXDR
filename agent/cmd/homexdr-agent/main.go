@@ -23,15 +23,15 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/config"
-	"github.com/Doodlebug12/homexdr/agent/internal/core"
-	"github.com/Doodlebug12/homexdr/agent/internal/enroll"
-	"github.com/Doodlebug12/homexdr/agent/internal/identity"
-	"github.com/Doodlebug12/homexdr/agent/internal/osplatform"
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
-	"github.com/Doodlebug12/homexdr/agent/internal/spool"
-	"github.com/Doodlebug12/homexdr/agent/internal/state"
-	"github.com/Doodlebug12/homexdr/shared/version"
+	"github.com/Netdoodle/homexdr/agent/internal/config"
+	"github.com/Netdoodle/homexdr/agent/internal/core"
+	"github.com/Netdoodle/homexdr/agent/internal/enroll"
+	"github.com/Netdoodle/homexdr/agent/internal/identity"
+	"github.com/Netdoodle/homexdr/agent/internal/osplatform"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/spool"
+	"github.com/Netdoodle/homexdr/agent/internal/state"
+	"github.com/Netdoodle/homexdr/shared/version"
 )
 
 const usage = `homexdr-agent: HomeXDR endpoint agent

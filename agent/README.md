@@ -59,7 +59,7 @@ GOOS=windows go build -o homexdr-agent.exe ./cmd/homexdr-agent
 ```
 
 Set the version with
-`-ldflags "-X github.com/Doodlebug12/homexdr/shared/version.Version=v0.1.0"`.
+`-ldflags "-X github.com/Netdoodle/homexdr/shared/version.Version=v0.1.0"`.
 
 ### Regenerating the eBPF programs
 

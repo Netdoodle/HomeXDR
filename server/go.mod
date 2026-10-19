@@ -1,8 +1,8 @@
-module github.com/Doodlebug12/homexdr/server
+module github.com/Netdoodle/homexdr/server
 
 go 1.26.0
 
-require github.com/Doodlebug12/homexdr/shared v0.0.0
+require github.com/Netdoodle/homexdr/shared v0.0.0
 
 require (
 	github.com/ClickHouse/ch-go v0.74.0 // indirect
@@ -32,4 +32,4 @@ require (
 	modernc.org/sqlite v1.60.1 // indirect
 )
 
-replace github.com/Doodlebug12/homexdr/shared => ../shared
+replace github.com/Netdoodle/homexdr/shared => ../shared

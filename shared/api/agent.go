@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // ProtocolVersion is sent by agents in the X-HomeXDR-Protocol header.

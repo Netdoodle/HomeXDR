@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/state"
-	"github.com/Doodlebug12/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/agent/internal/state"
+	"github.com/Netdoodle/homexdr/shared/api"
 )
 
 type fixture struct {

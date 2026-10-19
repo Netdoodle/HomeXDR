@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // RuleRow is the stored state of a rule: an enabled override for built-in rules, or the

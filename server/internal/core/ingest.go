@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/detect"
-	"github.com/Doodlebug12/homexdr/server/internal/store"
-	"github.com/Doodlebug12/homexdr/shared/communityid"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/server/internal/detect"
+	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/shared/communityid"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // maxClockSkew is how far in the future an event timestamp may be before it is clamped.

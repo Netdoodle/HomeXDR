@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 func winProc(image, cmd, parent string) *event.Event {

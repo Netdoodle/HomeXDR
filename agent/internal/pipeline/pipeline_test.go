@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/shared/api"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 type sink struct{ lines [][]byte }

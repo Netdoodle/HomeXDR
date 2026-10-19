@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/detect"
-	"github.com/Doodlebug12/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/server/internal/detect"
+	"github.com/Netdoodle/homexdr/server/internal/store"
 )
 
 // Rule sources.

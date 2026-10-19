@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Doodlebug12/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/api"
 )
 
 func TestParseDefaultsPolicy(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 var now = time.Date(2026, 10, 19, 18, 0, 0, 0, time.UTC)

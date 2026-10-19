@@ -10,8 +10,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/shared/event"
 	"golang.org/x/sys/unix"
 )
 

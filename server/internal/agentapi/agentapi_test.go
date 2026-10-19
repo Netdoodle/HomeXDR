@@ -22,13 +22,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/config"
-	"github.com/Doodlebug12/homexdr/server/internal/core"
-	"github.com/Doodlebug12/homexdr/server/internal/events"
-	"github.com/Doodlebug12/homexdr/server/internal/pki"
-	"github.com/Doodlebug12/homexdr/server/internal/store"
-	"github.com/Doodlebug12/homexdr/shared/api"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/server/internal/config"
+	"github.com/Netdoodle/homexdr/server/internal/core"
+	"github.com/Netdoodle/homexdr/server/internal/events"
+	"github.com/Netdoodle/homexdr/server/internal/pki"
+	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 const testRule = `title: Whoami executed

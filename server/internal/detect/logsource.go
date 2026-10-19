@@ -3,7 +3,7 @@ package detect
 import (
 	"strings"
 
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // logsourceFilter is a cheap pre-check derived from a rule's logsource.

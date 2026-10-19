@@ -17,11 +17,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/backoff"
-	"github.com/Doodlebug12/homexdr/agent/internal/fileops"
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
-	"github.com/Doodlebug12/homexdr/agent/internal/transport"
-	"github.com/Doodlebug12/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/agent/internal/backoff"
+	"github.com/Netdoodle/homexdr/agent/internal/fileops"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/transport"
+	"github.com/Netdoodle/homexdr/shared/api"
 )
 
 // API is the subset of the transport client used to report results.

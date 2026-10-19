@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // EnrollmentToken is an agent enrollment token. Token is only set when created.

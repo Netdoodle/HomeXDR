@@ -1,7 +1,7 @@
 // Package version holds build metadata, set with -ldflags at build time:
 //
-//	-X github.com/Doodlebug12/homexdr/shared/version.Version=v0.1.0
-//	-X github.com/Doodlebug12/homexdr/shared/version.Commit=abc1234
+//	-X github.com/Netdoodle/homexdr/shared/version.Version=v0.1.0
+//	-X github.com/Netdoodle/homexdr/shared/version.Commit=abc1234
 package version
 
 var (

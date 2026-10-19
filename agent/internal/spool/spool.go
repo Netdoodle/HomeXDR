@@ -22,7 +22,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/fsutil"
+	"github.com/Netdoodle/homexdr/agent/internal/fsutil"
 )
 
 const (

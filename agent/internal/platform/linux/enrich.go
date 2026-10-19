@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/fsutil"
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/agent/internal/fsutil"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // maxHashBytes caps executable hashing.

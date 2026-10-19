@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/server/internal/store"
 )
 
 func (h *Handler) listAlerts(w http.ResponseWriter, r *http.Request, _ *store.User) {

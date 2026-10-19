@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
 )
 
 // ---- services.list ----
@@ -172,7 +172,7 @@ func unitFile(exe string) string {
 	return fmt.Sprintf(`# Installed by homexdr-agent. Remove with: homexdr-agent uninstall
 [Unit]
 Description=HomeXDR Agent (endpoint telemetry and response)
-Documentation=https://github.com/Doodlebug12/homexdr
+Documentation=https://github.com/Netdoodle/homexdr
 After=network-online.target
 Wants=network-online.target
 

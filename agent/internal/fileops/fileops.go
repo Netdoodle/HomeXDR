@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/fsutil"
-	"github.com/Doodlebug12/homexdr/agent/internal/globs"
-	"github.com/Doodlebug12/homexdr/shared/api"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/agent/internal/fsutil"
+	"github.com/Netdoodle/homexdr/agent/internal/globs"
+	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // DefaultMaxGet is the default size cap for file.get.

@@ -1,3 +1,3 @@
-module github.com/Doodlebug12/homexdr/shared
+module github.com/Netdoodle/homexdr/shared
 
 go 1.25.0

@@ -21,7 +21,7 @@ COPY agent/ agent/
 COPY --from=web /src/web/dist/ server/internal/webui/dist/
 ARG VERSION=dev
 ARG COMMIT=unknown
-RUN LDFLAGS="-s -w -X github.com/Doodlebug12/homexdr/shared/version.Version=${VERSION} -X github.com/Doodlebug12/homexdr/shared/version.Commit=${COMMIT}" && \
+RUN LDFLAGS="-s -w -X github.com/Netdoodle/homexdr/shared/version.Version=${VERSION} -X github.com/Netdoodle/homexdr/shared/version.Commit=${COMMIT}" && \
     cd /src/server && go build -trimpath -ldflags "$LDFLAGS" -o /out/homexdr-server ./cmd/homexdr-server && \
     mkdir -p /out/downloads /out/data && cd /src/agent && \
     for target in linux/amd64 linux/arm64 windows/amd64; do \

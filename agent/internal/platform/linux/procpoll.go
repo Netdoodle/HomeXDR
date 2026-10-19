@@ -6,8 +6,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
-	"github.com/Doodlebug12/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // runPoll is the last-resort process sensor: it compares /proc snapshots every second.

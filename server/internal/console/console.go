@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/server/internal/core"
-	"github.com/Doodlebug12/homexdr/server/internal/events"
-	"github.com/Doodlebug12/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/server/internal/core"
+	"github.com/Netdoodle/homexdr/server/internal/events"
+	"github.com/Netdoodle/homexdr/server/internal/store"
 )
 
 // Handler serves /api.

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/fsutil"
-	"github.com/Doodlebug12/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/agent/internal/fsutil"
+	"github.com/Netdoodle/homexdr/shared/api"
 )
 
 // FileName is the state file inside the data dir.

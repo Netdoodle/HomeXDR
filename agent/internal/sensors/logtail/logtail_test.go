@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Doodlebug12/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/api"
 )
 
 func TestParseSyslog(t *testing.T) {

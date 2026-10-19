@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Doodlebug12/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
 )
 
 // Host isolation: a dedicated nftables table (inet homexdr), or dedicated iptables chains
