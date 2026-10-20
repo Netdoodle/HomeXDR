@@ -19,6 +19,7 @@ export const queryKeys = {
     ['process-events', hostId, entityId, category ?? 'all'] as const,
   alerts: (f?: AlertFilter) => (f ? (['alerts', f] as const) : (['alerts'] as const)),
   alert: (id: string) => ['alert', id] as const,
+  alertTriage: (id: string) => ['alert', id, 'triage'] as const,
   rules: (f?: RuleFilter) => (f ? (['rules', f] as const) : (['rules'] as const)),
   rule: (id: string) => ['rule', id] as const,
   artifacts: ['artifacts'] as const,
@@ -31,5 +32,6 @@ export const queryKeys = {
   users: ['settings', 'users'] as const,
   audit: (offset: number) => ['settings', 'audit', offset] as const,
   integrations: ['settings', 'integrations'] as const,
+  aiSettings: ['settings', 'ai'] as const,
   health: ['health'] as const,
 }

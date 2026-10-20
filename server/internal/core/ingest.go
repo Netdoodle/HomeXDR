@@ -112,6 +112,7 @@ func (c *Core) recordAlert(ctx context.Context, in store.AlertInput) {
 	}
 	if isNew {
 		c.Log.Info("alert", "id", a.ID, "rule", in.Rule.Title, "severity", a.Severity, "host", a.Hostname)
+		c.Triage.AlertCreated(ctx, a)
 	}
 }
 

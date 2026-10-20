@@ -3,6 +3,10 @@
 // `{"error": ...}` bodies.
 
 import type {
+  AIReport,
+  AISettings,
+  AISettingsUpdate,
+  AITriage,
   AgentConfig,
   Alert,
   AlertPatch,
@@ -998,6 +1002,141 @@ route('GET', '/api/hunts/:id/results', ({ params, query }) => {
   const rows = h._rows.filter((r) => !hostId || r.host_id === hostId)
   return { rows: page(rows, query), total: rows.length }
 })
+
+// --- AI analyst -----------------------------------------------------------------------------
+
+const aiSettings: AISettings = {
+  enabled: true,
+  provider: 'anthropic',
+  model: 'claude-opus-5-5',
+  min_severity: 'medium',
+  daily_limit: 50,
+  max_tool_calls: 20,
+  key_set: true,
+  key_source: 'settings',
+  key_hint: '...k3Yq',
+  ready: true,
+  providers: [
+    { id: 'anthropic', name: 'Claude (Anthropic)', available: true },
+    { id: 'openai', name: 'OpenAI (ChatGPT)', available: false },
+    { id: 'gemini', name: 'Google Gemini', available: false },
+    { id: 'local', name: 'Local model', available: false },
+  ],
+  default_model: 'claude-opus-5-5',
+  auto_today: 3,
+}
+
+const triages: Record<string, AITriage> = {}
+
+function sampleReport(a: Alert): AIReport {
+  return {
+    verdict: 'suspicious',
+    confidence: 'medium',
+    severity_assessment: a.severity,
+    summary: `${a.process_name ?? 'A process'} on ${a.hostname} matched "${a.rule.title}". The parent process and timing look unusual for this host; a person should confirm whether it was expected.`,
+    analysis:
+      'The alerting process was started by an interactive shell outside the usual maintenance window. No other host shows the same command line in the last 7 days. The process made one outbound connection that the firewall allowed.',
+    evidence: a.event_ids.slice(0, 2).map((id) => ({ event_id: id, observation: 'Matching process start.' })),
+    mitre: a.mitre.filter((m) => m.technique_id).map((m) => ({ technique_id: m.technique_id!, name: m.technique ?? '' })),
+    recommended_actions: [
+      { action: 'Ask the owner of the host whether this was them', reason: 'Interactive use explains it if so.' },
+      { action: 'Check the destination of the outbound connection', reason: 'It is the only external contact.' },
+    ],
+    open_questions: ['Who was logged in at the time?'],
+  }
+}
+
+function finishTriage(a: Alert, t: AITriage) {
+  const report = sampleReport(a)
+  Object.assign(t, {
+    status: 'done',
+    verdict: report.verdict,
+    confidence: report.confidence,
+    report,
+    model: aiSettings.model,
+    provider: 'anthropic',
+    tool_calls: 4,
+    usage: { input_tokens: 21000, output_tokens: 1400, cache_read_tokens: 52000 },
+    finished_at: new Date().toISOString(),
+    transcript: [
+      { tool: 'get_process_tree', input: { host_id: a.host_id, entity_id: a.process_entity_id }, output: '{"process": {...}}', at: new Date().toISOString(), ms: 12 },
+      { tool: 'search_events', input: { query: `process.name:${a.process_name ?? '*'}` }, output: '{"total_matching": 1, ...}', at: new Date().toISOString(), ms: 30 },
+    ],
+  } satisfies Partial<AITriage>)
+  a.ai_triage = { status: 'done', verdict: t.verdict, confidence: t.confidence }
+}
+
+// One finished investigation so the panel has something to show.
+if (alerts[0]) {
+  const t: AITriage = { alert_id: alerts[0].id, status: 'done', trigger: 'auto', tool_calls: 0, usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, created_at: new Date().toISOString() }
+  triages[alerts[0].id] = t
+  finishTriage(alerts[0], t)
+}
+
+route('GET', '/api/alerts/:id/triage', ({ params }) => {
+  getAlertOr404(params.id)
+  return { triage: triages[params.id] ?? null, available: aiSettings.ready, reason: aiSettings.not_ready_reason }
+})
+
+route(
+  'POST',
+  '/api/alerts/:id/triage',
+  ({ params, user }) => {
+    const a = getAlertOr404(params.id)
+    const cur = triages[a.id]
+    if (cur && (cur.status === 'queued' || cur.status === 'running')) fail(409, 'an investigation of this alert is already queued or running')
+    const t: AITriage = {
+      alert_id: a.id, status: 'queued', trigger: 'manual', requested_by: user?.username, tool_calls: 0,
+      usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, created_at: new Date().toISOString(),
+    }
+    triages[a.id] = t
+    a.ai_triage = { status: 'queued' }
+    setTimeout(() => {
+      t.status = 'running'
+      t.started_at = new Date().toISOString()
+      a.ai_triage = { status: 'running' }
+    }, 1500)
+    setTimeout(() => finishTriage(a, t), 5000)
+    return t
+  },
+  { role: 'analyst' },
+)
+
+route('GET', '/api/settings/ai', () => aiSettings, { role: 'admin' })
+
+route(
+  'PUT',
+  '/api/settings/ai',
+  ({ body }) => {
+    const b = obj(body) as Partial<AISettingsUpdate>
+    if (b.daily_limit !== undefined && (b.daily_limit < 1 || b.daily_limit > 10000)) fail(400, 'daily_limit must be between 1 and 10000')
+    Object.assign(aiSettings, {
+      enabled: !!b.enabled, provider: b.provider ?? aiSettings.provider, model: b.model || aiSettings.default_model,
+      min_severity: b.min_severity ?? aiSettings.min_severity, daily_limit: b.daily_limit ?? aiSettings.daily_limit,
+      max_tool_calls: b.max_tool_calls ?? aiSettings.max_tool_calls,
+    })
+    if (b.clear_api_key) Object.assign(aiSettings, { key_set: false, key_hint: undefined, key_source: undefined })
+    else if (b.api_key) Object.assign(aiSettings, { key_set: true, key_hint: '...' + b.api_key.slice(-4), key_source: 'settings' })
+    const ready = aiSettings.enabled && aiSettings.key_set && aiSettings.provider === 'anthropic'
+    Object.assign(aiSettings, {
+      ready,
+      not_ready_reason: ready ? undefined : !aiSettings.enabled ? 'the AI analyst is turned off' : !aiSettings.key_set ? 'no API key is set' : 'the selected provider is not available yet',
+    })
+    return aiSettings
+  },
+  { role: 'admin' },
+)
+
+route(
+  'POST',
+  '/api/settings/ai/test',
+  ({ body }) => {
+    const b = obj(body) as Partial<AISettingsUpdate>
+    if (!aiSettings.key_set && !b.api_key) return { ok: false, error: 'no API key is set' }
+    return { ok: true, model: b.model || aiSettings.model }
+  },
+  { role: 'admin' },
+)
 
 // --- settings and admin ---------------------------------------------------------------------------
 

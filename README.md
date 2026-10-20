@@ -12,6 +12,9 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
   joins them to endpoint processes by Community ID.
 - **Docker-first backend.** `docker compose up` runs the server and ClickHouse. A single
   container "lite" mode uses SQLite. Retention by age, by size, or both.
+- **AI analyst.** New alerts above a chosen severity are triaged by Claude through read-only
+  tools: verdict, confidence, evidence and recommended next steps, written next to the
+  alert. It annotates only. OpenAI, Gemini and local models are planned.
 - **Automatic updates.** A cron job on the Docker host rebuilds and redeploys the server
   when the git branch moves, with health checks and rollback. Agents that opt in update
   themselves to releases signed with a key the server never holds.
@@ -37,6 +40,7 @@ For Unraid hosts, see [deploy/unraid](deploy/unraid/README.md).
 - [Architecture](docs/architecture.md)
 - [Agent protocol](docs/protocol.md)
 - [Console REST API](docs/api.md)
+- [AI analyst](docs/ai-analyst.md)
 
 ## Building from source
 

@@ -43,6 +43,8 @@ services:
       HOMEXDR_RETENTION_MAX_SIZE: ${HOMEXDR_RETENTION_MAX_SIZE:-}
       HOMEXDR_SECURE_COOKIES: ${HOMEXDR_SECURE_COOKIES:-false}
       HOMEXDR_SYSLOG_ALLOW: ${HOMEXDR_SYSLOG_ALLOW:-}
+      # Optional: Claude API key for the AI analyst (otherwise set it in the console).
+      HOMEXDR_ANTHROPIC_API_KEY: ${HOMEXDR_ANTHROPIC_API_KEY:-}
       HOMEXDR_LOG_LEVEL: ${HOMEXDR_LOG_LEVEL:-info}
     ports:
       - "${HOMEXDR_CONSOLE_PORT:-8080}:8080/tcp"

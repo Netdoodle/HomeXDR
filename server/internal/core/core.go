@@ -14,6 +14,7 @@ import (
 	"github.com/Netdoodle/homexdr/server/internal/events"
 	"github.com/Netdoodle/homexdr/server/internal/pki"
 	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/server/internal/triage"
 	"github.com/Netdoodle/homexdr/shared/api"
 )
 
@@ -30,6 +31,8 @@ type Core struct {
 	Syslog *SyslogStats
 	// Release is the signed agent release offered to agents (release.go).
 	Release *Release
+	// Triage is the AI analyst; new alerts are handed to it (it decides whether to run).
+	Triage *triage.Service
 }
 
 // New builds a Core and loads rules.
@@ -41,6 +44,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 		Syslog: NewSyslogStats(),
 	}
 	c.Release = NewRelease(cfg.DownloadsDir, cfg.SignaturesDir, log)
+	c.Triage = triage.New(st, ev, log)
 	c.Rules = NewRuleSet(c)
 	if err := c.Rules.Reload(ctx); err != nil {
 		return nil, err

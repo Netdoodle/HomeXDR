@@ -5,8 +5,38 @@ import { artifactDefaults, normalizeArtifactParams, validateArtifactParams } fro
 import { actionAllowed, commandParamsSummary, describeCommand } from './commands'
 import { eventSummary, leafPaths } from './fields'
 import { huntTargetHosts } from './hunts'
+import { AUTONOMY_CHOICES, DATA_CHOICES, eventSearchHref, formatTokens, TRIGGER_CHOICES, triggerChoice } from './ai'
 import { formatSizeSetting } from './format'
 import { agentUrlOptions, buildInstallCommands, normalizeAgentUrl, shellQuote } from './install'
+
+describe('AI analyst helpers', () => {
+  it('offers the three trigger levels with notes', () => {
+    expect(TRIGGER_CHOICES.map((c) => c.value)).toEqual(['medium', 'high', 'informational'])
+    expect(triggerChoice('medium')?.note).toMatch(/cost/)
+    expect(triggerChoice('low')).toBeUndefined()
+    expect(TRIGGER_CHOICES.every((c) => c.note.length > 0)).toBe(true)
+  })
+
+  it('only offers built options for data and autonomy', () => {
+    expect(DATA_CHOICES.filter((c) => !c.planned).map((c) => c.value)).toEqual(['as-is'])
+    expect(AUTONOMY_CHOICES.filter((c) => !c.planned).map((c) => c.value)).toEqual(['annotate'])
+  })
+
+  it('links evidence to a search over the event ID', () => {
+    const href = eventSearchHref('06abc"x', '2026-10-20T05:00:00Z')
+    const sp = new URLSearchParams(href.split('?')[1])
+    expect(href.startsWith('/search?')).toBe(true)
+    expect(sp.get('q')).toBe('id:"06abc\\"x"')
+    expect(sp.get('range')).toBe('custom')
+    expect(sp.get('from')).toBe('2026-09-20T05:00:00.000Z')
+  })
+
+  it('formats token counts', () => {
+    expect(formatTokens(950)).toBe('950')
+    expect(formatTokens(21_400)).toBe('21k')
+    expect(formatTokens(1_250_000)).toBe('1.3M')
+  })
+})
 
 describe('formatSizeSetting', () => {
   it('keeps the units a size was configured in', () => {

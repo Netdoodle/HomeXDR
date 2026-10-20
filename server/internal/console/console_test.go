@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -275,5 +276,82 @@ func TestConsoleFlow(t *testing.T) {
 	}
 	if code, au := admin.do("GET", "/api/audit", nil, false); code != 200 || au["total"].(float64) < 5 {
 		t.Fatalf("audit = %d %v", code, au)
+	}
+}
+
+func TestAISettingsAndTriage(t *testing.T) {
+	ctx := context.Background()
+	c, srv := setup(t)
+	admin := newClient(t, srv)
+	if code, _ := admin.do("POST", "/api/setup", map[string]string{"username": "admin", "password": "a long enough password"}, true); code != 200 {
+		t.Fatalf("setup = %d", code)
+	}
+	const key = "sk-ant-test-1234567890abcdef"
+	noKey := func(body map[string]any) {
+		t.Helper()
+		b, _ := json.Marshal(body)
+		if strings.Contains(string(b), key) || strings.Contains(string(b), "1234567890") {
+			t.Fatalf("API key leaked: %s", b)
+		}
+	}
+	code, body := admin.do("GET", "/api/settings/ai", nil, false)
+	if code != 200 || body["key_set"] != false || body["ready"] != false || body["min_severity"] != "medium" || body["model"] != "claude-opus-5-5" {
+		t.Fatalf("defaults = %d %v", code, body)
+	}
+	settings := map[string]any{"enabled": true, "provider": "anthropic", "model": "claude-opus-5-5", "min_severity": "medium",
+		"daily_limit": 25, "max_tool_calls": 15, "api_key": key}
+	code, body = admin.do("PUT", "/api/settings/ai", settings, true)
+	if code != 200 || body["key_set"] != true || body["key_hint"] != "...cdef" || body["ready"] != true || body["daily_limit"] != float64(25) {
+		t.Fatalf("put = %d %v", code, body)
+	}
+	noKey(body)
+	// Saving without api_key keeps the stored key.
+	delete(settings, "api_key")
+	settings["min_severity"] = "high"
+	code, body = admin.do("PUT", "/api/settings/ai", settings, true)
+	if code != 200 || body["key_set"] != true || body["min_severity"] != "high" {
+		t.Fatalf("put without key = %d %v", code, body)
+	}
+	_, body = admin.do("GET", "/api/settings/ai", nil, false)
+	noKey(body)
+	_, audit := admin.do("GET", "/api/audit", nil, false)
+	noKey(audit)
+	if !strings.Contains(fmt.Sprint(audit), "API key changed") {
+		t.Fatalf("audit does not record the key change: %v", audit)
+	}
+	if code, _ := admin.do("PUT", "/api/settings/ai", map[string]any{"provider": "acme", "min_severity": "medium", "daily_limit": 1, "max_tool_calls": 1}, true); code != 400 {
+		t.Fatalf("bad provider = %d", code)
+	}
+
+	// Triage endpoints on a real alert.
+	if _, err := c.State.CreateEndpoint(ctx, "h1", api.HostInfo{Hostname: "lab-1", OS: event.OS{Platform: "linux"}}, nil, "1"); err != nil {
+		t.Fatal(err)
+	}
+	ev := &event.Event{ID: event.NewID(), Timestamp: time.Now(), Host: event.Host{ID: "h1", Name: "lab-1"},
+		Event: event.Meta{Category: []string{"process"}, Type: []string{"start"}}, Process: &event.Process{EntityID: "p1", Name: "nc"}}
+	a, _, err := c.State.RecordAlert(ctx, store.AlertInput{Rule: store.AlertRule{ID: "r", Title: "Netcat", Level: "high"}, Severity: "high", Event: ev})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, body = admin.do("GET", "/api/alerts/"+a.ID+"/triage", nil, false)
+	if code != 200 || body["triage"] != nil || body["available"] != true {
+		t.Fatalf("triage before = %d %v", code, body)
+	}
+	if code, body := admin.do("POST", "/api/alerts/"+a.ID+"/triage", nil, true); code != http.StatusAccepted || body["status"] != "queued" || body["trigger"] != "manual" {
+		t.Fatalf("request = %d %v", code, body)
+	}
+	if code, _ := admin.do("POST", "/api/alerts/"+a.ID+"/triage", nil, true); code != http.StatusConflict {
+		t.Fatalf("second request = %d", code)
+	}
+	code, body = admin.do("GET", "/api/alerts/"+a.ID+"/triage", nil, false)
+	if code != 200 || body["triage"].(map[string]any)["status"] != "queued" {
+		t.Fatalf("triage after = %d %v", code, body)
+	}
+	if code, body := admin.do("GET", "/api/alerts?limit=5", nil, false); code != 200 ||
+		body["alerts"].([]any)[0].(map[string]any)["ai_triage"].(map[string]any)["status"] != "queued" {
+		t.Fatalf("alert list lacks ai_triage: %v", body)
+	}
+	if code, _ := admin.do("GET", "/api/alerts/nope/triage", nil, false); code != 404 {
+		t.Fatalf("missing alert = %d", code)
 	}
 }

@@ -173,6 +173,7 @@ func serve() error {
 		run("syslog", func() error { return lis.Run(ctx, cfg.SyslogAddr) })
 	}
 	go c.RunMaintenance(ctx)
+	go c.Triage.Run(ctx)
 
 	if n, _ := st.CountUsers(ctx); n == 0 {
 		log.Info("no users yet: open the console to create the admin account", "addr", cfg.HTTPAddr)

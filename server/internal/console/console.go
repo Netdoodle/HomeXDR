@@ -61,6 +61,8 @@ func New(c *core.Core) *Handler {
 	h.route("PATCH /api/alerts/{id}", analyst, h.patchAlert)
 	h.route("POST /api/alerts/bulk", analyst, h.bulkAlerts)
 	h.route("POST /api/alerts/{id}/notes", analyst, h.addNote)
+	h.route("GET /api/alerts/{id}/triage", viewer, h.alertTriage)
+	h.route("POST /api/alerts/{id}/triage", analyst, h.requestTriage)
 
 	h.route("GET /api/rules", viewer, h.listRules)
 	h.route("GET /api/rules/{id}", viewer, h.getRule)
@@ -91,6 +93,9 @@ func New(c *core.Core) *Handler {
 	h.route("DELETE /api/users/{id}", admin, h.deleteUser)
 	h.route("GET /api/audit", admin, h.listAudit)
 	h.route("GET /api/integrations", viewer, h.integrations)
+	h.route("GET /api/settings/ai", admin, h.getAISettings)
+	h.route("PUT /api/settings/ai", admin, h.putAISettings)
+	h.route("POST /api/settings/ai/test", admin, h.testAISettings)
 
 	h.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")

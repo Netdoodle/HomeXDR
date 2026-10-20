@@ -100,6 +100,8 @@ type Alert struct {
 	Event           *event.Event   `json:"event,omitempty"`
 	Events          []*event.Event `json:"events,omitempty"`
 	Notes           []Note         `json:"notes"`
+	// AITriage summarizes the AI analyst's investigation, if there is one.
+	AITriage *TriageSummary `json:"ai_triage,omitempty"`
 }
 
 // AlertInput describes a detection hit.
@@ -235,7 +237,12 @@ func scanAlert(row interface{ Scan(...any) error }) (*Alert, error) {
 
 // GetAlert returns one alert.
 func (s *Store) GetAlert(ctx context.Context, id string) (*Alert, error) {
-	return scanAlert(s.db.QueryRowContext(ctx, `SELECT `+alertCols+` FROM alerts WHERE id = ?`, id))
+	a, err := scanAlert(s.db.QueryRowContext(ctx, `SELECT `+alertCols+` FROM alerts WHERE id = ?`, id))
+	if err != nil {
+		return nil, err
+	}
+	s.attachTriage(ctx, []*Alert{a})
+	return a, nil
 }
 
 // AlertFilter selects alerts.
@@ -310,7 +317,12 @@ func (s *Store) ListAlerts(ctx context.Context, f AlertFilter) ([]*Alert, int, e
 		}
 		out = append(out, a)
 	}
-	return out, total, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	rows.Close()
+	s.attachTriage(ctx, out)
+	return out, total, nil
 }
 
 // UpdateAlert sets status and/or assignee (nil leaves a field unchanged).

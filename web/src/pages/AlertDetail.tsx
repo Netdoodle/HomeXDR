@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
 import { ALERT_STATUSES, api, isApiError, queryKeys, type Alert, type AlertPatch, type AlertStatus } from '../api'
 import { useCan, useMe, useUser } from '../components/Auth'
+import { AITriagePanel } from '../components/AITriage'
 import { AlertStatusBadge, MitreTag, OsLabel, RiskScore, SeverityBadge, StatusDot, Tags } from '../components/Badges'
 import { EventTable } from '../components/EventTable'
 import { Icon } from '../components/Icon'
@@ -136,6 +137,8 @@ function AlertView({ alert: a }: { alert: Alert }) {
               </div>
             </div>
           </section>
+
+          <AITriagePanel alertId={a.id} />
 
           <section className="panel">
             <div className="panel-header">

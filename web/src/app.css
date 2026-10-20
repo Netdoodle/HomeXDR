@@ -1922,3 +1922,69 @@ dialog.modal::backdrop {
   height: 100%;
   background: var(--text-muted);
 }
+
+/* AI analyst ------------------------------------------------------------------------- */
+.badge.ai {
+  font-weight: 600;
+}
+.badge.ai.malicious {
+  border-color: color-mix(in srgb, var(--danger) 70%, transparent);
+  background: var(--danger-soft);
+}
+.badge.ai.suspicious {
+  border-color: color-mix(in srgb, var(--warn) 70%, transparent);
+  background: var(--warn-soft);
+}
+.badge.ai.benign {
+  border-color: color-mix(in srgb, var(--ok) 70%, transparent);
+  background: var(--ok-soft);
+}
+.badge.ai.inconclusive,
+.badge.ai.pending,
+.badge.ai.failed {
+  color: var(--text-muted);
+  background: transparent;
+}
+.choice-list {
+  display: grid;
+  gap: 8px;
+}
+.choice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  cursor: pointer;
+}
+.choice:hover {
+  background: var(--surface-hover);
+}
+.choice.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.choice.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.choice input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.choice-title {
+  font-weight: 600;
+}
+.choice-note {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.ai-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  margin: 0;
+}

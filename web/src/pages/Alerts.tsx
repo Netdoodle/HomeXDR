@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { ALERT_STATUSES, api, queryKeys, SEVERITIES, type AlertFilter, type AlertStatus } from '../api'
 import { useCan, useUser } from '../components/Auth'
+import { AIVerdictBadge } from '../components/AITriage'
 import { AlertStatusBadge, MitreTag, SeverityBadge } from '../components/Badges'
 import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
@@ -279,6 +280,11 @@ export function AlertsPage() {
                         <td className="right num">{formatNumber(a.count)}</td>
                         <td>
                           <AlertStatusBadge status={a.status} />
+                          {a.ai_triage ? (
+                            <div style={{ marginTop: 3 }}>
+                              <AIVerdictBadge triage={a.ai_triage} />
+                            </div>
+                          ) : null}
                         </td>
                         <td className="truncate">{a.assignee ?? <span className="empty-cell">—</span>}</td>
                         <td>

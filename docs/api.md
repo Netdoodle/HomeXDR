@@ -167,6 +167,8 @@ the network/file/registry/dns events attributed to one process.
 | PATCH | `/api/alerts/{id}` | `{"status"?, "assignee"?}` → `Alert` (analyst+) |
 | POST | `/api/alerts/bulk` | `{"ids": string[], "status"?, "assignee"?}` → `{"updated": n}` |
 | POST | `/api/alerts/{id}/notes` | `{"text"}` → `Alert` |
+| GET | `/api/alerts/{id}/triage` | `{"triage": AITriage \| null, "available": bool, "reason"?: string}` (AI analyst, below) |
+| POST | `/api/alerts/{id}/triage` | queue an AI investigation → `202 AITriage` (analyst+); `409` if one is queued/running or the analyst is not set up |
 
 ```ts
 type Alert = {
@@ -183,10 +185,48 @@ type Alert = {
   event?: Event;                 // the first matching event
   events?: Event[];              // detail view only
   notes: { author: string; text: string; at: string }[];
+  ai_triage?: { status: AITriageStatus; verdict?: AIVerdict; confidence?: "low" | "medium" | "high" };
 }
 ```
 
 Risk score from severity: informational 10, low 21, medium 47, high 73, critical 99.
+
+## AI analyst
+
+See [ai-analyst.md](ai-analyst.md). The AI only writes its report; nothing here lets it
+change alerts or anything else.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/settings/ai` | `AISettings` (admin) |
+| PUT | `/api/settings/ai` | `AISettingsUpdate` → `AISettings` (admin); audited without the key |
+| POST | `/api/settings/ai/test` | `AISettingsUpdate` → `{"ok": bool, "model"?: string, "error"?: string}` (admin): a minimal request with the given values |
+
+```ts
+type AIVerdict = "benign" | "suspicious" | "malicious" | "inconclusive"
+type AITriageStatus = "queued" | "running" | "done" | "failed" | "refused" | "skipped"
+type AITriage = {
+  alert_id: string; status: AITriageStatus; trigger: "auto" | "manual"; requested_by?: string;
+  provider?: string; model?: string; verdict?: AIVerdict; confidence?: "low" | "medium" | "high";
+  report?: {
+    verdict: AIVerdict; confidence: string; severity_assessment: Severity; summary: string; analysis: string;
+    evidence: { event_id: string; observation: string }[]; mitre: { technique_id: string; name: string }[];
+    recommended_actions: { action: string; reason: string }[]; open_questions: string[];
+  };
+  transcript?: { tool: string; input: any; output: string; error?: boolean; at: string; ms: number }[];
+  error?: string; tool_calls: number;
+  usage: { input_tokens: number; output_tokens: number; cache_read_tokens: number };
+  created_at: string; started_at?: string; finished_at?: string;
+}
+type AISettings = {
+  enabled: boolean; provider: string; model: string; min_severity: Severity; daily_limit: number; max_tool_calls: number;
+  key_set: boolean; key_source?: "settings" | "environment"; key_hint?: string;   // the key itself is never returned
+  ready: boolean; not_ready_reason?: string; providers: { id: string; name: string; available: boolean }[];
+  default_model: string; auto_today: number;
+}
+// AISettingsUpdate: the editable fields of AISettings, plus api_key (replaces the stored key
+// when not empty) and clear_api_key.
+```
 
 ## Rules
 

@@ -460,6 +460,8 @@ export interface Alert {
   event?: Event
   events?: Event[]
   notes: AlertNote[]
+  /** the AI analyst's investigation, when there is one */
+  ai_triage?: AITriageSummary
 }
 
 export interface AlertFilter {
@@ -679,3 +681,100 @@ export interface AgentConfig {
   filters?: { category?: string; field: string; op: string; value: string }[]
   spool_max_bytes: number
 }
+
+// ---------------------------------------------------------------------------------------
+// AI analyst (docs/ai-analyst.md)
+
+export type AIVerdict = 'benign' | 'suspicious' | 'malicious' | 'inconclusive'
+export type AIConfidence = 'low' | 'medium' | 'high'
+export type AITriageStatus = 'queued' | 'running' | 'done' | 'failed' | 'refused' | 'skipped'
+
+export interface AITriageSummary {
+  status: AITriageStatus
+  verdict?: AIVerdict
+  confidence?: AIConfidence
+}
+
+export interface AIReport {
+  verdict: AIVerdict
+  confidence: AIConfidence
+  severity_assessment: Severity
+  summary: string
+  analysis: string
+  evidence: { event_id: string; observation: string }[]
+  mitre: { technique_id: string; name: string }[]
+  recommended_actions: { action: string; reason: string }[]
+  open_questions: string[]
+}
+
+export interface AIToolCall {
+  tool: string
+  input: unknown
+  /** preview of what the tool returned to the model */
+  output: string
+  error?: boolean
+  at: string
+  ms: number
+}
+
+export interface AITriage {
+  alert_id: string
+  status: AITriageStatus
+  trigger: 'auto' | 'manual'
+  requested_by?: string
+  provider?: string
+  model?: string
+  verdict?: AIVerdict
+  confidence?: AIConfidence
+  report?: AIReport
+  transcript?: AIToolCall[]
+  error?: string
+  tool_calls: number
+  usage: { input_tokens: number; output_tokens: number; cache_read_tokens: number }
+  created_at: string
+  started_at?: string
+  finished_at?: string
+}
+
+export interface AlertTriageResponse {
+  triage: AITriage | null
+  /** whether an investigation can be requested now */
+  available: boolean
+  reason?: string
+}
+
+export interface AIProvider {
+  id: string
+  name: string
+  available: boolean
+}
+
+export interface AISettings {
+  enabled: boolean
+  provider: string
+  model: string
+  min_severity: Severity
+  daily_limit: number
+  max_tool_calls: number
+  key_set: boolean
+  key_source?: 'settings' | 'environment'
+  key_hint?: string
+  ready: boolean
+  not_ready_reason?: string
+  providers: AIProvider[]
+  default_model: string
+  auto_today: number
+}
+
+export interface AISettingsUpdate {
+  enabled: boolean
+  provider: string
+  model: string
+  min_severity: Severity
+  daily_limit: number
+  max_tool_calls: number
+  /** replaces the stored key when not empty */
+  api_key?: string
+  clear_api_key?: boolean
+}
+

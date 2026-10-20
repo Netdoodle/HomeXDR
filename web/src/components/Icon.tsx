@@ -51,6 +51,7 @@ const PATHS = {
   clock: 'M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12ZM8 4.5V8l2.5 1.5',
   menu: 'M2.5 4h11M2.5 8h11M2.5 12h11',
   dot: 'M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z',
+  sparkle: 'M8 1.8 9.3 6.7 14.2 8 9.3 9.3 8 14.2 6.7 9.3 1.8 8 6.7 6.7Z',
 } as const
 
 export type IconName = keyof typeof PATHS

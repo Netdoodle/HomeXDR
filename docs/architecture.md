@@ -84,6 +84,10 @@ directive, so modules build independently without a `go.work` file.
   runs arbitrary programs, so a compromised server cannot use agents for code execution.
 - **Local policy beats the server.** Each agent's local config file lists the action types
   it will run (`allowed_actions`). The server cannot change this file.
+- **The AI analyst only annotates.** When it is set up, new alerts above a chosen severity
+  are investigated by an AI model through read-only tools, and its report is stored next to
+  the alert. It cannot change alerts, settings or rules, or run response actions, so text an
+  attacker plants in logs cannot make it change anything. See [ai-analyst.md](ai-analyst.md).
 - **Updates are signed by a key the server does not hold.** Agents update themselves only
   when their local config says so (`auto_update`), and only to releases signed with the
   release key pinned there (`update_key`). The key lives on the host that builds the server

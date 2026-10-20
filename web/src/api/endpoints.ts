@@ -3,10 +3,14 @@
 import { http, rawRequest } from './client'
 import { normalizeRule, normalizeValidate } from './normalize'
 import type {
+  AISettings,
+  AISettingsUpdate,
+  AITriage,
   AgentConfig,
   Alert,
   AlertFilter,
   AlertPatch,
+  AlertTriageResponse,
   ArtifactDef,
   AuditEntry,
   CommandRecord,
@@ -112,6 +116,8 @@ export const listAlerts = (f: AlertFilter = {}) =>
   http.get<{ alerts: Alert[]; total: number }>('/api/alerts', { ...f })
 export const getAlert = (id: string) => http.get<Alert>(`/api/alerts/${enc(id)}`)
 export const patchAlert = (id: string, patch: AlertPatch) => http.patch<Alert>(`/api/alerts/${enc(id)}`, patch)
+export const getAlertTriage = (id: string) => http.get<AlertTriageResponse>(`/api/alerts/${enc(id)}/triage`)
+export const requestAlertTriage = (id: string) => http.post<AITriage>(`/api/alerts/${enc(id)}/triage`, {})
 export const bulkAlerts = (ids: string[], patch: AlertPatch) =>
   http.post<{ updated: number }>('/api/alerts/bulk', { ids, ...patch })
 export const addAlertNote = (id: string, text: string) => http.post<Alert>(`/api/alerts/${enc(id)}/notes`, { text })
@@ -149,6 +155,9 @@ export const huntResults = (id: string, opts: { host_id?: string; limit?: number
 // Settings and admin ---------------------------------------------------------------------
 
 export const serverSettings = () => http.get<ServerSettings>('/api/settings/server')
+export const getAISettings = () => http.get<AISettings>('/api/settings/ai')
+export const putAISettings = (s: AISettingsUpdate) => http.put<AISettings>('/api/settings/ai', s)
+export const testAISettings = (s: AISettingsUpdate) => http.post<{ ok: boolean; model?: string; error?: string }>('/api/settings/ai/test', s)
 export const listTokens = () => http.get<{ tokens: EnrollmentToken[] }>('/api/enrollment-tokens')
 export const createToken = (t: EnrollmentTokenCreate) => http.post<EnrollmentToken>('/api/enrollment-tokens', t)
 export const deleteToken = (id: string) => http.del(`/api/enrollment-tokens/${enc(id)}`)
