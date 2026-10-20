@@ -31,7 +31,6 @@ under **Settings** and copy the install command for each host.
 - [Architecture](docs/architecture.md)
 - [Agent protocol](docs/protocol.md)
 - [Console REST API](docs/api.md)
-- [What we took from Wazuh, Velociraptor and Suricata](docs/inspiration.md)
 
 ## Building from source
 
