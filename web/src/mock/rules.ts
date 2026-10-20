@@ -1,3 +1,4 @@
+import { uuid } from '../lib/uuid'
 // Mock Sigma rules (detection logic only; these describe what to look for).
 
 import type { MitreMapping, Rule, Severity } from '../api/types'
@@ -313,7 +314,7 @@ export function parseRuleYaml(yaml: string): { ok: true; rule: Rule } | { ok: fa
   const mitre: MitreMapping[] = tags
     .filter((t) => /^attack\.t\d{4}/i.test(t))
     .map((t) => ({ technique_id: t.slice(7).toUpperCase() }))
-  const id = get('id') ?? crypto.randomUUID()
+  const id = get('id') ?? uuid()
   return {
     ok: true,
     rule: {

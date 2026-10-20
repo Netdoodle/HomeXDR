@@ -12,9 +12,10 @@ import { useToast } from '../components/Toast'
 import { errorMessage } from '../api/client'
 import { formatNumber } from '../lib/format'
 import { useDocumentTitle } from '../lib/hooks'
+import { uuid } from '../lib/uuid'
 
 function template(): string {
-  const id = crypto.randomUUID()
+  const id = uuid()
   return `title: Suspicious Child Of Office Application
 id: ${id}
 status: experimental
@@ -45,7 +46,7 @@ level: high
 /** Turns a built-in rule's YAML into a starting point for a custom copy. */
 function asCustomCopy(yaml: string): string {
   return yaml
-    .replace(/^id:.*$/m, `id: ${crypto.randomUUID()}`)
+    .replace(/^id:.*$/m, `id: ${uuid()}`)
     .replace(/^title:\s*(.*)$/m, (_, t: string) => `title: Custom: ${t.replace(/^Custom:\s*/, '')}`)
     .replace(/^status:.*$/m, 'status: experimental')
 }
