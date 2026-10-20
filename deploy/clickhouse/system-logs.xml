@@ -1,7 +1,15 @@
 <!-- HomeXDR: keep ClickHouse's own diagnostic tables from growing without bound.
      Mounted into /etc/clickhouse-server/config.d/ by docker-compose.yml. The profiling
      logs (several hundred MB a day on an idle server) are switched off and the rest keep
-     a week. HomeXDR's events are not affected; their retention is set in .env. -->
+     a week. HomeXDR's events are not affected; their retention is set in .env.
+
+     An install that ran before this file existed may still have system.metric_log. That
+     table has about 1,400 columns, and merging even a few thousand of its rows needs more
+     than 3 GiB, enough to hit a small container's memory limit and fail HomeXDR's inserts.
+     Once this file is in place nothing writes to it any more; detach it with clickhouse-client
+     (user homexdr, password from .env; the data stays on disk and ATTACH TABLE brings it back):
+       DETACH TABLE system.metric_log PERMANENTLY -->
+
 <clickhouse>
     <trace_log remove="1"/>
     <text_log remove="1"/>
