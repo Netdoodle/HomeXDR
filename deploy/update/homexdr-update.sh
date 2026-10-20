@@ -77,7 +77,9 @@ ensure_key() {
 }
 
 public_key() {
-  echo "ed25519:$(openssl pkey -in "$SIGNING_KEY" -pubout -outform DER | tail -c 32 | base64 -w0)"
+  # The DER public key ends with the raw 32-byte key. (-c32, not "-c 32": some coreutils
+  # builds reject the separated form.)
+  echo "ed25519:$(openssl pkey -in "$SIGNING_KEY" -pubout -outform DER | tail -c32 | base64 -w0)"
 }
 
 # sign_release <image>: signs the image's agent release manifest. Prints the signature path.

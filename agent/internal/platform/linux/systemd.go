@@ -262,6 +262,9 @@ func (systemdService) Uninstall() error {
 // Status reports the unit's active state.
 func (systemdService) Status() (string, error) {
 	if _, err := os.Stat(unitPath); err != nil {
+		if !systemdRunning() {
+			return "not managed by systemd (run by another supervisor, or not installed)", nil
+		}
 		return "not installed", nil
 	}
 	sc, err := exec.LookPath("systemctl")
