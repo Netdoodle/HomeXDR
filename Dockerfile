@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # HomeXDR server image: console, agent API, syslog intake, plus agent binaries for download.
 # Build from the repository root:  docker build -t homexdr/server .
+# deploy/update/homexdr-update.sh builds it with VERSION, COMMIT and COMMIT_TIME set.
 
 FROM node:22-alpine AS web
 WORKDIR /src/web
@@ -21,7 +22,10 @@ COPY agent/ agent/
 COPY --from=web /src/web/dist/ server/internal/webui/dist/
 ARG VERSION=dev
 ARG COMMIT=unknown
-RUN LDFLAGS="-s -w -X github.com/Netdoodle/homexdr/shared/version.Version=${VERSION} -X github.com/Netdoodle/homexdr/shared/version.Commit=${COMMIT}" && \
+# Unix time of the commit; agents only update to builds with a later commit time.
+ARG COMMIT_TIME=0
+RUN V=github.com/Netdoodle/homexdr/shared/version && \
+    LDFLAGS="-s -w -X $V.Version=${VERSION} -X $V.Commit=${COMMIT} -X $V.CommitTime=${COMMIT_TIME}" && \
     cd /src/server && go build -trimpath -ldflags "$LDFLAGS" -o /out/homexdr-server ./cmd/homexdr-server && \
     mkdir -p /out/downloads /out/data && cd /src/agent && \
     for target in linux/amd64 linux/arm64 windows/amd64; do \
@@ -29,9 +33,16 @@ RUN LDFLAGS="-s -w -X github.com/Netdoodle/homexdr/shared/version.Version=${VERS
       GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$LDFLAGS" \
         -o /out/downloads/homexdr-agent-$os-$arch$ext ./cmd/homexdr-agent || exit 1; \
     done && \
-    cd /out/downloads && sha256sum homexdr-agent-* > SHA256SUMS
+    cd /out/downloads && sha256sum homexdr-agent-* > SHA256SUMS && \
+    /out/homexdr-server release-manifest /out/downloads
 
 FROM gcr.io/distroless/static-debian12:nonroot
+ARG VERSION=dev
+ARG COMMIT=unknown
+LABEL org.opencontainers.image.title="homexdr-server" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.source="https://github.com/Netdoodle/homexdr"
 COPY --from=build /out/homexdr-server /usr/local/bin/homexdr-server
 COPY --from=build /out/downloads/ /usr/share/homexdr/downloads/
 COPY rules/ /usr/share/homexdr/rules/
@@ -39,6 +50,7 @@ COPY --from=build --chown=65532:65532 /out/data /data
 ENV HOMEXDR_DATA_DIR=/data \
     HOMEXDR_RULES_DIR=/usr/share/homexdr/rules \
     HOMEXDR_DOWNLOADS_DIR=/usr/share/homexdr/downloads \
+    HOMEXDR_SIGNATURES_DIR=/usr/share/homexdr/signatures \
     HOMEXDR_HTTP_ADDR=:8080 \
     HOMEXDR_AGENT_ADDR=:8443 \
     HOMEXDR_SYSLOG_ADDR=:5514

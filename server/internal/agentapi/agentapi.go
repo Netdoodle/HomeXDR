@@ -40,6 +40,8 @@ type Handler struct {
 func New(c *core.Core) *Handler {
 	h := &Handler{c: c, mux: http.NewServeMux()}
 	h.mux.HandleFunc("POST "+api.PathEnroll, h.enroll)
+	h.mux.HandleFunc("GET "+api.PathAgentRelease, h.releaseManifest)
+	h.mux.HandleFunc("GET "+api.PathAgentReleaseSig, h.releaseSignature)
 	h.mux.HandleFunc("GET /v1/download/{name}", h.download)
 	h.mux.HandleFunc("GET /v1/install/linux.sh", h.installScript)
 	h.mux.HandleFunc("GET /v1/ca.crt", h.caCert)
@@ -174,6 +176,9 @@ func (h *Handler) heartbeat(w http.ResponseWriter, r *http.Request, host *store.
 		resp.Config = &cfg
 	}
 	resp.CommandsPending, _ = h.c.State.HasPendingCommands(r.Context(), host.ID)
+	if rel := h.c.Release.Offer(); rel != nil && rel.Version != hb.Status.Version {
+		resp.Update = &api.AgentUpdate{Version: rel.Version, CommitTime: rel.CommitTime}
+	}
 	writeJSON(w, http.StatusOK, resp)
 	if wasOffline {
 		go h.c.CatchUpHunts(context.WithoutCancel(r.Context()), updated)
@@ -452,6 +457,29 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request, host *store.Hos
 }
 
 var downloadName = regexp.MustCompile(`^(homexdr-agent-(linux|windows|darwin)-(amd64|arm64)(\.exe)?|SHA256SUMS)$`)
+
+// releaseManifest and releaseSignature serve the same snapshot the heartbeat offers.
+func (h *Handler) releaseManifest(w http.ResponseWriter, r *http.Request) {
+	m := h.c.Release.Manifest()
+	if m == nil {
+		writeErr(w, http.StatusNotFound, "no agent release manifest bundled with this server")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(m)
+}
+
+func (h *Handler) releaseSignature(w http.ResponseWriter, r *http.Request) {
+	sig := h.c.Release.Signature()
+	if sig == nil {
+		writeErr(w, http.StatusNotFound, "this agent release is not signed: "+h.c.Release.Status().Problem)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(sig)
+}
 
 func (h *Handler) download(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")

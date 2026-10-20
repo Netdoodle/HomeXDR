@@ -12,17 +12,20 @@ import (
 const linuxInstall = `#!/bin/sh
 # HomeXDR agent installer for Linux.
 #   sh install.sh --token <enrollment token> --ca-pin sha256:<hex> [--labels a,b]
+#                 [--update-key ed25519:<base64>]   enable signed automatic updates
 set -eu
 SERVER="__SERVER__"
 TOKEN=""
 PIN=""
 LABELS=""
+UPDATE_KEY=""
 die() { echo "homexdr: $*" >&2; exit 1; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --token) TOKEN="$2"; shift 2 ;;
     --ca-pin) PIN="$2"; shift 2 ;;
     --labels) LABELS="$2"; shift 2 ;;
+    --update-key) UPDATE_KEY="$2"; shift 2 ;;
     --server) SERVER="$2"; shift 2 ;;
     *) die "unknown option $1" ;;
   esac
@@ -56,6 +59,7 @@ curl -fsSL --cacert "$TMP/ca.crt" "$SERVER/v1/download/SHA256SUMS" -o "$TMP/SHA2
 install -m 0755 "$TMP/$BIN" /usr/local/bin/homexdr-agent
 set -- install --server "$SERVER" --token "$TOKEN" --ca-pin "$PIN"
 [ -n "$LABELS" ] && set -- "$@" --labels "$LABELS"
+[ -n "$UPDATE_KEY" ] && set -- "$@" --update-key "$UPDATE_KEY"
 /usr/local/bin/homexdr-agent "$@"
 echo "homexdr: agent installed and enrolled"
 `

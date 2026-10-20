@@ -1,0 +1,332 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN [
+<!ENTITY name    "homexdr-agent">
+<!ENTITY author  "Netdoodle">
+<!ENTITY version "2026.10.20">
+<!ENTITY plugdir "/usr/local/emhttp/plugins/&name;">
+<!ENTITY cfgdir  "/boot/config/plugins/&name;">
+]>
+<!--
+HomeXDR agent for Unraid. Unraid's root file system lives in RAM, so a normal install
+would be gone after a reboot, and there is no systemd. Unraid installs every plugin in
+/boot/config/plugins at boot; this one sets up the agent service each time:
+
+  - the agent binary, its config (local policy) and data stay in AGENT_DIR on a pool or
+    disk, so updates the agent installs itself survive reboots;
+  - it starts when the array's disks are mounted and stops before they are unmounted,
+    so it never holds the array open;
+  - a supervisor restarts it if it exits; logs go to the system log (tag homexdr-agent).
+
+Install: copy this file to /boot/config/plugins/ and run
+  plugin install /boot/config/plugins/homexdr-agent.plg
+then fill in /boot/config/plugins/homexdr-agent/homexdr-agent.cfg (or enroll by hand).
+See deploy/unraid/README.md.
+-->
+<PLUGIN name="&name;" author="&author;" version="&version;" min="6.12.0" icon="shield" support="https://github.com/Netdoodle/homexdr">
+
+<CHANGES>
+###2026.10.20
+- Install the HomeXDR agent at boot and run it while the array is started.
+</CHANGES>
+
+<!-- Start from a clean plugin folder so an upgrade replaces every file. -->
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+if [ -x /usr/local/emhttp/plugins/homexdr-agent/scripts/rc.homexdr-agent ]; then
+  /usr/local/emhttp/plugins/homexdr-agent/scripts/rc.homexdr-agent stop
+fi
+rm -rf /usr/local/emhttp/plugins/homexdr-agent
+]]>
+</INLINE>
+</FILE>
+
+<!-- Settings; written only when the file does not exist yet. -->
+<FILE Name="&cfgdir;/&name;.cfg">
+<INLINE>
+<![CDATA[
+# HomeXDR agent on Unraid (homexdr-agent plugin). After editing, restart the agent:
+#   /usr/local/emhttp/plugins/homexdr-agent/scripts/rc.homexdr-agent restart
+
+# Folder for the agent binary, its config (local policy) and data (identity, event
+# spool). It must be on a pool or array disk, not the flash. The agent runs while the
+# array is started.
+AGENT_DIR="/mnt/user/appdata/homexdr-agent"
+
+# Agent API address and CA pin from the console's Settings page. Used to download the
+# agent the first time and to enroll.
+SERVER=""
+CA_PIN=""
+
+# Enrollment token for the first start; it is cleared from this file after enrolling.
+TOKEN=""
+LABELS="unraid"
+
+# Release key (ed25519:...) from the console's Settings page. Lets the agent install
+# signed updates by itself; empty means you update it by hand.
+UPDATE_KEY=""
+
+# Response actions this host allows (local policy, applied when enrolling), comma
+# separated; empty means all. Leave out host.isolate on the server that runs HomeXDR
+# itself, or isolating it would cut every other agent off.
+ALLOWED_ACTIONS=""
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="&plugdir;/README.md">
+<INLINE>
+**HomeXDR Agent**
+
+Runs the HomeXDR endpoint agent on this server. It is set up at boot, started when the array starts and stopped before the array stops. Settings: /boot/config/plugins/homexdr-agent/homexdr-agent.cfg. Logs: system log, tag homexdr-agent. Status: `homexdr-agent status`.
+</INLINE>
+</FILE>
+
+<FILE Name="&plugdir;/scripts/rc.homexdr-agent" Mode="0755">
+<INLINE>
+<![CDATA[
+#!/bin/bash
+# HomeXDR agent service on Unraid: rc.homexdr-agent start|stop|restart|status
+CFG=/boot/config/plugins/homexdr-agent/homexdr-agent.cfg
+PLUGDIR=/usr/local/emhttp/plugins/homexdr-agent
+PIDFILE=/var/run/homexdr-agent.pid
+AGENT_DIR=/mnt/user/appdata/homexdr-agent
+# shellcheck source=/dev/null
+[ -r "$CFG" ] && . "$CFG"
+
+running() { [ -s "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
+
+case "${1:-}" in
+start)
+  if running; then
+    echo "homexdr-agent is already running"
+    exit 0
+  fi
+  parent=$(dirname "$AGENT_DIR")
+  if [ ! -d "$parent" ]; then
+    logger -t homexdr-agent "not starting: $parent is not available (is the array started?)"
+    echo "homexdr-agent: $parent is not available (is the array started?)"
+    exit 1
+  fi
+  mkdir -p "$AGENT_DIR/bin" "$AGENT_DIR/data" && chmod 700 "$AGENT_DIR" "$AGENT_DIR/data"
+  mkdir -p /etc/homexdr
+  ln -sfn "$AGENT_DIR/agent.json" /etc/homexdr/agent.json
+  ln -sfn "$AGENT_DIR/bin/homexdr-agent" /usr/local/bin/homexdr-agent
+  rm -f "$PIDFILE"
+  setsid "$PLUGDIR/scripts/supervise" </dev/null >/dev/null 2>&1 &
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    running && break
+    sleep 0.2
+  done
+  echo "homexdr-agent started"
+  ;;
+stop)
+  if ! running; then
+    rm -f "$PIDFILE"
+    echo "homexdr-agent is not running"
+    exit 0
+  fi
+  pid=$(cat "$PIDFILE")
+  kill -TERM "$pid"
+  for _ in $(seq 1 45); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 1
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    pkill -KILL -P "$pid"
+    kill -KILL "$pid"
+    logger -t homexdr-agent "the agent did not stop within 45 seconds and was killed"
+  fi
+  rm -f "$PIDFILE"
+  echo "homexdr-agent stopped"
+  ;;
+restart)
+  "$0" stop
+  "$0" start
+  ;;
+status)
+  if running; then
+    echo "supervisor: running (pid $(cat "$PIDFILE"))"
+  else
+    echo "supervisor: not running"
+  fi
+  if [ -x "$AGENT_DIR/bin/homexdr-agent" ]; then
+    "$AGENT_DIR/bin/homexdr-agent" status --config "$AGENT_DIR/agent.json"
+  fi
+  ;;
+*)
+  echo "usage: $0 start|stop|restart|status"
+  exit 2
+  ;;
+esac
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="&plugdir;/scripts/supervise" Mode="0755">
+<INLINE>
+<![CDATA[
+#!/bin/bash
+# Keeps the HomeXDR agent running on Unraid (started by rc.homexdr-agent). Downloads and
+# enrolls the agent first if needed. Logs go to syslog with the tag homexdr-agent.
+CFG=/boot/config/plugins/homexdr-agent/homexdr-agent.cfg
+AGENT_DIR=/mnt/user/appdata/homexdr-agent
+SERVER="" CA_PIN="" TOKEN="" LABELS="" UPDATE_KEY="" ALLOWED_ACTIONS=""
+# shellcheck source=/dev/null
+[ -r "$CFG" ] && . "$CFG"
+BIN="$AGENT_DIR/bin/homexdr-agent"
+CONF="$AGENT_DIR/agent.json"
+DATA="$AGENT_DIR/data"
+
+echo $$ >/var/run/homexdr-agent.pid
+exec > >(exec logger -t homexdr-agent) 2>&1
+
+stop=0
+child=0
+trap 'stop=1; [ "$child" -gt 0 ] && kill -TERM "$child" 2>/dev/null' TERM INT
+
+pause() {
+  sleep "$1" &
+  wait $!
+}
+
+# bootstrap downloads the agent from the server, checking the server's CA against
+# CA_PIN and the binary against the server's SHA256SUMS. After that the agent keeps
+# itself up to date when UPDATE_KEY is set.
+bootstrap() {
+  [ -x "$BIN" ] && return 0
+  if [ -z "$SERVER" ] || [ -z "$CA_PIN" ]; then
+    echo "no agent at $BIN: set SERVER and CA_PIN in $CFG"
+    return 1
+  fi
+  local name tmp got
+  case "$(uname -m)" in
+    x86_64) name=homexdr-agent-linux-amd64 ;;
+    aarch64) name=homexdr-agent-linux-arm64 ;;
+    *) echo "unsupported architecture $(uname -m)"; return 1 ;;
+  esac
+  tmp=$(mktemp -d)
+  if curl -fsSk --max-time 30 "$SERVER/v1/ca.crt" -o "$tmp/ca.crt"; then
+    got="sha256:$(openssl x509 -in "$tmp/ca.crt" -outform der | sha256sum | cut -d' ' -f1)"
+    if [ "$got" != "$CA_PIN" ]; then
+      echo "CA pin mismatch: $SERVER presented $got"
+    elif curl -fsS --max-time 300 --cacert "$tmp/ca.crt" "$SERVER/v1/download/$name" -o "$tmp/$name" &&
+      curl -fsS --max-time 30 --cacert "$tmp/ca.crt" "$SERVER/v1/download/SHA256SUMS" -o "$tmp/SHA256SUMS" &&
+      (cd "$tmp" && grep " $name\$" SHA256SUMS | sha256sum -c --quiet -); then
+      install -m 0755 "$tmp/$name" "$BIN" && echo "installed the agent from $SERVER"
+    else
+      echo "could not download the agent from $SERVER"
+    fi
+  else
+    echo "cannot reach $SERVER yet"
+  fi
+  rm -rf "$tmp"
+  [ -x "$BIN" ]
+}
+
+enrolled() { [ -s "$DATA/agent.id" ] && [ -s "$CONF" ]; }
+
+enroll() {
+  enrolled && return 0
+  if [ -z "$TOKEN" ] || [ -z "$SERVER" ] || [ -z "$CA_PIN" ]; then
+    echo "not enrolled: set SERVER, CA_PIN and TOKEN in $CFG"
+    return 1
+  fi
+  if [ -n "$ALLOWED_ACTIONS" ] && [ ! -e "$CONF" ]; then
+    # Write the local policy first; enrolling keeps an existing config file.
+    local list
+    list=$(echo "$ALLOWED_ACTIONS" | tr ', ' '\n\n' | sed '/^$/d; s/.*/"&"/' | paste -sd, -)
+    (umask 077 && echo "{\"allowed_actions\": [$list]}" >"$CONF")
+  fi
+  local args=(enroll --config "$CONF" --data-dir "$DATA" --server "$SERVER" --token "$TOKEN" --ca-pin "$CA_PIN")
+  [ -n "$LABELS" ] && args+=(--labels "$LABELS")
+  [ -n "$UPDATE_KEY" ] && args+=(--update-key "$UPDATE_KEY")
+  if "$BIN" "${args[@]}"; then
+    sed -i 's/^TOKEN=.*/TOKEN=""/' "$CFG" # one-time secret: don't keep it on the flash
+    return 0
+  fi
+  return 1
+}
+
+echo "supervisor started (agent dir $AGENT_DIR)"
+while [ "$stop" = 0 ]; do
+  if ! bootstrap || ! enroll; then
+    pause 60
+    continue
+  fi
+  "$BIN" run --config "$CONF" &
+  child=$!
+  wait "$child"
+  rc=$?
+  # wait returns early when the trap fires; wait for the agent to finish shutting down.
+  while kill -0 "$child" 2>/dev/null; do
+    wait "$child"
+    rc=$?
+  done
+  child=0
+  [ "$stop" = 1 ] && break
+  echo "agent exited with status $rc; restarting in 10 seconds"
+  pause 10
+done
+echo "supervisor stopped"
+rm -f /var/run/homexdr-agent.pid
+]]>
+</INLINE>
+</FILE>
+
+<!-- Array events (emhttp waits for these scripts, so start returns at once). -->
+<FILE Name="&plugdir;/event/disks_mounted" Mode="0755">
+<INLINE>
+<![CDATA[
+#!/bin/bash
+/usr/local/emhttp/plugins/homexdr-agent/scripts/rc.homexdr-agent start >/dev/null 2>&1 &
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="&plugdir;/event/stopping_svcs" Mode="0755">
+<INLINE>
+<![CDATA[
+#!/bin/bash
+/usr/local/emhttp/plugins/homexdr-agent/scripts/rc.homexdr-agent stop
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="&plugdir;/event/unmounting_disks" Mode="0755">
+<INLINE>
+<![CDATA[
+#!/bin/bash
+/usr/local/emhttp/plugins/homexdr-agent/scripts/rc.homexdr-agent stop
+]]>
+</INLINE>
+</FILE>
+
+<!-- Installed while the array is running (not at boot): start now. -->
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+if grep -q '^mdState="STARTED"' /var/local/emhttp/var.ini 2>/dev/null; then
+  /usr/local/emhttp/plugins/homexdr-agent/scripts/rc.homexdr-agent start
+else
+  echo "homexdr-agent: the agent will start when the array starts"
+fi
+]]>
+</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+<![CDATA[
+/usr/local/emhttp/plugins/homexdr-agent/scripts/rc.homexdr-agent stop
+rm -rf /usr/local/emhttp/plugins/homexdr-agent
+rm -f /usr/local/bin/homexdr-agent /etc/homexdr/agent.json
+rmdir /etc/homexdr 2>/dev/null
+echo "HomeXDR agent removed. Its identity and data stay in AGENT_DIR from"
+echo "/boot/config/plugins/homexdr-agent/homexdr-agent.cfg; delete that folder and revoke"
+echo "the host in the console to remove it completely."
+]]>
+</INLINE>
+</FILE>
+
+</PLUGIN>

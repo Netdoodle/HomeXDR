@@ -586,8 +586,24 @@ export interface ServerSettings {
   ca_pin: string
   server_names: string[]
   event_store: 'clickhouse' | 'sqlite'
+  /** 0 = no time limit */
   retention_days: number
+  /** size cap for stored events; 0 = no cap */
+  retention_max_bytes: number
+  /** current size of the event store, when the store could report it */
+  event_store_bytes?: number
   syslog_addr: string
+  /** release public key agents pin for signed automatic updates; empty when not set up */
+  update_key?: string
+  agent_release: AgentReleaseStatus
+}
+
+export interface AgentReleaseStatus {
+  version?: string
+  signed: boolean
+  update_key?: string
+  /** why agents are not offered this release */
+  problem?: string
 }
 
 export interface EnrollmentToken {

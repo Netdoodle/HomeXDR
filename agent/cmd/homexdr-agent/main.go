@@ -1,6 +1,6 @@
 // Command homexdr-agent is the HomeXDR endpoint agent.
 //
-//	homexdr-agent enroll    --server <url> --token <t> --ca-pin sha256:<hex> [--labels a,b] [--insecure-tofu]
+//	homexdr-agent enroll    --server <url> --token <t> --ca-pin sha256:<hex> [--labels a,b] [--update-key ed25519:<b64>] [--insecure-tofu]
 //	homexdr-agent install   [same flags]   enroll if needed, then install and start the service
 //	homexdr-agent uninstall [--purge]      stop and remove the service (and, with --purge, all data)
 //	homexdr-agent run                      run in the foreground (this is what the service runs)
@@ -29,15 +29,18 @@ import (
 	"github.com/Netdoodle/homexdr/agent/internal/identity"
 	"github.com/Netdoodle/homexdr/agent/internal/osplatform"
 	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/selfupdate"
 	"github.com/Netdoodle/homexdr/agent/internal/spool"
 	"github.com/Netdoodle/homexdr/agent/internal/state"
+	"github.com/Netdoodle/homexdr/shared/api"
 	"github.com/Netdoodle/homexdr/shared/version"
 )
 
 const usage = `homexdr-agent: HomeXDR endpoint agent
 
 Usage:
-  homexdr-agent enroll    --server <url> --token <token> --ca-pin sha256:<hex> [--labels a,b] [--insecure-tofu] [--force]
+  homexdr-agent enroll    --server <url> --token <token> --ca-pin sha256:<hex> [--labels a,b]
+                          [--update-key ed25519:<base64>] [--data-dir <dir>] [--insecure-tofu] [--force]
   homexdr-agent install   [enroll flags]   enroll if needed, then install and start the service
   homexdr-agent uninstall [--purge]        stop and remove the service; --purge also deletes config and data
   homexdr-agent run                        run in the foreground (what the service runs)
@@ -91,8 +94,8 @@ func defaultConfigPath(p platform.Platform) string {
 }
 
 type enrollFlags struct {
-	server, token, pin, labels, dataDir string
-	tofu, force                         bool
+	server, token, pin, labels, dataDir, updateKey string
+	tofu, force                                    bool
 }
 
 func newFlags(p platform.Platform, name string) (*flag.FlagSet, *string) {
@@ -108,6 +111,7 @@ func addEnrollFlags(fs *flag.FlagSet) *enrollFlags {
 	fs.StringVar(&f.pin, "ca-pin", "", "server CA pin, sha256:<hex> (console settings page)")
 	fs.StringVar(&f.labels, "labels", "", "comma-separated host labels")
 	fs.StringVar(&f.dataDir, "data-dir", "", "data directory (default: platform default)")
+	fs.StringVar(&f.updateKey, "update-key", "", "release key, ed25519:<base64>; turns on signed automatic updates (local policy)")
 	fs.BoolVar(&f.tofu, "insecure-tofu", false, "trust the server CA on first use when no --ca-pin is given")
 	fs.BoolVar(&f.force, "force", false, "re-enroll even if already enrolled (creates a new host)")
 	return f
@@ -147,6 +151,11 @@ func doEnroll(ctx context.Context, p platform.Platform, cfgPath string, f *enrol
 	if f.pin != "" && !config.ValidPin(f.pin) {
 		return errors.New("--ca-pin must look like sha256:<64 hex characters>")
 	}
+	if f.updateKey != "" {
+		if _, err := api.ParseUpdateKey(f.updateKey); err != nil {
+			return fmt.Errorf("--update-key: %w", err)
+		}
+	}
 	_, oldID, enrolled := enrolledID(p, cfgPath)
 	if enrolled && !f.force {
 		return fmt.Errorf("already enrolled as agent %s (config %s); pass --force to re-enroll as a new host", oldID, cfgPath)
@@ -175,6 +184,9 @@ func doEnroll(ctx context.Context, p platform.Platform, cfgPath string, f *enrol
 	}
 	local.ServerURL = strings.TrimRight(f.server, "/")
 	local.CAPin = res.Pin
+	if f.updateKey != "" {
+		local.UpdateKey, local.AutoUpdate = strings.TrimSpace(f.updateKey), true
+	}
 	if f.dataDir != "" {
 		abs, err := filepath.Abs(f.dataDir)
 		if err != nil {
@@ -241,12 +253,9 @@ func cmdInstall(p platform.Platform, args []string) error {
 	} else if err := doEnroll(ctx, p, *cfg, f); err != nil {
 		return err
 	}
-	exe, err := os.Executable()
+	exe, err := core.Executable()
 	if err != nil {
 		return err
-	}
-	if r, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = r
 	}
 	if err := p.Service().Install(exe); err != nil {
 		if errors.Is(err, platform.ErrUnsupported) {
@@ -334,6 +343,16 @@ func cmdRun(p platform.Platform, args []string) error {
 	}
 	log := newLogger(local.LogLevel)
 	slog.SetDefault(log)
+	exe, err := core.Executable()
+	if err != nil {
+		return err
+	}
+	// An update that keeps crashing before it reaches the server is rolled back here.
+	if restore, err := selfupdate.CheckStartup(core.DataDir(local, p), exe, version.Version, log); err != nil {
+		log.Warn("update check", "err", err)
+	} else if restore {
+		return selfupdate.Exec(exe)
+	}
 	a, err := core.Load(p, *cfg, log)
 	if err != nil {
 		return err
@@ -344,7 +363,12 @@ func cmdRun(p platform.Platform, args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return a.Run(ctx)
+	err = a.Run(ctx)
+	if errors.Is(err, core.ErrRestart) {
+		stop()
+		return selfupdate.Exec(exe)
+	}
+	return err
 }
 
 func cmdStatus(p platform.Platform, args []string) error {
@@ -365,6 +389,18 @@ func cmdStatus(p platform.Platform, args []string) error {
 	fmt.Fprintf(w, "data dir:\t%s\n", dataDir)
 	fmt.Fprintf(w, "server:\t%s\n", local.ServerURL)
 	fmt.Fprintf(w, "allowed actions:\t%s\n", strings.Join(local.AllowedActions, ", "))
+	switch {
+	case local.AutoUpdate && !selfupdate.Supported():
+		fmt.Fprintf(w, "auto update:\ton in config, not supported on this platform\n")
+	case local.AutoUpdate:
+		fmt.Fprintf(w, "auto update:\ton (releases signed with %s)\n", local.UpdateKey)
+	default:
+		fmt.Fprintf(w, "auto update:\toff\n")
+	}
+	if m, ok := selfupdate.Pending(dataDir); ok {
+		fmt.Fprintf(w, "update:\t%s installed %s ago (from %s), not yet confirmed; %d start(s)\n",
+			m.Version, time.Since(m.InstalledAt).Round(time.Second), m.PreviousVersion, m.Starts)
+	}
 	if _, id, ok := enrolledID(p, *cfg); ok {
 		fmt.Fprintf(w, "enrolled:\tyes, agent %s\n", id)
 	} else {

@@ -14,9 +14,11 @@ import (
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
-// ClickHouse is the default event store. Retention uses a table TTL.
+// ClickHouse is the default event store. Time-based retention uses a table TTL; the
+// size cap drops whole daily partitions, oldest first.
 type ClickHouse struct {
 	conn  driver.Conn
+	db    string
 	table string // `db`.`events`
 }
 
@@ -31,6 +33,7 @@ var lowCardinality = map[string]bool{
 
 // OpenClickHouse connects using a DSN such as
 // clickhouse://user:pass@clickhouse:9000/homexdr, creating the database and table.
+// retentionDays 0 means no time limit.
 func OpenClickHouse(ctx context.Context, dsn string, retentionDays int) (*ClickHouse, error) {
 	opts, err := clickhouse.ParseDSN(dsn)
 	if err != nil {
@@ -66,7 +69,7 @@ func OpenClickHouse(ctx context.Context, dsn string, retentionDays int) (*ClickH
 	if lastErr != nil {
 		return nil, fmt.Errorf("events: clickhouse ping: %w", lastErr)
 	}
-	c := &ClickHouse{conn: conn, table: "`" + db + "`.`events`"}
+	c := &ClickHouse{conn: conn, db: db, table: "`" + db + "`.`events`"}
 	if err := c.migrate(ctx, db, retentionDays); err != nil {
 		conn.Close()
 		return nil, err
@@ -97,16 +100,36 @@ func (c *ClickHouse) migrate(ctx context.Context, db string, days int) error {
 		"INDEX idx_entity process_entity_id TYPE bloom_filter GRANULARITY 4",
 		"INDEX idx_parent parent_entity_id TYPE bloom_filter GRANULARITY 4",
 		"INDEX idx_cid community_id TYPE bloom_filter GRANULARITY 4")
-	ttl := fmt.Sprintf("toDateTime(ts) + INTERVAL %d DAY", days)
+	ttl, ttlClause := "", ""
+	if days > 0 {
+		ttl = fmt.Sprintf("toDateTime(ts) + INTERVAL %d DAY", days)
+		ttlClause = "TTL " + ttl + " "
+	}
 	stmts := []string{
 		"CREATE DATABASE IF NOT EXISTS `" + db + "`",
 		"CREATE TABLE IF NOT EXISTS " + c.table + " (" + strings.Join(cols, ", ") + `)
 		 ENGINE = MergeTree PARTITION BY toYYYYMMDD(ts) ORDER BY (host_id, ts)
-		 TTL ` + ttl + ` SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1`,
-		"ALTER TABLE " + c.table + " MODIFY TTL " + ttl + " SETTINGS materialize_ttl_after_modify = 0",
+		 ` + ttlClause + `SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1`,
 	}
 	for _, st := range stmts {
 		if err := c.conn.Exec(ctx, st); err != nil {
+			return fmt.Errorf("events: clickhouse migrate: %w", err)
+		}
+	}
+	// Bring an existing table's TTL in line with the current setting.
+	var create string
+	if err := c.conn.QueryRow(ctx, "SELECT create_table_query FROM system.tables WHERE database = ? AND name = 'events'", db).Scan(&create); err != nil {
+		return fmt.Errorf("events: clickhouse migrate: %w", err)
+	}
+	var alter string
+	switch hasTTL := strings.Contains(create, " TTL "); {
+	case ttl != "":
+		alter = "ALTER TABLE " + c.table + " MODIFY TTL " + ttl + " SETTINGS materialize_ttl_after_modify = 0"
+	case hasTTL:
+		alter = "ALTER TABLE " + c.table + " REMOVE TTL"
+	}
+	if alter != "" {
+		if err := c.conn.Exec(ctx, alter); err != nil {
 			return fmt.Errorf("events: clickhouse migrate: %w", err)
 		}
 	}
@@ -434,3 +457,63 @@ func (c *ClickHouse) Scan(ctx context.Context, from, to time.Time, limit int, fn
 
 // Purge is a no-op: the table TTL drops old partitions.
 func (c *ClickHouse) Purge(ctx context.Context, before time.Time) error { return nil }
+
+// Size returns the compressed size of the events table's active parts.
+func (c *ClickHouse) Size(ctx context.Context) (int64, error) {
+	var n uint64
+	err := c.conn.QueryRow(ctx,
+		"SELECT sum(bytes_on_disk) FROM system.parts WHERE database = ? AND table = 'events' AND active", c.db).Scan(&n)
+	return int64(n), err
+}
+
+var partitionIDRe = regexp.MustCompile(`^[0-9]{8}$`) // toYYYYMMDD(ts)
+
+// TrimToSize drops daily partitions, oldest first, until the table fits in maxBytes.
+// The newest partition (today) is never dropped.
+func (c *ClickHouse) TrimToSize(ctx context.Context, maxBytes int64) (time.Time, error) {
+	rows, err := c.conn.Query(ctx, `SELECT partition_id, sum(bytes_on_disk) FROM system.parts
+		WHERE database = ? AND table = 'events' AND active GROUP BY partition_id ORDER BY partition_id`, c.db)
+	if err != nil {
+		return time.Time{}, err
+	}
+	type partition struct {
+		id    string
+		bytes uint64
+	}
+	var parts []partition
+	var total int64
+	for rows.Next() {
+		var p partition
+		if err := rows.Scan(&p.id, &p.bytes); err != nil {
+			rows.Close()
+			return time.Time{}, err
+		}
+		parts = append(parts, p)
+		total += int64(p.bytes)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return time.Time{}, err
+	}
+	var cutoff time.Time
+	for i := 0; i < len(parts)-1 && total > maxBytes; i++ {
+		p := parts[i]
+		if !partitionIDRe.MatchString(p.id) {
+			return cutoff, fmt.Errorf("events: unexpected partition id %q", p.id)
+		}
+		day, err := time.Parse("20060102", p.id)
+		if err != nil {
+			return cutoff, fmt.Errorf("events: unexpected partition id %q", p.id)
+		}
+		// Large partitions need the drop-size guard lifted (default 50 GB).
+		if err := c.conn.Exec(ctx, "ALTER TABLE "+c.table+" DROP PARTITION ID '"+p.id+"' SETTINGS max_partition_size_to_drop = 0"); err != nil {
+			return cutoff, fmt.Errorf("events: drop partition %s: %w", p.id, err)
+		}
+		total -= int64(p.bytes)
+		cutoff = day.AddDate(0, 0, 1)
+	}
+	if total > maxBytes && len(parts) > 0 {
+		return cutoff, fmt.Errorf("events: today's events alone (%d bytes) exceed the size cap (%d bytes)", total, maxBytes)
+	}
+	return cutoff, nil
+}

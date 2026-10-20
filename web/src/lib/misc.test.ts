@@ -5,7 +5,17 @@ import { artifactDefaults, normalizeArtifactParams, validateArtifactParams } fro
 import { actionAllowed, commandParamsSummary, describeCommand } from './commands'
 import { eventSummary, leafPaths } from './fields'
 import { huntTargetHosts } from './hunts'
+import { formatSizeSetting } from './format'
 import { agentUrlOptions, buildInstallCommands, normalizeAgentUrl, shellQuote } from './install'
+
+describe('formatSizeSetting', () => {
+  it('keeps the units a size was configured in', () => {
+    expect(formatSizeSetting(1e12)).toBe('1 TB')
+    expect(formatSizeSetting(2 ** 40)).toBe('1 TiB')
+    expect(formatSizeSetting(500e9)).toBe('500 GB')
+    expect(formatSizeSetting(64 * 2 ** 20)).toBe('64 MiB')
+  })
+})
 
 describe('install commands', () => {
   it('normalizes agent URLs', () => {
@@ -31,6 +41,14 @@ describe('install commands', () => {
     const c = buildInstallCommands('https://homexdr.lan:8443', 'hxe_abc123', 'sha256:00ff')
     expect(c.linux).toBe('curl -fsSLk https://homexdr.lan:8443/v1/install/linux.sh | sudo sh -s -- --token hxe_abc123 --ca-pin sha256:00ff')
     expect(c.windows).toBe('homexdr-agent.exe install --server https://homexdr.lan:8443 --token hxe_abc123 --ca-pin sha256:00ff')
+  })
+
+  it('adds the update key to the Linux command only', () => {
+    const c = buildInstallCommands('https://homexdr.lan:8443', 'hxe_abc123', 'sha256:00ff', 'ed25519:AbC+/9=')
+    expect(c.linux).toBe(
+      'curl -fsSLk https://homexdr.lan:8443/v1/install/linux.sh | sudo sh -s -- --token hxe_abc123 --ca-pin sha256:00ff --update-key ed25519:AbC+/9=',
+    )
+    expect(c.windows).not.toContain('update-key')
   })
 
   it('quotes unsafe shell values', () => {

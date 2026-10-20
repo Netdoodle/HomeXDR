@@ -57,12 +57,17 @@ export interface InstallCommands {
   windows: string
 }
 
-export function buildInstallCommands(agentUrl: string, token: string, caPin: string): InstallCommands {
+/**
+ * `updateKey` (the release key from the server settings) turns on signed automatic
+ * updates on Linux. Windows agents cannot update themselves yet, so it is left out there.
+ */
+export function buildInstallCommands(agentUrl: string, token: string, caPin: string, updateKey?: string): InstallCommands {
   const base = normalizeAgentUrl(agentUrl)
   return {
     linux:
       `curl -fsSLk ${shellQuote(base + '/v1/install/linux.sh')} | sudo sh -s -- ` +
-      `--token ${shellQuote(token)} --ca-pin ${shellQuote(caPin)}`,
+      `--token ${shellQuote(token)} --ca-pin ${shellQuote(caPin)}` +
+      (updateKey ? ` --update-key ${shellQuote(updateKey)}` : ''),
     windows:
       `homexdr-agent.exe install --server ${psQuote(base)} ` + `--token ${psQuote(token)} --ca-pin ${psQuote(caPin)}`,
   }

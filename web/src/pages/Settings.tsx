@@ -9,7 +9,7 @@ import { CopyButton, KV, LinkTabs, Pager, RelTime, type TabDef } from '../compon
 import { ConfirmDialog, Modal } from '../components/Modal'
 import { EmptyState, ErrorState, Loading, QueryView, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
-import { formatNumber, splitList } from '../lib/format'
+import { formatBytes, formatNumber, formatSizeSetting, splitList } from '../lib/format'
 import { useDocumentTitle } from '../lib/hooks'
 import { agentUrlOptions, buildInstallCommands } from '../lib/install'
 import { ROLE_HELP, ROLE_LABEL } from '../lib/roles'
@@ -50,7 +50,7 @@ export function SettingsPage() {
 function InstallCommands({ settings, token }: { settings: ServerSettings; token: string }) {
   const options = agentUrlOptions(settings)
   const [url, setUrl] = useState(options[0] ?? '')
-  const cmds = buildInstallCommands(url, token, settings.ca_pin)
+  const cmds = buildInstallCommands(url, token, settings.ca_pin, settings.agent_release.signed ? settings.update_key : undefined)
   return (
     <div className="stack" style={{ gap: 10 }}>
       <div className="field">
@@ -81,6 +81,13 @@ function InstallCommands({ settings, token }: { settings: ServerSettings; token:
       <p className="muted xsmall" style={{ margin: 0 }}>
         The <span className="mono">--ca-pin</span> makes the agent verify it is talking to this server before it sends the token. The Linux
         script is fetched with <span className="mono">-k</span> because the CA is not installed yet; the agent then pins it.
+        {settings.agent_release.signed && settings.update_key ? (
+          <>
+            {' '}
+            <span className="mono">--update-key</span> lets the agent install new versions signed with the release key; leave it out to
+            update by hand.
+          </>
+        ) : null}
       </p>
     </div>
   )
@@ -525,7 +532,8 @@ function IntegrationsTab() {
                   ['Server names', s.server_names.join(', ')],
                   ['CA pin', <span key="p" className="mono xsmall" style={{ overflowWrap: 'anywhere' }}>{s.ca_pin}</span>],
                   ['Event store', s.event_store === 'sqlite' ? 'SQLite (lite mode)' : 'ClickHouse'],
-                  ['Retention', `${s.retention_days} days`],
+                  ['Retention', retentionText(s)],
+                  ['Agent updates', agentUpdatesText(s)],
                   ['Syslog listener', <span key="s" className="mono">{s.syslog_addr}</span>],
                 ]}
               />
@@ -535,6 +543,19 @@ function IntegrationsTab() {
       </section>
     </div>
   )
+}
+
+function retentionText(s: ServerSettings): string {
+  const age = s.retention_days > 0 ? `${s.retention_days} days` : 'No time limit'
+  const cap = s.retention_max_bytes > 0 ? `capped at ${formatSizeSetting(s.retention_max_bytes)}` : 'no size cap'
+  const used = s.event_store_bytes != null ? ` (${formatBytes(s.event_store_bytes)} used)` : ''
+  return `${age}, ${cap}${used}`
+}
+
+function agentUpdatesText(s: ServerSettings): string {
+  const r = s.agent_release
+  if (r.signed) return `Offering ${r.version ?? 'this release'} (signed) to agents with auto-update`
+  return r.problem ? `Off: ${r.problem}` : 'Off'
 }
 
 // --- audit ------------------------------------------------------------------------------------

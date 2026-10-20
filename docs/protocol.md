@@ -34,7 +34,8 @@ The agent runs three loops, each with jittered exponential backoff (1s → 5min)
 
 1. **Heartbeat** — `POST /v1/heartbeat` with `Heartbeat` every
    `heartbeat_interval_sec`. The reply may carry a newer `AgentConfig`, which the agent
-   applies (restarting affected sensors) and reports as `status.config_version`.
+   applies (restarting affected sensors) and reports as `status.config_version`, and an
+   `update` offer (see [Agent updates](#agent-updates)).
 2. **Events** — `POST /v1/events`, body gzip NDJSON of `event.Event`, at most
    `MaxEventBatchBytes` uncompressed, sent when `batch.max_events` is reached or every
    `batch.flush_interval_ms`. `202` with `EventsResponse` means the batch is durable and the
@@ -72,8 +73,45 @@ The agent listener also serves, without a client certificate:
 
 - `GET /v1/ca.crt` the CA certificate (PEM), checked against the pin by the install script
 - `GET /v1/download/homexdr-agent-<os>-<arch>[.exe]` agent binaries bundled in the image
+- `GET /v1/download/agent-release.json` and `agent-release.json.sig`, the signed release
+  manifest (see below)
 - `GET /v1/install/linux.sh` an install script that fetches `/v1/ca.crt`, checks it against
   `--ca-pin`, then downloads the binary and `SHA256SUMS` over TLS verified by that CA, checks
   the checksum, and runs `homexdr-agent install`. Fetching the script itself (`curl -k`) is the
   one unverified step; review the script once, or copy the agent binary manually, if that
   matters on your network.
+
+## Agent updates
+
+Agents can update themselves, but only when their local config allows it and only to
+releases signed with a key the server never holds. This keeps the security model: a
+compromised server can offer an update, but it cannot make an agent run a binary that the
+release key did not sign.
+
+- **Release manifest.** The image build writes `agent-release.json` next to the bundled
+  binaries (`homexdr-server release-manifest`): `version`, `commit`, `commit_time` (Unix
+  seconds) and, per binary, its `sha256` and `size` (`api.AgentRelease`).
+- **Signature.** The host that builds the image signs the manifest's exact bytes with an
+  Ed25519 release key (`deploy/update/homexdr-update.sh`, using `openssl pkeyutl -sign
+  -rawin`) and writes `agent-release.<sha256 of manifest>.sig` (base64) and
+  `update-key.pub` (`ed25519:<base64>`) into a folder mounted read-only into the server
+  (`HOMEXDR_SIGNATURES_DIR`). The private key stays on the host.
+- **Offer.** The server offers a release only when its signature verifies with
+  `update-key.pub`. The heartbeat reply then carries `update: {version, commit_time}` for
+  agents reporting a different version.
+- **Local policy.** The agent acts on the offer only with `"auto_update": true` and an
+  `update_key` in its local config (set with `--update-key` at enrollment). Otherwise it
+  logs the offer once and keeps running.
+- **Install.** The agent fetches the manifest and signature, verifies the signature with
+  its own `update_key`, refuses releases whose `commit_time` is not later than its own build
+  (no downgrades), downloads `homexdr-agent-<os>-<arch>`, checks the SHA-256 and size from
+  the manifest, runs `<new binary> version` as a start check, keeps the running binary as
+  `<binary>.prev`, renames the new one into place and re-executes itself (same PID, so
+  systemd or another supervisor sees the same process continue).
+- **Rollback.** An `update.json` marker in the data dir counts the new version's start-ups
+  until its first successful heartbeat. If it starts more than three times without one,
+  the agent moves `<binary>.prev` back, restarts into it and skips that version for 24
+  hours. A failed download or check is retried after an hour.
+- **Platforms.** Linux (and macOS once it has a platform layer). Windows agents cannot
+  replace their running executable yet and ignore the offer.
+

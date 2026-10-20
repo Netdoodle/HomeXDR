@@ -1,5 +1,6 @@
 # HomeXDR with ClickHouse. Copy .env.example to .env, edit it, then:
 #   docker compose up -d --build
+# To update automatically from git instead of rebuilding by hand, see deploy/update/.
 name: homexdr
 
 services:
@@ -12,7 +13,10 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "0"
     volumes:
-      - clickhouse:/var/lib/clickhouse
+      # A named volume by default; set HOMEXDR_CLICKHOUSE_DIR to a path to keep events
+      # on a particular disk.
+      - ${HOMEXDR_CLICKHOUSE_DIR:-clickhouse}:/var/lib/clickhouse
+      - ./clickhouse/system-logs.xml:/etc/clickhouse-server/config.d/homexdr-system-logs.xml:ro
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     healthcheck:
@@ -36,6 +40,7 @@ services:
       HOMEXDR_SERVER_NAMES: ${HOMEXDR_SERVER_NAMES:?set HOMEXDR_SERVER_NAMES in .env}
       HOMEXDR_AGENT_URL: ${HOMEXDR_AGENT_URL:-}
       HOMEXDR_RETENTION_DAYS: ${HOMEXDR_RETENTION_DAYS:-30}
+      HOMEXDR_RETENTION_MAX_SIZE: ${HOMEXDR_RETENTION_MAX_SIZE:-}
       HOMEXDR_SECURE_COOKIES: ${HOMEXDR_SECURE_COOKIES:-false}
       HOMEXDR_SYSLOG_ALLOW: ${HOMEXDR_SYSLOG_ALLOW:-}
       HOMEXDR_LOG_LEVEL: ${HOMEXDR_LOG_LEVEL:-info}
@@ -46,6 +51,9 @@ services:
       - "${HOMEXDR_SYSLOG_PORT:-514}:5514/tcp"
     volumes:
       - data:/data
+      # Agent release signatures and the release public key, written by the host's update
+      # script (deploy/update). Read-only: the server never holds the signing key.
+      - ${HOMEXDR_SIGNATURES_DIR:-./signatures}:/usr/share/homexdr/signatures:ro
       # Optional extra Sigma rules, see rules/README.md:
       # - /opt/sigma/rules/windows/process_creation:/usr/share/homexdr/rules/sigmahq/windows:ro
 

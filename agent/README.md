@@ -20,6 +20,7 @@ cleanly. See [`docs/architecture.md`](../docs/architecture.md) and
 | `internal/pipeline` | Stamping and central-config filters between sensors and spool |
 | `internal/supervisor` | Runs sensors, restarts them with backoff or on config change |
 | `internal/commands` | Signed-command verification (signature, agent, expiry, replay, policy) and dispatch |
+| `internal/selfupdate` | Signed self-update: verify the release, swap the binary, re-exec, roll back if it keeps crashing |
 | `internal/fileops` | Quarantine, restore, hash, file.get |
 | `internal/sensors/{fim,logtail,inventory}` | Cross-platform sensors |
 | `internal/collect` | Cross-platform collectors (`file.find`) |
@@ -127,6 +128,12 @@ homexdr-agent install --server https://xdr.example.lan:8443 \
 (`Restart=always`) and runs `systemctl enable --now`. On Windows, run the same command
 from an elevated PowerShell.
 
+Add `--update-key ed25519:<base64>` (shown on the console's settings page once the server
+has a signed release) to let the agent update itself; see [Automatic updates](#automatic-updates).
+
+On Unraid, which has no systemd and keeps its root file system in RAM, use the plugin in
+[`deploy/unraid`](../deploy/unraid/README.md) instead of `install`.
+
 `enroll` refuses to run without `--ca-pin` unless you pass `--insecure-tofu`, in which
 case it prints the pin it trusted so you can compare it with the console. After
 enrollment the stored CA is the only trusted root.
@@ -152,7 +159,9 @@ mode 0600:
                       "file.restore", "file.get", "file.hash", "artifact.collect"],
   "isolation_allow": ["192.168.1.10", "10.0.0.0/24"],
   "log_level": "info",
-  "data_dir": "/var/lib/homexdr"
+  "data_dir": "/var/lib/homexdr",
+  "auto_update": true,
+  "update_key": "ed25519:<release public key, base64>"
 }
 ```
 
@@ -163,6 +172,9 @@ mode 0600:
   Restart the agent after editing it.
 - `isolation_allow` lists IPs/CIDRs that stay reachable while the host is isolated, in
   addition to the server, DNS, DHCP and loopback (e.g. your admin workstation).
+- `auto_update` and `update_key` let the agent install new versions the server offers,
+  but only releases signed with that key, a release key kept on the host that builds the
+  server, not in the server. Leave them out to update by hand.
 - Everything else (sensors, filters, FIM paths, log files, batching, spool size) is the
   central config, set in the console and delivered with heartbeats.
 
@@ -174,6 +186,19 @@ programs.
 The data dir (`/var/lib/homexdr`, mode 0700) holds the agent key and certificates,
 `state.json`, the event spool, the FIM baseline, read offsets, `status.json` and the
 quarantine (`quarantine/<id>/file` with permissions removed, plus `meta.json`).
+
+## Automatic updates
+
+With `auto_update` on, the agent checks each heartbeat for an update offer. It then
+verifies the release manifest's Ed25519 signature with its own `update_key`, refuses
+anything not newer than its own build, downloads the binary over the pinned connection,
+checks its SHA-256, runs `<new binary> version`, keeps the current binary as
+`homexdr-agent.prev` and re-executes itself with the same PID. If the new version keeps
+restarting without reaching the server (more than three starts), the agent puts the
+previous binary back and skips that version for a day. `homexdr-agent status` shows
+whether automatic updates are on and whether an update is waiting for confirmation.
+Details: [docs/protocol.md](../docs/protocol.md#agent-updates). Windows agents do not
+update themselves yet.
 
 ## Uninstall
 

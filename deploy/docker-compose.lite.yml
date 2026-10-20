@@ -14,6 +14,7 @@ services:
       HOMEXDR_SERVER_NAMES: ${HOMEXDR_SERVER_NAMES:?set HOMEXDR_SERVER_NAMES in .env}
       HOMEXDR_AGENT_URL: ${HOMEXDR_AGENT_URL:-}
       HOMEXDR_RETENTION_DAYS: ${HOMEXDR_RETENTION_DAYS:-14}
+      HOMEXDR_RETENTION_MAX_SIZE: ${HOMEXDR_RETENTION_MAX_SIZE:-}
       HOMEXDR_SECURE_COOKIES: ${HOMEXDR_SECURE_COOKIES:-false}
       HOMEXDR_SYSLOG_ALLOW: ${HOMEXDR_SYSLOG_ALLOW:-}
     ports:
@@ -23,6 +24,7 @@ services:
       - "${HOMEXDR_SYSLOG_PORT:-514}:5514/tcp"
     volumes:
       - data:/data
+      - ${HOMEXDR_SIGNATURES_DIR:-./signatures}:/usr/share/homexdr/signatures:ro
 
 volumes:
   data:

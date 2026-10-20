@@ -28,6 +28,8 @@ type Core struct {
 	Rules  *RuleSet
 	Broker *Broker
 	Syslog *SyslogStats
+	// Release is the signed agent release offered to agents (release.go).
+	Release *Release
 }
 
 // New builds a Core and loads rules.
@@ -38,6 +40,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 		Broker: NewBroker(),
 		Syslog: NewSyslogStats(),
 	}
+	c.Release = NewRelease(cfg.DownloadsDir, cfg.SignaturesDir, log)
 	c.Rules = NewRuleSet(c)
 	if err := c.Rules.Reload(ctx); err != nil {
 		return nil, err
@@ -83,11 +86,11 @@ func (c *Core) Audit(ctx context.Context, user, action, target, details string) 
 }
 
 // RunMaintenance runs periodic jobs until ctx ends: command expiry, session cleanup and
-// event retention.
+// event retention (by age and by size).
 func (c *Core) RunMaintenance(ctx context.Context) {
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
-	lastPurge := time.Time{}
+	lastPurge, lastTrim := time.Time{}, time.Time{}
 	for {
 		if n, err := c.State.ExpireCommands(ctx); err != nil {
 			c.Log.Warn("expire commands", "err", err)
@@ -101,18 +104,34 @@ func (c *Core) RunMaintenance(ctx context.Context) {
 		if _, err := c.Rules.ReloadIfChanged(ctx); err != nil {
 			c.Log.Warn("reload rules", "err", err)
 		}
-		if time.Since(lastPurge) > 6*time.Hour {
+		if c.Cfg.RetentionDays > 0 && time.Since(lastPurge) > 6*time.Hour {
 			before := time.Now().AddDate(0, 0, -c.Cfg.RetentionDays)
 			if err := c.Events.Purge(ctx, before); err != nil {
 				c.Log.Warn("event retention purge", "err", err)
 			}
 			lastPurge = time.Now()
 		}
+		if c.Cfg.RetentionMaxBytes > 0 && time.Since(lastTrim) > 10*time.Minute {
+			c.trimEvents(ctx)
+			lastTrim = time.Now()
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
 		}
+	}
+}
+
+// trimEvents enforces the event store's size cap.
+func (c *Core) trimEvents(ctx context.Context) {
+	cutoff, err := c.Events.TrimToSize(ctx, c.Cfg.RetentionMaxBytes)
+	if !cutoff.IsZero() {
+		c.Log.Info("event store reached its size cap; removed the oldest events",
+			"cap_bytes", c.Cfg.RetentionMaxBytes, "removed_before", cutoff.Format(time.RFC3339))
+	}
+	if err != nil {
+		c.Log.Warn("event retention size cap", "err", err)
 	}
 }
 

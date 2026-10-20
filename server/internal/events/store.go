@@ -42,6 +42,11 @@ type Store interface {
 	Scan(ctx context.Context, from, to time.Time, limit int, fn func(*event.Event) bool) error
 	// Purge deletes events older than before (backends with native TTL may no-op).
 	Purge(ctx context.Context, before time.Time) error
+	// Size returns the bytes the stored events occupy on disk.
+	Size(ctx context.Context) (int64, error)
+	// TrimToSize deletes the oldest events until the store uses at most maxBytes. It
+	// returns the time before which events were deleted (zero when nothing was).
+	TrimToSize(ctx context.Context, maxBytes int64) (time.Time, error)
 	Ping(ctx context.Context) error
 	Close() error
 }

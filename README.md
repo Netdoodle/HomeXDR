@@ -11,7 +11,10 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
 - **Network correlation.** Ingests OPNsense `filterlog` and Suricata EVE over syslog and
   joins them to endpoint processes by Community ID.
 - **Docker-first backend.** `docker compose up` runs the server and ClickHouse. A single
-  container "lite" mode uses SQLite.
+  container "lite" mode uses SQLite. Retention by age, by size, or both.
+- **Automatic updates.** A cron job on the Docker host rebuilds and redeploys the server
+  when the git branch moves, with health checks and rollback. Agents that opt in update
+  themselves to releases signed with a key the server never holds.
 
 > Status: early development. Not ready for production use.
 
@@ -25,6 +28,9 @@ docker compose up -d
 
 Open `http://<server>:8080`, create the admin account, then create an enrollment token
 under **Settings** and copy the install command for each host.
+
+To keep the server and agents updated from git, see [deploy/update](deploy/update/README.md).
+For Unraid hosts, see [deploy/unraid](deploy/unraid/README.md).
 
 ## Docs
 

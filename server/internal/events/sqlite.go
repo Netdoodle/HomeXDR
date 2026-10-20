@@ -442,6 +442,50 @@ func (s *SQLite) Purge(ctx context.Context, before time.Time) error {
 	return err
 }
 
+// Size returns the bytes of the database pages in use (free pages excluded).
+func (s *SQLite) Size(ctx context.Context) (int64, error) {
+	var pages, free, pageSize int64
+	for _, q := range []struct {
+		pragma string
+		dst    *int64
+	}{{"page_count", &pages}, {"freelist_count", &free}, {"page_size", &pageSize}} {
+		if err := s.w.QueryRowContext(ctx, "PRAGMA "+q.pragma).Scan(q.dst); err != nil {
+			return 0, err
+		}
+	}
+	return (pages - free) * pageSize, nil
+}
+
+// TrimToSize deletes the oldest events in steps until the pages in use fit in maxBytes,
+// then returns the freed pages to the file system.
+func (s *SQLite) TrimToSize(ctx context.Context, maxBytes int64) (time.Time, error) {
+	var cutoff time.Time
+	for range 1000 {
+		size, err := s.Size(ctx)
+		if err != nil || size <= maxBytes {
+			break
+		}
+		var count int64
+		if err := s.w.QueryRowContext(ctx, `SELECT count(*) FROM events`).Scan(&count); err != nil {
+			return cutoff, err
+		}
+		if count == 0 {
+			break
+		}
+		// Delete roughly the share of rows that is over the cap (at least 1%).
+		n := max(count*(size-maxBytes)/size, count/100, 1)
+		var ts int64
+		if err := s.w.QueryRowContext(ctx, `SELECT ts FROM events ORDER BY ts LIMIT 1 OFFSET ?`, min(n, count)-1).Scan(&ts); err != nil {
+			return cutoff, err
+		}
+		if err := s.Purge(ctx, time.UnixMilli(ts+1)); err != nil {
+			return cutoff, err
+		}
+		cutoff = time.UnixMilli(ts + 1).UTC()
+	}
+	return cutoff, nil
+}
+
 // QueryError wraps an invalid user query so handlers can return 400.
 type QueryError struct{ Err error }
 

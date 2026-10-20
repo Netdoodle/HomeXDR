@@ -1,6 +1,7 @@
 // Package config loads and saves the agent's local config file. The file is the local
-// policy: it names the server and its CA pin, and lists the response actions the agent
-// will run (allowed_actions). Central config from the server can never change it.
+// policy: it names the server and its CA pin, lists the response actions the agent will
+// run (allowed_actions), and decides whether the agent updates itself and which release
+// key updates must be signed with. Central config from the server can never change it.
 package config
 
 import (
@@ -28,6 +29,10 @@ type Local struct {
 	IsolationAllow []string `json:"isolation_allow,omitempty"`
 	LogLevel       string   `json:"log_level,omitempty"` // debug, info, warn, error
 	DataDir        string   `json:"data_dir,omitempty"`  // default: the platform's data dir
+	// AutoUpdate lets the agent install new versions the server offers. They must be
+	// signed with UpdateKey, a release key the server does not hold.
+	AutoUpdate bool   `json:"auto_update,omitempty"`
+	UpdateKey  string `json:"update_key,omitempty"` // "ed25519:<base64>"
 }
 
 // ErrNotFound is returned by Load when the file does not exist.
@@ -96,6 +101,14 @@ func (c Local) Validate() error {
 	}
 	if c.CAPin != "" && !ValidPin(c.CAPin) {
 		return fmt.Errorf("config: ca_pin must be sha256:<64 hex chars>")
+	}
+	if c.UpdateKey != "" {
+		if _, err := api.ParseUpdateKey(c.UpdateKey); err != nil {
+			return fmt.Errorf("config: update_key: %w", err)
+		}
+	}
+	if c.AutoUpdate && c.UpdateKey == "" {
+		return fmt.Errorf("config: auto_update needs update_key (the release key updates must be signed with)")
 	}
 	return nil
 }

@@ -1,0 +1,37 @@
+# Settings for homexdr-update.sh. Copy to update.conf next to the script.
+
+# Folder with the docker-compose.yml (and .env) that runs HomeXDR.
+COMPOSE_DIR=/opt/homexdr/deploy
+
+# Compose service and image the updater builds and redeploys. The compose file must use
+# image: homexdr/server:local for that service.
+SERVICE=homexdr
+IMAGE=homexdr/server
+
+# Where to build from. A private repository needs a read-only deploy key.
+REPO_URL=git@github.com:Netdoodle/homexdr.git
+BRANCH=main
+#GIT_SSH_KEY=/root/.ssh/homexdr-deploy-key
+#KNOWN_HOSTS=/root/.ssh/known_hosts
+
+# git checkout used for builds (default: $COMPOSE_DIR/src).
+#SRC_DIR=
+
+# Ed25519 key that signs agent releases (created on first use). Keep it outside the
+# server's volumes and back it up: agents with automatic updates trust only this key.
+# Default: release-signing.key next to this file.
+#SIGNING_KEY=
+
+# Folder mounted read-only into the server as /usr/share/homexdr/signatures
+# (default: $COMPOSE_DIR/signatures).
+#SIGNATURES_DIR=
+
+# Image builds to keep besides the running and previous one.
+KEEP_IMAGES=3
+
+# Seconds the new server has to report healthy before it is rolled back.
+HEALTH_TIMEOUT=300
+
+# Unraid notifications (ignored elsewhere): failures, and successful updates.
+NOTIFY=1
+NOTIFY_SUCCESS=1

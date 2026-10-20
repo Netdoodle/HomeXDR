@@ -246,6 +246,29 @@ func (c *Client) PollCommands(ctx context.Context, wait time.Duration) ([]api.Si
 	return nil, errorFrom(resp)
 }
 
+// Fetch GETs path and copies the body of a 200 response to w. It fails if the body is
+// longer than max bytes. Used for agent release downloads.
+func (c *Client) Fetch(ctx context.Context, path string, w io.Writer, max int64) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	resp, err := c.do(ctx, http.MethodGet, path, nil, nil, nil)
+	if err != nil {
+		return err
+	}
+	defer drain(resp)
+	if resp.StatusCode != http.StatusOK {
+		return errorFrom(resp)
+	}
+	n, err := io.Copy(w, io.LimitReader(resp.Body, max+1))
+	if err != nil {
+		return err
+	}
+	if n > max {
+		return fmt.Errorf("GET %s: response larger than %d bytes", path, max)
+	}
+	return nil
+}
+
 // PostResult reports a command status.
 func (c *Client) PostResult(ctx context.Context, res api.CommandResult) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)

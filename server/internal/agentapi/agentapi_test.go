@@ -42,13 +42,18 @@ detection:
   condition: sel
 `
 
-func newTestCore(t *testing.T) *core.Core {
+func newTestCore(t *testing.T) *core.Core { return newTestCoreWith(t, nil) }
+
+func newTestCoreWith(t *testing.T, edit func(*config.Config)) *core.Core {
 	t.Helper()
 	dir := t.TempDir()
 	rules := filepath.Join(dir, "rules")
 	os.MkdirAll(rules, 0o755)
 	os.WriteFile(filepath.Join(rules, "whoami.yml"), []byte(testRule), 0o644)
 	cfg := config.Config{DataDir: dir, RulesDir: rules, RetentionDays: 30, AgentURL: "https://localhost:8443"}
+	if edit != nil {
+		edit(&cfg)
+	}
 	st, err := store.Open(filepath.Join(dir, "state.db"))
 	if err != nil {
 		t.Fatal(err)

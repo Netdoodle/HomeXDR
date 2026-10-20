@@ -12,6 +12,17 @@ export function formatBytes(n: number | undefined | null): string {
   return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`
 }
 
+/** Formats a configured size the way it was likely written: 1e12 as "1 TB", 2^40 as "1 TiB". */
+export function formatSizeSetting(n: number): string {
+  const bin = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']
+  const dec = ['B', 'kB', 'MB', 'GB', 'TB', 'PB']
+  for (let i = 5; i > 0; i--) {
+    if (n >= 1024 ** i && n % 1024 ** i === 0) return `${n / 1024 ** i} ${bin[i]}`
+    if (n >= 1000 ** i && n % 1000 ** i === 0) return `${n / 1000 ** i} ${dec[i]}`
+  }
+  return formatBytes(n)
+}
+
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
 const plain = new Intl.NumberFormat('en')
 

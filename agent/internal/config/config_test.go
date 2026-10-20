@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Netdoodle/homexdr/shared/api"
@@ -51,10 +52,27 @@ func TestParseRejects(t *testing.T) {
 		"unknown field":  `{"allowed_action":["process.kill"]}`,
 		"bad pin":        `{"ca_pin":"md5:abc"}`,
 		"bad level":      `{"log_level":"loud"}`,
+		"bad update key": `{"update_key":"ed25519:AAAA"}`,
+		"update no key":  `{"auto_update":true}`,
 	} {
 		if _, err := Parse([]byte(in)); err == nil {
 			t.Errorf("%s: expected an error", name)
 		}
+	}
+}
+
+func TestParseAutoUpdate(t *testing.T) {
+	key := "ed25519:" + strings.Repeat("A", 43) + "="
+	c, err := Parse([]byte(`{"auto_update":true,"update_key":"` + key + `"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.AutoUpdate || c.UpdateKey != key {
+		t.Fatalf("auto update not parsed: %+v", c)
+	}
+	// A key without auto_update is kept but does nothing.
+	if c, err := Parse([]byte(`{"update_key":"` + key + `"}`)); err != nil || c.AutoUpdate {
+		t.Fatalf("key alone: %+v, %v", c, err)
 	}
 }
 

@@ -28,6 +28,7 @@ import (
 	"github.com/Netdoodle/homexdr/agent/internal/identity"
 	"github.com/Netdoodle/homexdr/agent/internal/pipeline"
 	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/selfupdate"
 	"github.com/Netdoodle/homexdr/agent/internal/sensors/fim"
 	"github.com/Netdoodle/homexdr/agent/internal/sensors/inventory"
 	"github.com/Netdoodle/homexdr/agent/internal/sensors/logtail"
@@ -49,6 +50,10 @@ const (
 	QuarantineDir = "quarantine"
 	StatusFile    = "status.json"
 )
+
+// ErrRestart is returned by Run after a new agent binary was installed; the caller
+// should restart into it (selfupdate.Exec).
+var ErrRestart = errors.New("agent updated; restart required")
 
 // DataDir returns the data dir configured in c, or the platform default.
 func DataDir(c config.Local, p platform.Platform) string {
@@ -104,6 +109,13 @@ type Agent struct {
 	hbMu     sync.Mutex
 	lastHB   time.Time
 	lastHBEr string
+
+	// Self-update (nil updater when the local config does not allow it).
+	updater   *selfupdate.Updater
+	updating  atomic.Bool
+	offered   string // last offered version that was logged
+	confirmed bool   // a pending update was checked after the first heartbeat
+	stop      context.CancelCauseFunc
 }
 
 // Load reads the config file, identity and state.
@@ -140,7 +152,11 @@ func Load(p platform.Platform, configPath string, log *slog.Logger) (*Agent, err
 func (a *Agent) ID() string { return a.id.AgentID }
 
 // Run runs the agent until ctx is cancelled. Queued events stay in the spool on disk.
+// It returns ErrRestart when it stopped to run a newly installed version.
 func (a *Agent) Run(ctx context.Context) error {
+	ctx, stop := context.WithCancelCause(ctx)
+	defer stop(nil)
+	a.stop = stop
 	a.startedAt = time.Now().UTC()
 	cfg := a.st.Config()
 	sp, err := spool.Open(filepath.Join(a.dataDir, SpoolDir), cfg.SpoolMaxBytes, a.log)
@@ -169,6 +185,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	defer client.Close()
 
 	exe, _ := os.Executable()
+	a.updater = a.newUpdater(client)
 	a.handler = &commands.Handler{
 		API: client,
 		Verifier: &commands.Verifier{
@@ -215,7 +232,86 @@ func (a *Agent) Run(ctx context.Context) error {
 	a.sup.Stop()
 	wg.Wait()
 	a.writeStatus()
+	if errors.Is(context.Cause(ctx), ErrRestart) {
+		return ErrRestart
+	}
 	return nil
+}
+
+// --- self-update ---
+
+// Executable returns the resolved path of the running binary.
+func Executable() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if r, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = r
+	}
+	return exe, nil
+}
+
+func (a *Agent) newUpdater(client *transport.Client) *selfupdate.Updater {
+	if !a.local.AutoUpdate {
+		return nil
+	}
+	if !selfupdate.Supported() {
+		a.log.Warn("auto_update is set but this platform cannot update itself yet")
+		return nil
+	}
+	key, err := api.ParseUpdateKey(a.local.UpdateKey)
+	if err != nil {
+		a.log.Error("auto_update is set but update_key is invalid", "err", err)
+		return nil
+	}
+	exe, err := Executable()
+	if err != nil {
+		a.log.Error("auto_update: cannot find the agent binary", "err", err)
+		return nil
+	}
+	return &selfupdate.Updater{
+		Key: key, Exe: exe, DataDir: a.dataDir, Fetcher: client, Log: a.log,
+		Version: version.Version, CommitTime: version.CommitUnix(),
+	}
+}
+
+// afterHeartbeat confirms a pending update once and acts on an update offer.
+func (a *Agent) afterHeartbeat(ctx context.Context, offer *api.AgentUpdate) {
+	if !a.confirmed {
+		a.confirmed = true
+		if m, ok := selfupdate.Confirm(a.dataDir, version.Version); ok {
+			a.log.Info("agent update confirmed", "version", m.Version, "previous_version", m.PreviousVersion)
+		}
+	}
+	if offer == nil {
+		return
+	}
+	if a.updater == nil {
+		if a.offered != offer.Version {
+			a.offered = offer.Version
+			a.log.Info("server offers a different agent version; automatic updates are off in the local config",
+				"offered", offer.Version, "running", version.Version)
+		}
+		return
+	}
+	if !a.updating.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer a.updating.Store(false)
+		rel, err := a.updater.Install(ctx, *offer)
+		switch {
+		case err != nil:
+			if a.offered != offer.Version || !errors.Is(err, selfupdate.ErrNotNewer) {
+				a.log.Warn("agent update not installed", "offered", offer.Version, "err", err)
+			}
+			a.offered = offer.Version
+		case rel != nil:
+			a.log.Info("installed agent update; restarting", "version", rel.Version, "previous_version", version.Version)
+			a.stop(ErrRestart)
+		}
+	}()
 }
 
 // --- config and sensors ---
@@ -483,6 +579,7 @@ func (a *Agent) heartbeatLoop(ctx context.Context) {
 		if resp.Config != nil && resp.Config.Version != a.st.Config().Version {
 			a.applyConfig(ctx, *resp.Config)
 		}
+		a.afterHeartbeat(ctx, resp.Update)
 		if resp.CommandsPending {
 			select {
 			case a.pollNow <- struct{}{}:

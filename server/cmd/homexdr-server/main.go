@@ -40,9 +40,13 @@ func main() {
 			os.Exit(healthcheck())
 		case "reset-password":
 			os.Exit(resetPassword(os.Args[2:]))
+		case "enrollment-token":
+			os.Exit(enrollmentToken(os.Args[2:]))
+		case "release-manifest":
+			os.Exit(releaseManifest(os.Args[2:]))
 		case "serve":
 		default:
-			fmt.Fprintf(os.Stderr, "usage: homexdr-server [serve|version|healthcheck|reset-password]\n")
+			fmt.Fprintf(os.Stderr, "usage: homexdr-server [serve|version|healthcheck|reset-password|enrollment-token|release-manifest]\n")
 			os.Exit(2)
 		}
 	}
@@ -256,4 +260,74 @@ func resetPassword(args []string) int {
 	}
 	fmt.Fprintln(os.Stderr, "no such user")
 	return 1
+}
+
+// enrollmentToken creates an enrollment token from the command line, for scripted agent
+// installs on the server's own host:
+//
+//	docker exec homexdr homexdr-server enrollment-token --name tower --max-uses 1 --expires-hours 1
+//
+// It prints only the token. Running it needs access to the container, which already
+// implies full control of the server.
+func enrollmentToken(args []string) int {
+	fs := flag.NewFlagSet("enrollment-token", flag.ContinueOnError)
+	name := fs.String("name", "cli", "token name shown in the console")
+	hours := fs.Int("expires-hours", 24, "hours until the token expires (0 = never)")
+	uses := fs.Int("max-uses", 1, "how many enrollments the token allows (0 = unlimited)")
+	labels := fs.String("labels", "", "comma-separated labels for hosts enrolled with it")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		return 2
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	st, err := store.Open(filepath.Join(cfg.DataDir, "state.db"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer st.Close()
+	var exp *time.Time
+	if *hours > 0 {
+		t := time.Now().Add(time.Duration(*hours) * time.Hour).UTC()
+		exp = &t
+	}
+	var maxUses *int
+	if *uses > 0 {
+		maxUses = uses
+	}
+	var ls []string
+	for _, l := range strings.Split(*labels, ",") {
+		if l = strings.ToLower(strings.TrimSpace(l)); l != "" {
+			ls = append(ls, l)
+		}
+	}
+	ctx := context.Background()
+	tok, err := st.CreateToken(ctx, *name, "cli", exp, maxUses, ls)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	_ = st.Audit(ctx, "cli", "token.create", tok.ID, tok.Name)
+	fmt.Println(tok.Token)
+	return 0
+}
+
+// releaseManifest writes the agent release manifest for the binaries in a directory,
+// stamped with this binary's version metadata (the image build runs it right after
+// building the agents with the same -ldflags).
+func releaseManifest(args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "usage: homexdr-server release-manifest <downloads dir>")
+		return 2
+	}
+	rel, err := core.WriteManifest(args[0], version.Version, version.Commit, version.CommitUnix())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Printf("wrote %s/agent-release.json: %s, %d binaries\n", args[0], rel.Version, len(rel.Files))
+	return 0
 }

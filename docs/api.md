@@ -242,7 +242,7 @@ that enroll or come online before it expires.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/settings/server` | `{"version", "agent_url", "ca_pin", "server_names": string[], "event_store": "clickhouse"\|"sqlite", "retention_days": n, "syslog_addr"}` |
+| GET | `/api/settings/server` | `ServerSettings` (below) |
 | GET | `/api/enrollment-tokens` | `{"tokens": EnrollmentToken[]}` (admin; `token` value omitted) |
 | POST | `/api/enrollment-tokens` | `{"name", "expires_hours"?, "max_uses"?, "labels"?}` → `EnrollmentToken` with `token` (shown once) |
 | DELETE | `/api/enrollment-tokens/{id}` | `204` |
@@ -256,6 +256,16 @@ that enroll or come online before it expires.
 | GET | `/api/integrations` | `{"syslog": {"listening": bool, "addr", "received": n, "parsed": n, "failed": n, "sources": {ip, name, kind, last_seen, count}[]}}` |
 
 ```ts
+type ServerSettings = {
+  version: string; agent_url: string; ca_pin: string; server_names: string[];
+  event_store: "clickhouse" | "sqlite";
+  retention_days: number;          // 0 = no time limit
+  retention_max_bytes: number;     // size cap, 0 = none
+  event_store_bytes?: number;      // current size on disk
+  syslog_addr: string;
+  update_key?: string;             // release public key for signed agent updates
+  agent_release: { version?: string; signed: boolean; update_key?: string; problem?: string };
+}
 type EnrollmentToken = {
   id: string; name: string; token?: string; created_at: string; created_by: string;
   expires_at?: string; max_uses?: number; uses: number; labels: string[];
@@ -266,8 +276,8 @@ The settings page shows ready-to-copy install commands built from `agent_url`, `
 and a token:
 
 ```
-# Linux
-curl -fsSLk https://<server>:8443/v1/install/linux.sh | sudo sh -s -- --token <token> --ca-pin <pin>
+# Linux (--update-key only when the server has a signed release)
+curl -fsSLk https://<server>:8443/v1/install/linux.sh | sudo sh -s -- --token <token> --ca-pin <pin> [--update-key <key>]
 # Windows (elevated PowerShell)
 homexdr-agent.exe install --server https://<server>:8443 --token <token> --ca-pin <pin>
 ```

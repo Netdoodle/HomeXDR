@@ -1,6 +1,7 @@
 package console
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,11 +13,19 @@ import (
 
 func (h *Handler) serverSettings(w http.ResponseWriter, r *http.Request, _ *store.User) {
 	cfg := h.c.Cfg
-	writeJSON(w, http.StatusOK, map[string]any{
+	rel := h.c.Release.Status()
+	out := map[string]any{
 		"version": version.Version, "agent_url": cfg.AgentURL, "ca_pin": h.c.PKI.CAPin(),
 		"server_names": cfg.ServerNames, "event_store": cfg.EventStore, "retention_days": cfg.RetentionDays,
-		"syslog_addr": cfg.SyslogAddr,
-	})
+		"retention_max_bytes": cfg.RetentionMaxBytes, "syslog_addr": cfg.SyslogAddr,
+		"update_key": rel.UpdateKey, "agent_release": rel,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	if n, err := h.c.Events.Size(ctx); err == nil {
+		out["event_store_bytes"] = n
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *Handler) listTokens(w http.ResponseWriter, r *http.Request, _ *store.User) {

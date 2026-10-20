@@ -53,6 +53,9 @@ directive, so modules build independently without a `go.work` file.
    de-duplicated per (rule, host, process entity) within a window.
 6. Events go to the **event store** (ClickHouse by default; SQLite for tiny installs and
    tests). Alerts, hosts, rules, commands and users live in the SQLite **state store**.
+   Retention is by age (`HOMEXDR_RETENTION_DAYS`, 0 = no limit), by size
+   (`HOMEXDR_RETENTION_MAX_SIZE`, e.g. `1TB`), or both: the size cap is checked every ten
+   minutes and removes the oldest days first (whole daily partitions in ClickHouse).
 7. Analysts use the **web console** to triage alerts, explore process trees, search
    events, run artifacts and hunts, and take response actions.
 8. Response actions become **signed commands** that the agent picks up by long-polling,
@@ -81,6 +84,11 @@ directive, so modules build independently without a `go.work` file.
   runs arbitrary programs, so a compromised server cannot use agents for code execution.
 - **Local policy beats the server.** Each agent's local config file lists the action types
   it will run (`allowed_actions`). The server cannot change this file.
+- **Updates are signed by a key the server does not hold.** Agents update themselves only
+  when their local config says so (`auto_update`), and only to releases signed with the
+  release key pinned there (`update_key`). The key lives on the host that builds the server
+  image, outside the server container, so taking over the server does not let anyone push
+  binaries to agents. See [protocol.md](protocol.md#agent-updates).
 - **The agent is visible, not stealthy.** It installs as a normal named service
   (`HomeXDR Agent` / `homexdr-agent.service`), logs what it does, and uninstalls cleanly. It
   does not hide itself or resist removal by the machine's administrator.
@@ -148,6 +156,15 @@ Sigma `logsource` maps to event filters:
 
 Unknown fields fall back to a case-insensitive lookup in `data.*`, so Windows EventData
 fields work in rules without mapping.
+
+## Updates
+
+`deploy/update/homexdr-update.sh` runs from cron on the Docker host. When the tracked git
+branch moves it builds the image, signs the bundled agent release, recreates the server
+container and rolls back if the new one does not become healthy. Agents with
+`auto_update` then pick up the new agent from their next heartbeat. On Unraid,
+`deploy/unraid/homexdr-agent.plg` installs the agent at boot (Unraid's root file system is
+in RAM) and runs it while the array is started.
 
 ## Lite mode
 

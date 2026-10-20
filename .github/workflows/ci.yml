@@ -65,7 +65,7 @@ jobs:
       - working-directory: server
         env:
           HOMEXDR_TEST_CLICKHOUSE_DSN: clickhouse://hxtest:hxtestpw@127.0.0.1:9000/homexdr_test
-        run: go test -count=1 -run TestClickHouseStore -v ./internal/events
+        run: go test -count=1 -run TestClickHouse -v ./internal/events
 
   web:
     name: Web console

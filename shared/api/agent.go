@@ -129,6 +129,9 @@ type HeartbeatResponse struct {
 	// Config is set when the server has a config newer than Status.ConfigVersion.
 	Config          *AgentConfig `json:"config,omitempty"`
 	CommandsPending bool         `json:"commands_pending"`
+	// Update is set when the server offers a signed agent release with a different
+	// version (see release.go). Agents act on it only if their local config allows it.
+	Update *AgentUpdate `json:"update,omitempty"`
 }
 
 // EventsResponse is the reply to POST /v1/events (body: gzip NDJSON of event.Event,
