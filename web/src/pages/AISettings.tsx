@@ -8,7 +8,9 @@ import { ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
 import {
   AUTONOMY_CHOICES,
+  BASE_URL_HELP,
   DATA_CHOICES,
+  KEY_HELP,
   MODEL_CHOICES,
   PROVIDER_NOTES,
   TRIGGER_CHOICES,
@@ -54,7 +56,7 @@ function ChoiceCards({
   )
 }
 
-function Section({ title, help, children }: { title: string; help?: ReactNode; children: ReactNode }) {
+function Section({ title, help, children }: { title: ReactNode; help?: ReactNode; children: ReactNode }) {
   return (
     <div className="field" style={{ gap: 6 }}>
       <span className="label">{title}</span>
@@ -69,6 +71,7 @@ function toUpdate(s: AISettings): AISettingsUpdate {
     enabled: s.enabled,
     provider: s.provider,
     model: s.model,
+    base_url: s.base_url ?? '',
     min_severity: s.min_severity,
     daily_limit: s.daily_limit,
     max_tool_calls: s.max_tool_calls,
@@ -88,11 +91,26 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
   const [form, setForm] = useState<AISettingsUpdate>(() => toUpdate(settings))
   const [key, setKey] = useState('')
   const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null)
+  const [models, setModels] = useState<{ list: string[]; error?: string } | null>(null)
   useEffect(() => setForm(toUpdate(settings)), [settings])
 
   const set = <K extends keyof AISettingsUpdate>(k: K, v: AISettingsUpdate[K]) => {
     setForm((f) => ({ ...f, [k]: v }))
     setTest(null)
+  }
+  const chooseProvider = (id: string) => {
+    if (id === form.provider) return
+    // Model names and endpoints belong to a provider; start fresh when switching.
+    const back = id === settings.provider
+    setForm((f) => ({
+      ...f,
+      provider: id,
+      model: back ? settings.model : id === 'anthropic' ? settings.default_model : '',
+      base_url: back ? (settings.base_url ?? '') : '',
+    }))
+    setKey('')
+    setTest(null)
+    setModels(null)
   }
   const body = (extra: Partial<AISettingsUpdate> = {}): AISettingsUpdate => ({ ...form, ...(key.trim() ? { api_key: key.trim() } : {}), ...extra })
 
@@ -110,12 +128,20 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
     onSuccess: (r) => setTest(r.ok ? { ok: true, text: `Connected. ${r.model} answered.` } : { ok: false, text: r.error ?? 'Failed' }),
     onError: (e) => toast.error(e),
   })
+  const listModels = useMutation({
+    mutationFn: () => api.listAIModels(body()),
+    onSuccess: (r) => setModels({ list: r.models, error: r.error }),
+    onError: (e) => toast.error(e),
+  })
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
     save.mutate(body())
   }
 
+  const provider = settings.providers.find((p) => p.id === form.provider)
+  const isClaude = form.provider === 'anthropic'
+  const keyStatus = settings.keys?.[form.provider]
   const customModel = !MODEL_CHOICES.some((c) => c.value === form.model)
   const providers: Choice[] = settings.providers.map((p) => ({
     value: p.id,
@@ -154,7 +180,8 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
             <div>
               {settings.ready ? (
                 <>
-                  Running. {settings.auto_today} of {settings.daily_limit} automatic investigations used today.
+                  Running with {settings.providers.find((p) => p.id === settings.provider)?.name ?? settings.provider} ({settings.model}).{' '}
+                  {settings.auto_today} of {settings.daily_limit} automatic investigations used today.
                 </>
               ) : (
                 <>Not running: {settings.not_ready_reason}.</>
@@ -163,27 +190,34 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
           </div>
 
           <Section title="Provider">
-            <ChoiceCards name="Provider" choices={providers} value={form.provider} onChange={(v) => set('provider', v)} />
+            <ChoiceCards name="Provider" choices={providers} value={form.provider} onChange={chooseProvider} />
           </Section>
 
-          <Section title="Model">
-            <ChoiceCards
-              name="Model"
-              choices={[...MODEL_CHOICES, { value: customModel ? form.model : '__custom', label: 'Another model', note: 'Any Claude model ID.' }]}
-              value={form.model}
-              onChange={(v) => set('model', v === '__custom' ? '' : v)}
-            />
-            {customModel ? (
-              <input className="input mono" placeholder={settings.default_model} value={form.model} onChange={(e) => set('model', e.target.value)} aria-label="Model ID" />
-            ) : null}
-          </Section>
+          {!isClaude ? (
+            <Section
+              title={form.provider === 'local' ? 'Server URL' : 'Endpoint URL'}
+              help={BASE_URL_HELP[form.provider] ?? 'An OpenAI-compatible API, up to and including /v1.'}
+            >
+              <input
+                className="input mono"
+                value={form.base_url ?? ''}
+                placeholder={provider?.default_base_url || 'http://192.168.120.20:11434/v1'}
+                onChange={(e) => set('base_url', e.target.value)}
+                aria-label="Endpoint URL"
+              />
+            </Section>
+          ) : null}
 
           <Section
-            title="API key"
+            title={
+              <>
+                API key{provider && !provider.needs_key ? <span className="muted"> (optional)</span> : null}
+              </>
+            }
             help={
-              settings.key_source === 'environment'
-                ? 'Set by the HOMEXDR_ANTHROPIC_API_KEY environment variable, which overrides this setting.'
-                : 'Stored in the server database and never shown again. Create one in the Anthropic Console.'
+              keyStatus?.source === 'environment'
+                ? `Set by the ${provider?.key_env ?? 'environment'} environment variable, which overrides this setting.`
+                : `${KEY_HELP[form.provider] ?? ''} Stored in the server database and never shown again; each provider keeps its own key.`
             }
           >
             <div className="row" style={{ gap: 8 }}>
@@ -192,21 +226,65 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
                 type="password"
                 autoComplete="off"
                 style={{ flex: 1 }}
-                placeholder={settings.key_set ? `Key set (${settings.key_hint ?? 'hidden'}); paste a new one to replace it` : 'sk-ant-...'}
+                placeholder={keyStatus?.set ? `Key set (${keyStatus.hint ?? 'hidden'}); paste a new one to replace it` : 'Paste the API key'}
                 value={key}
                 onChange={(e) => {
                   setKey(e.target.value)
                   setTest(null)
                 }}
                 aria-label="API key"
-                disabled={settings.key_source === 'environment'}
+                disabled={keyStatus?.source === 'environment'}
               />
-              {settings.key_set && settings.key_source === 'settings' ? (
+              {keyStatus?.set && keyStatus.source === 'settings' && form.provider === settings.provider ? (
                 <button type="button" className="btn" disabled={save.isPending} onClick={() => save.mutate(body({ clear_api_key: true, api_key: undefined }))}>
                   Remove key
                 </button>
               ) : null}
             </div>
+          </Section>
+
+          <Section title="Model" help={isClaude ? undefined : 'Use a model that supports tool (function) calling. List models asks the provider what it offers.'}>
+            {isClaude ? (
+              <>
+                <ChoiceCards
+                  name="Model"
+                  choices={[...MODEL_CHOICES, { value: customModel ? form.model : '__custom', label: 'Another model', note: 'Any Claude model ID.' }]}
+                  value={form.model}
+                  onChange={(v) => set('model', v === '__custom' ? '' : v)}
+                />
+                {customModel ? (
+                  <input className="input mono" placeholder={settings.default_model} value={form.model} onChange={(e) => set('model', e.target.value)} aria-label="Model ID" />
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="row" style={{ gap: 8 }}>
+                  <input
+                    className="input mono"
+                    style={{ flex: 1 }}
+                    list="ai-models"
+                    placeholder="Model name"
+                    value={form.model}
+                    onChange={(e) => set('model', e.target.value)}
+                    aria-label="Model name"
+                  />
+                  <button type="button" className="btn" disabled={listModels.isPending} onClick={() => listModels.mutate()}>
+                    List models
+                  </button>
+                </div>
+                <datalist id="ai-models">
+                  {(models?.list ?? []).map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+                {models?.error ? <span className="error xsmall">{models.error}</span> : null}
+                {models && !models.error ? (
+                  <span className="help">
+                    {models.list.length} {models.list.length === 1 ? 'model' : 'models'} available; pick one from the list or type a name.
+                  </span>
+                ) : null}
+              </>
+            )}
           </Section>
 
           <Section title="Which alerts to investigate">
@@ -240,7 +318,7 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
           </Section>
 
           <Section title="Alert data sent to the provider">
-            <ChoiceCards name="Data" choices={DATA_CHOICES} value="as-is" />
+            <ChoiceCards name="Data" choices={DATA_CHOICES} value={form.provider === 'local' ? 'local' : 'as-is'} />
           </Section>
 
           <Section title="What the AI may do">
@@ -260,7 +338,7 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
             <button type="button" className="btn" disabled={runTest.isPending} onClick={() => runTest.mutate()}>
               Test connection
             </button>
-            {save.isPending || runTest.isPending ? <Spinner small /> : null}
+            {save.isPending || runTest.isPending || listModels.isPending ? <Spinner small /> : null}
           </div>
         </div>
       </section>

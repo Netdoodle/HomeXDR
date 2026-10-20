@@ -18,7 +18,8 @@ describe('AI analyst helpers', () => {
   })
 
   it('only offers built options for data and autonomy', () => {
-    expect(DATA_CHOICES.filter((c) => !c.planned).map((c) => c.value)).toEqual(['as-is'])
+    expect(DATA_CHOICES.filter((c) => !c.planned).map((c) => c.value)).toEqual(['as-is', 'local'])
+    expect(DATA_CHOICES.find((c) => c.value === 'redact')?.planned).toBe(true)
     expect(AUTONOMY_CHOICES.filter((c) => !c.planned).map((c) => c.value)).toEqual(['annotate'])
   })
 

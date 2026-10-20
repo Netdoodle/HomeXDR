@@ -194,6 +194,19 @@ func (p *claudeProvider) test(ctx context.Context) (string, error) {
 	return string(resp.Model), nil
 }
 
+// listModels lists the Claude models the key can use.
+func (p *claudeProvider) listModels(ctx context.Context) ([]string, error) {
+	var ids []string
+	iter := p.client.Models.ListAutoPaging(ctx, anthropic.ModelListParams{Limit: anthropic.Int(100)})
+	for iter.Next() {
+		ids = append(ids, iter.Current().ID)
+	}
+	if err := iter.Err(); err != nil {
+		return nil, describeAPIError(err)
+	}
+	return ids, nil
+}
+
 // describeAPIError turns SDK errors into messages an admin can act on.
 func describeAPIError(err error) error {
 	var apierr *anthropic.Error

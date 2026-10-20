@@ -39,13 +39,14 @@ The code is in `server/internal/triage`; the console settings are under
 
 | Setting | Choices |
 |---|---|
-| Provider | **Claude (Anthropic)**, available now. OpenAI (ChatGPT), Google Gemini and a local model through an OpenAI-compatible server (Ollama, LM Studio) are planned. |
-| Model | `claude-opus-5-5` (default, the most thorough), `claude-sonnet-5-5` (faster and cheaper), `claude-haiku-5-5` (cheapest), or any Claude model ID. |
-| API key | Stored in the server's state database and never returned by the API (only its last four characters). `HOMEXDR_ANTHROPIC_API_KEY` in the server's environment overrides it. |
+| Provider | **Claude (Anthropic)**, the default and best tested. **OpenAI (ChatGPT)** through the OpenAI API. **Google Gemini** through Google's OpenAI-compatible endpoint. **Local model** through any OpenAI-compatible server (Ollama, LM Studio, vLLM, llama.cpp), so alert data never leaves your network. |
+| Model | Claude: `claude-opus-5-5` (default, the most thorough), `claude-sonnet-5-5` (faster and cheaper), `claude-haiku-5-5` (cheapest), or any Claude model ID. Other providers: any model that supports tool (function) calling; **List models** asks the provider what it offers. |
+| Endpoint URL | OpenAI and Gemini use their public endpoints unless overridden. Local needs one, e.g. Ollama `http://host:11434/v1`, LM Studio `http://host:1234/v1`, vLLM `http://host:8000/v1`. |
+| API key | One per provider (optional for local servers). Stored in the server's state database and never returned by the API, only whether one is set and its last four characters. Environment variables override them: `HOMEXDR_ANTHROPIC_API_KEY`, `HOMEXDR_OPENAI_API_KEY`, `HOMEXDR_GEMINI_API_KEY`, `HOMEXDR_LOCAL_AI_API_KEY`. |
 | Which alerts | **Medium and above** (default): skips low and informational alerts to keep the cost down. **High and critical only**: cheapest. **Every new alert**: most coverage, highest cost. |
 | Daily limit | Automatic investigations per day (default 50). Later alerts are marked *skipped*; an analyst can still start one by hand. |
 | Tool calls per investigation | Default 20. When it is used up the model is asked to report with what it has. |
-| Alert data | Sent as-is to the provider for each investigation (hostnames, usernames, IPs, command lines), under the provider's API data terms. Redaction and local-only modes are planned. |
+| Alert data | Sent as-is to the provider for each investigation (hostnames, usernames, IPs, command lines), under the provider's API data terms. Choose the local provider to keep it on your network. Redaction is planned. |
 
 The analyst is on by default but idle until an API key is set. **Test connection** makes a
 minimal request with the current form values.
@@ -70,6 +71,15 @@ requests opt in to server-side refusal fallbacks (`fallbacks: "default"`) so a d
 turn is re-served by a fallback model. If the whole chain declines, the investigation is
 stored as `refused` with the category. Rate limits and server errors are retried by the
 SDK.
+
+With the other providers: requests use the OpenAI-compatible Chat Completions API with
+function calling (`tool_choice: "auto"`) and the same tools and append-only history.
+`submit_triage` is sent as a strict schema to OpenAI only, since some compatible servers
+reject the field; the report is validated on the server either way. Rate limits and
+server errors are retried with backoff (honouring `Retry-After`). A refusal
+(`message.refusal` or `finish_reason: content_filter`) is stored as `refused`. Local
+models vary a lot in how well they call tools: if one finishes without a report, it is
+asked for one twice, then the run is stored as failed.
 
 ## API
 

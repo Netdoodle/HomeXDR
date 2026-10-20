@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -35,20 +36,37 @@ const (
 
 // ProviderInfo describes a provider for the settings page.
 type ProviderInfo struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Available bool   `json:"available"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Available      bool   `json:"available"`
+	DefaultBaseURL string `json:"default_base_url,omitempty"` // OpenAI-compatible endpoint
+	NeedsKey       bool   `json:"needs_key"`
+	NeedsBaseURL   bool   `json:"needs_base_url"`
+	KeyEnv         string `json:"key_env"` // environment variable that overrides the stored key
 }
 
-// Providers lists the AI services, available or planned.
+// Providers lists the AI services. All but Claude speak the OpenAI-compatible Chat
+// Completions API; Gemini through Google's compatibility endpoint.
 var Providers = []ProviderInfo{
-	{ProviderAnthropic, "Claude (Anthropic)", true},
-	{ProviderOpenAI, "OpenAI (ChatGPT)", false},
-	{ProviderGemini, "Google Gemini", false},
-	{ProviderLocal, "Local model", false},
+	{ID: ProviderAnthropic, Name: "Claude (Anthropic)", Available: true, NeedsKey: true, KeyEnv: EnvAnthropicKey},
+	{ID: ProviderOpenAI, Name: "OpenAI (ChatGPT)", Available: true, NeedsKey: true, KeyEnv: "HOMEXDR_OPENAI_API_KEY",
+		DefaultBaseURL: "https://api.openai.com/v1"},
+	{ID: ProviderGemini, Name: "Google Gemini", Available: true, NeedsKey: true, KeyEnv: "HOMEXDR_GEMINI_API_KEY",
+		DefaultBaseURL: "https://generativelanguage.googleapis.com/v1beta/openai"},
+	{ID: ProviderLocal, Name: "Local model", Available: true, NeedsBaseURL: true, KeyEnv: "HOMEXDR_LOCAL_AI_API_KEY"},
 }
 
-// DefaultModel is the default Claude model.
+func providerInfo(id string) (ProviderInfo, bool) {
+	for _, p := range Providers {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return ProviderInfo{}, false
+}
+
+// DefaultModel is the default Claude model. Other providers have no default: their
+// model names change often, so the admin picks one (the console can list them).
 const DefaultModel = "claude-opus-5-5"
 
 // EnvAnthropicKey, when set, provides the Claude API key instead of the settings.
@@ -56,15 +74,45 @@ const EnvAnthropicKey = "HOMEXDR_ANTHROPIC_API_KEY"
 
 const settingsKey = "ai_triage_settings"
 
-// Settings configure the AI analyst. APIKey is write-only through the console API.
+// Settings configure the AI analyst. API keys are write-only through the console API.
 type Settings struct {
-	Enabled      bool   `json:"enabled"`
-	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-	APIKey       string `json:"api_key,omitempty"`
+	Enabled  bool   `json:"enabled"`
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	// APIKey is the key for the selected provider in console requests. In storage it is
+	// folded into APIKeys (an older version stored the Claude key here).
+	APIKey  string            `json:"api_key,omitempty"`
+	APIKeys map[string]string `json:"api_keys,omitempty"` // per provider
+	// BaseURL overrides the provider's OpenAI-compatible endpoint (required for local).
+	BaseURL      string `json:"base_url,omitempty"`
 	MinSeverity  string `json:"min_severity"` // informational | low | medium | high | critical
 	DailyLimit   int    `json:"daily_limit"`  // automatic investigations per day
 	MaxToolCalls int    `json:"max_tool_calls"`
+}
+
+// normalize folds a request's (or legacy) APIKey into APIKeys for the selected provider.
+func (s *Settings) normalize() {
+	if s.APIKeys == nil {
+		s.APIKeys = map[string]string{}
+	}
+	if k := strings.TrimSpace(s.APIKey); k != "" {
+		s.APIKeys[s.Provider] = k
+	}
+	s.APIKey = ""
+	for id, k := range s.APIKeys {
+		if strings.TrimSpace(k) == "" {
+			delete(s.APIKeys, id)
+		}
+	}
+}
+
+// EndpointURL returns the OpenAI-compatible base URL in effect for the provider.
+func (s Settings) EndpointURL() string {
+	if s.BaseURL != "" {
+		return s.BaseURL
+	}
+	info, _ := providerInfo(s.Provider)
+	return info.DefaultBaseURL
 }
 
 // DefaultSettings: on (it does nothing until an API key is set), Claude, medium and above.
@@ -92,15 +140,22 @@ func severityRank(s string) int {
 // Validate checks and normalizes settings.
 func (s *Settings) Validate() error {
 	s.Model = strings.TrimSpace(s.Model)
-	s.APIKey = strings.TrimSpace(s.APIKey)
+	s.BaseURL = strings.TrimRight(strings.TrimSpace(s.BaseURL), "/")
 	switch {
 	case s.Provider == "":
 		s.Provider = ProviderAnthropic
 	case !knownProvider(s.Provider):
 		return fmt.Errorf("unknown provider %q", s.Provider)
 	}
-	if s.Model == "" {
+	s.normalize()
+	if s.Model == "" && s.Provider == ProviderAnthropic {
 		s.Model = DefaultModel
+	}
+	if s.BaseURL != "" {
+		u, err := url.Parse(s.BaseURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("base_url must be an http(s) URL such as http://192.168.120.20:11434/v1")
+		}
 	}
 	for _, r := range s.Model {
 		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-._:/@", r)) {
@@ -215,8 +270,13 @@ func defaultProvider(s Settings, key string) (provider, error) {
 	switch s.Provider {
 	case ProviderAnthropic:
 		return newClaude(key, s.Model), nil
+	case ProviderOpenAI, ProviderGemini, ProviderLocal:
+		if s.EndpointURL() == "" {
+			return nil, errors.New("no base URL is set")
+		}
+		return newOpenAICompatible(s.Provider, s.EndpointURL(), key, s.Model), nil
 	}
-	return nil, fmt.Errorf("the %s provider is not available yet", s.Provider)
+	return nil, fmt.Errorf("unknown provider %q", s.Provider)
 }
 
 // Settings returns the stored settings (defaults when none are stored).
@@ -224,6 +284,15 @@ func (s *Service) Settings(ctx context.Context) Settings {
 	set := DefaultSettings()
 	if err := s.st.GetKV(ctx, settingsKey, &set); err != nil && !errors.Is(err, store.ErrNotFound) {
 		s.log.Warn("ai triage: read settings", "err", err)
+	}
+	if set.APIKey != "" { // stored by an older version: it was the Claude key
+		if set.APIKeys == nil {
+			set.APIKeys = map[string]string{}
+		}
+		if set.APIKeys[ProviderAnthropic] == "" {
+			set.APIKeys[ProviderAnthropic] = set.APIKey
+		}
+		set.APIKey = ""
 	}
 	return set
 }
@@ -239,12 +308,20 @@ func (s *Service) SaveSettings(ctx context.Context, set Settings) (Settings, err
 // Key returns the API key in effect and where it comes from ("environment",
 // "settings" or "").
 func (s *Service) Key(set Settings) (key, source string) {
-	if set.Provider == ProviderAnthropic {
-		if v := strings.TrimSpace(os.Getenv(EnvAnthropicKey)); v != "" {
+	return KeyFor(set, set.Provider)
+}
+
+// KeyFor returns a provider's API key in effect and its source.
+func KeyFor(set Settings, providerID string) (key, source string) {
+	if info, ok := providerInfo(providerID); ok && info.KeyEnv != "" {
+		if v := strings.TrimSpace(os.Getenv(info.KeyEnv)); v != "" {
 			return v, "environment"
 		}
 	}
-	if set.APIKey != "" {
+	if k := set.APIKeys[providerID]; k != "" {
+		return k, "settings"
+	}
+	if providerID == set.Provider && set.APIKey != "" {
 		return set.APIKey, "settings"
 	}
 	return "", ""
@@ -252,24 +329,21 @@ func (s *Service) Key(set Settings) (key, source string) {
 
 // Ready reports whether automatic investigations can run, and if not, why.
 func (s *Service) Ready(set Settings) (bool, string) {
-	switch key, _ := s.Key(set); {
+	info, known := providerInfo(set.Provider)
+	key, _ := s.Key(set)
+	switch {
 	case !set.Enabled:
 		return false, "the AI analyst is turned off"
-	case !providerAvailable(set.Provider):
-		return false, "the selected provider is not available yet"
-	case key == "":
+	case !known || !info.Available:
+		return false, "the selected provider is not available"
+	case info.NeedsKey && key == "":
 		return false, "no API key is set"
+	case set.Provider != ProviderAnthropic && set.EndpointURL() == "":
+		return false, "no base URL is set"
+	case set.Model == "":
+		return false, "no model is set"
 	}
 	return true, ""
-}
-
-func providerAvailable(id string) bool {
-	for _, p := range Providers {
-		if p.ID == id {
-			return p.Available
-		}
-	}
-	return false
 }
 
 func startOfDay(t time.Time) time.Time {
@@ -330,17 +404,49 @@ func (s *Service) Test(ctx context.Context, set Settings) (string, error) {
 	if err := set.Validate(); err != nil {
 		return "", err
 	}
-	key, _ := s.Key(set)
-	if key == "" {
-		return "", errors.New("no API key is set")
+	if set.Model == "" {
+		return "", errors.New("no model is set")
 	}
-	p, err := s.newProvider(set, key)
+	p, err := s.providerFor(set)
 	if err != nil {
 		return "", err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	return p.test(ctx)
+}
+
+// providerFor builds the provider for (validated) settings.
+func (s *Service) providerFor(set Settings) (provider, error) {
+	info, _ := providerInfo(set.Provider)
+	key, _ := s.Key(set)
+	if info.NeedsKey && key == "" {
+		return nil, errors.New("no API key is set")
+	}
+	return s.newProvider(set, key)
+}
+
+// modelLister is implemented by providers that can list their models.
+type modelLister interface {
+	listModels(ctx context.Context) ([]string, error)
+}
+
+// ListModels asks the provider which models it offers.
+func (s *Service) ListModels(ctx context.Context, set Settings) ([]string, error) {
+	if err := set.Validate(); err != nil {
+		return nil, err
+	}
+	p, err := s.providerFor(set)
+	if err != nil {
+		return nil, err
+	}
+	l, ok := p.(modelLister)
+	if !ok {
+		return nil, errors.New("this provider cannot list its models")
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	return l.listModels(ctx)
 }
 
 func (s *Service) poke() {
@@ -415,10 +521,10 @@ func (s *Service) process(ctx context.Context, t *store.Triage) {
 
 func (s *Service) investigate(ctx context.Context, t *store.Triage) error {
 	set := s.Settings(ctx)
-	key, _ := s.Key(set)
-	if key == "" {
-		return errors.New("no API key is set")
+	if ok, why := s.Ready(set); !ok {
+		return errors.New(why)
 	}
+	key, _ := s.Key(set)
 	p, err := s.newProvider(set, key)
 	if err != nil {
 		return err

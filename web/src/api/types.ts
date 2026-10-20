@@ -747,6 +747,18 @@ export interface AIProvider {
   id: string
   name: string
   available: boolean
+  /** OpenAI-compatible endpoint used when base_url is empty */
+  default_base_url?: string
+  needs_key: boolean
+  needs_base_url: boolean
+  /** environment variable that overrides the stored key */
+  key_env: string
+}
+
+export interface AIKeyStatus {
+  set: boolean
+  source?: 'settings' | 'environment'
+  hint?: string
 }
 
 export interface AISettings {
@@ -756,9 +768,14 @@ export interface AISettings {
   min_severity: Severity
   daily_limit: number
   max_tool_calls: number
+  /** OpenAI-compatible endpoint override (required for the local provider) */
+  base_url?: string
+  /** for the selected provider */
   key_set: boolean
   key_source?: 'settings' | 'environment'
   key_hint?: string
+  /** per provider; keys themselves are never returned */
+  keys: Record<string, AIKeyStatus>
   ready: boolean
   not_ready_reason?: string
   providers: AIProvider[]
@@ -773,7 +790,8 @@ export interface AISettingsUpdate {
   min_severity: Severity
   daily_limit: number
   max_tool_calls: number
-  /** replaces the stored key when not empty */
+  base_url?: string
+  /** sets the selected provider's key when not empty */
   api_key?: string
   clear_api_key?: boolean
 }

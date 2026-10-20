@@ -9,14 +9,17 @@ import (
 	"github.com/Netdoodle/homexdr/server/internal/triage"
 )
 
-// aiSettingsView is the settings as the console sees them: the API key is never
-// returned, only whether one is set and its last characters.
+// aiSettingsView is the settings as the console sees them. API keys are never
+// returned: only whether each provider has one, where it comes from and its last
+// characters.
 type aiSettingsView struct {
 	triage.Settings
-	APIKey         string                `json:"api_key,omitempty"` // always empty
-	KeySet         bool                  `json:"key_set"`
-	KeySource      string                `json:"key_source,omitempty"` // settings | environment
+	APIKey         string                `json:"api_key,omitempty"`  // shadows the embedded field; always empty
+	APIKeys        map[string]string     `json:"api_keys,omitempty"` // shadows the embedded field; always empty
+	KeySet         bool                  `json:"key_set"`            // for the selected provider
+	KeySource      string                `json:"key_source,omitempty"`
 	KeyHint        string                `json:"key_hint,omitempty"`
+	Keys           map[string]keyStatus  `json:"keys"` // per provider
 	Ready          bool                  `json:"ready"`
 	NotReadyReason string                `json:"not_ready_reason,omitempty"`
 	Providers      []triage.ProviderInfo `json:"providers"`
@@ -24,18 +27,33 @@ type aiSettingsView struct {
 	AutoToday      int                   `json:"auto_today"`
 }
 
+type keyStatus struct {
+	Set    bool   `json:"set"`
+	Source string `json:"source,omitempty"` // settings | environment
+	Hint   string `json:"hint,omitempty"`
+}
+
+func keyHint(key string) string {
+	if len(key) > 8 {
+		return "..." + key[len(key)-4:]
+	}
+	return ""
+}
+
 func (h *Handler) aiView(r *http.Request, set triage.Settings) aiSettingsView {
 	svc := h.c.Triage
-	key, source := svc.Key(set)
 	ready, why := svc.Ready(set)
 	v := aiSettingsView{
-		Settings: set, KeySet: key != "", KeySource: source, Ready: ready, NotReadyReason: why,
+		Settings: set, Ready: ready, NotReadyReason: why, Keys: map[string]keyStatus{},
 		Providers: triage.Providers, DefaultModel: triage.DefaultModel, AutoToday: svc.AutoToday(r.Context()),
 	}
-	v.Settings.APIKey = ""
-	if len(key) > 8 {
-		v.KeyHint = "..." + key[len(key)-4:]
+	v.Settings.APIKey, v.Settings.APIKeys = "", nil
+	for _, p := range triage.Providers {
+		key, source := triage.KeyFor(set, p.ID)
+		v.Keys[p.ID] = keyStatus{Set: key != "", Source: source, Hint: keyHint(key)}
 	}
+	sel := v.Keys[set.Provider]
+	v.KeySet, v.KeySource, v.KeyHint = sel.Set, sel.Source, sel.Hint
 	return v
 }
 
@@ -43,8 +61,8 @@ func (h *Handler) getAISettings(w http.ResponseWriter, r *http.Request, _ *store
 	writeJSON(w, http.StatusOK, h.aiView(r, h.c.Triage.Settings(r.Context())))
 }
 
-// aiSettingsRequest is a PUT/test body. api_key replaces the stored key when not
-// empty; clear_api_key removes it. Otherwise the stored key is kept.
+// aiSettingsRequest is a PUT/test/models body. api_key sets the selected provider's
+// key when not empty; clear_api_key removes it; other providers' keys are kept.
 type aiSettingsRequest struct {
 	triage.Settings
 	ClearAPIKey bool `json:"clear_api_key"`
@@ -53,11 +71,17 @@ type aiSettingsRequest struct {
 func (h *Handler) mergeAISettings(r *http.Request, req aiSettingsRequest) triage.Settings {
 	cur := h.c.Triage.Settings(r.Context())
 	next := req.Settings
+	next.APIKeys = map[string]string{} // only ever changed through api_key / clear_api_key
+	for id, k := range cur.APIKeys {
+		next.APIKeys[id] = k
+	}
 	switch {
 	case req.ClearAPIKey:
+		delete(next.APIKeys, next.Provider)
 		next.APIKey = ""
-	case strings.TrimSpace(next.APIKey) == "":
-		next.APIKey = cur.APIKey
+	case strings.TrimSpace(next.APIKey) != "":
+		next.APIKeys[next.Provider] = strings.TrimSpace(next.APIKey)
+		next.APIKey = ""
 	}
 	return next
 }
@@ -74,19 +98,37 @@ func (h *Handler) putAISettings(w http.ResponseWriter, r *http.Request, u *store
 		return
 	}
 	details := "provider " + next.Provider + ", model " + next.Model + ", min severity " + next.MinSeverity
+	if next.BaseURL != "" {
+		details += ", base URL " + next.BaseURL
+	}
 	if next.Enabled {
 		details = "on, " + details
 	} else {
 		details = "off, " + details
 	}
+	was, now := cur.APIKeys[next.Provider], next.APIKeys[next.Provider]
 	switch {
-	case cur.APIKey != "" && next.APIKey == "":
-		details += ", API key removed"
-	case next.APIKey != cur.APIKey:
-		details += ", API key changed"
+	case was != "" && now == "":
+		details += ", " + next.Provider + " API key removed"
+	case now != was:
+		details += ", " + next.Provider + " API key changed"
 	}
 	h.c.Audit(r.Context(), u.Username, "ai.settings", "ai_triage", details)
 	writeJSON(w, http.StatusOK, h.aiView(r, next))
+}
+
+// listAIModels asks the selected provider which models it offers.
+func (h *Handler) listAIModels(w http.ResponseWriter, r *http.Request, _ *store.User) {
+	var req aiSettingsRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	models, err := h.c.Triage.ListModels(r.Context(), h.mergeAISettings(r, req))
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"models": []string{}, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"models": models})
 }
 
 func (h *Handler) testAISettings(w http.ResponseWriter, r *http.Request, _ *store.User) {

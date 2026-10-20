@@ -28,11 +28,26 @@ export interface Choice<T extends string = string> {
 
 /** Notes for the providers the server lists; unknown ones fall back to the name only. */
 export const PROVIDER_NOTES: Record<string, string> = {
-  anthropic: 'Available now. Investigates with the Claude API using your Anthropic API key.',
-  openai: 'Planned next: ChatGPT models through the OpenAI API.',
-  gemini: 'Planned: Gemini models through the Google AI API.',
+  anthropic: 'Investigates with the Claude API using an Anthropic API key. The default, and the best tested.',
+  openai: 'Investigates with OpenAI models through the OpenAI API, using an OpenAI API key.',
+  gemini: "Investigates with Gemini models through Google's OpenAI-compatible endpoint, using a Gemini API key.",
   local:
-    'Planned: a model on your own hardware through an OpenAI-compatible server such as Ollama or LM Studio, so alert data never leaves your network.',
+    'A model on your own hardware through an OpenAI-compatible server such as Ollama, LM Studio, vLLM or llama.cpp. Alert data never leaves your network. Smaller models investigate less thoroughly.',
+}
+
+/** Where to get a key, per provider. */
+export const KEY_HELP: Record<string, string> = {
+  anthropic: 'Create one in the Anthropic Console.',
+  openai: 'Create one in the OpenAI platform dashboard.',
+  gemini: 'Create one in Google AI Studio.',
+  local: 'Only needed if your server requires one.',
+}
+
+/** Help for the endpoint URL field, per provider. */
+export const BASE_URL_HELP: Record<string, string> = {
+  openai: 'Leave empty for the OpenAI API, or point it at an OpenAI-compatible proxy.',
+  gemini: "Leave empty for Google's OpenAI-compatible Gemini endpoint.",
+  local: 'Required. Ollama: http://host:11434/v1 · LM Studio: http://host:1234/v1 · vLLM: http://host:8000/v1',
 }
 
 export const MODEL_CHOICES: Choice[] = [
@@ -57,7 +72,7 @@ export const DATA_CHOICES: Choice[] = [
     note: 'Replace usernames, hostnames and internal IPs with stable placeholders before sending. Somewhat weaker triage.',
     planned: true,
   },
-  { value: 'local', label: 'Local model only', note: 'Never send alert data to a cloud provider. Comes with the local model provider.', planned: true },
+  { value: 'local', label: 'Local model only', note: 'Pick the Local model provider above: investigations then stay on your network.' },
 ]
 
 /** What the AI may change. Only annotation is built. */

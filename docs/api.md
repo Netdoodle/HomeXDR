@@ -201,6 +201,7 @@ change alerts or anything else.
 | GET | `/api/settings/ai` | `AISettings` (admin) |
 | PUT | `/api/settings/ai` | `AISettingsUpdate` → `AISettings` (admin); audited without the key |
 | POST | `/api/settings/ai/test` | `AISettingsUpdate` → `{"ok": bool, "model"?: string, "error"?: string}` (admin): a minimal request with the given values |
+| POST | `/api/settings/ai/models` | `AISettingsUpdate` → `{"models": string[], "error"?: string}` (admin): the models the selected provider offers |
 
 ```ts
 type AIVerdict = "benign" | "suspicious" | "malicious" | "inconclusive"
@@ -219,13 +220,18 @@ type AITriage = {
   created_at: string; started_at?: string; finished_at?: string;
 }
 type AISettings = {
-  enabled: boolean; provider: string; model: string; min_severity: Severity; daily_limit: number; max_tool_calls: number;
-  key_set: boolean; key_source?: "settings" | "environment"; key_hint?: string;   // the key itself is never returned
-  ready: boolean; not_ready_reason?: string; providers: { id: string; name: string; available: boolean }[];
+  enabled: boolean; provider: "anthropic" | "openai" | "gemini" | "local"; model: string; base_url?: string;
+  min_severity: Severity; daily_limit: number; max_tool_calls: number;
+  key_set: boolean; key_source?: "settings" | "environment"; key_hint?: string;   // selected provider; keys are never returned
+  keys: Record<string, { set: boolean; source?: "settings" | "environment"; hint?: string }>;
+  ready: boolean; not_ready_reason?: string;
+  providers: { id: string; name: string; available: boolean; default_base_url?: string;
+               needs_key: boolean; needs_base_url: boolean; key_env: string }[];
   default_model: string; auto_today: number;
 }
-// AISettingsUpdate: the editable fields of AISettings, plus api_key (replaces the stored key
-// when not empty) and clear_api_key.
+// AISettingsUpdate: the editable fields of AISettings (including base_url), plus api_key
+// (sets the selected provider's key when not empty) and clear_api_key. Other providers'
+// keys are kept.
 ```
 
 ## Rules

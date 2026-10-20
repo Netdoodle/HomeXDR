@@ -1015,12 +1015,16 @@ const aiSettings: AISettings = {
   key_set: true,
   key_source: 'settings',
   key_hint: '...k3Yq',
+  keys: { anthropic: { set: true, source: 'settings', hint: '...k3Yq' }, openai: { set: false }, gemini: { set: false }, local: { set: false } },
   ready: true,
   providers: [
-    { id: 'anthropic', name: 'Claude (Anthropic)', available: true },
-    { id: 'openai', name: 'OpenAI (ChatGPT)', available: false },
-    { id: 'gemini', name: 'Google Gemini', available: false },
-    { id: 'local', name: 'Local model', available: false },
+    { id: 'anthropic', name: 'Claude (Anthropic)', available: true, needs_key: true, needs_base_url: false, key_env: 'HOMEXDR_ANTHROPIC_API_KEY' },
+    { id: 'openai', name: 'OpenAI (ChatGPT)', available: true, needs_key: true, needs_base_url: false, key_env: 'HOMEXDR_OPENAI_API_KEY', default_base_url: 'https://api.openai.com/v1' },
+    {
+      id: 'gemini', name: 'Google Gemini', available: true, needs_key: true, needs_base_url: false, key_env: 'HOMEXDR_GEMINI_API_KEY',
+      default_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    },
+    { id: 'local', name: 'Local model', available: true, needs_key: false, needs_base_url: true, key_env: 'HOMEXDR_LOCAL_AI_API_KEY' },
   ],
   default_model: 'claude-opus-5-5',
   auto_today: 3,
@@ -1105,23 +1109,48 @@ route(
 route('GET', '/api/settings/ai', () => aiSettings, { role: 'admin' })
 
 route(
+  'POST',
+  '/api/settings/ai/models',
+  ({ body }) => {
+    const b = obj(body) as Partial<AISettingsUpdate>
+    if (b.provider === 'local' && !b.base_url) return { models: [], error: 'no base URL is set' }
+    const lists: Record<string, string[]> = {
+      anthropic: ['claude-haiku-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5'],
+      local: ['llama3.1:8b', 'qwen2.5:14b'],
+    }
+    return { models: lists[b.provider ?? 'anthropic'] ?? ['example-model-a', 'example-model-b'] }
+  },
+  { role: 'admin' },
+)
+
+route(
   'PUT',
   '/api/settings/ai',
   ({ body }) => {
     const b = obj(body) as Partial<AISettingsUpdate>
     if (b.daily_limit !== undefined && (b.daily_limit < 1 || b.daily_limit > 10000)) fail(400, 'daily_limit must be between 1 and 10000')
+    const provider = b.provider ?? aiSettings.provider
     Object.assign(aiSettings, {
-      enabled: !!b.enabled, provider: b.provider ?? aiSettings.provider, model: b.model || aiSettings.default_model,
+      enabled: !!b.enabled, provider, model: b.model || (provider === 'anthropic' ? aiSettings.default_model : ''),
+      base_url: b.base_url || undefined,
       min_severity: b.min_severity ?? aiSettings.min_severity, daily_limit: b.daily_limit ?? aiSettings.daily_limit,
       max_tool_calls: b.max_tool_calls ?? aiSettings.max_tool_calls,
     })
-    if (b.clear_api_key) Object.assign(aiSettings, { key_set: false, key_hint: undefined, key_source: undefined })
-    else if (b.api_key) Object.assign(aiSettings, { key_set: true, key_hint: '...' + b.api_key.slice(-4), key_source: 'settings' })
-    const ready = aiSettings.enabled && aiSettings.key_set && aiSettings.provider === 'anthropic'
-    Object.assign(aiSettings, {
-      ready,
-      not_ready_reason: ready ? undefined : !aiSettings.enabled ? 'the AI analyst is turned off' : !aiSettings.key_set ? 'no API key is set' : 'the selected provider is not available yet',
-    })
+    if (b.clear_api_key) aiSettings.keys[provider] = { set: false }
+    else if (b.api_key) aiSettings.keys[provider] = { set: true, hint: '...' + b.api_key.slice(-4), source: 'settings' }
+    const info = aiSettings.providers.find((p) => p.id === provider)
+    const k = aiSettings.keys[provider] ?? { set: false }
+    Object.assign(aiSettings, { key_set: k.set, key_hint: k.hint, key_source: k.source })
+    const reason = !aiSettings.enabled
+      ? 'the AI analyst is turned off'
+      : info?.needs_key && !k.set
+        ? 'no API key is set'
+        : provider === 'local' && !aiSettings.base_url
+          ? 'no base URL is set'
+          : !aiSettings.model
+            ? 'no model is set'
+            : undefined
+    Object.assign(aiSettings, { ready: !reason, not_ready_reason: reason })
     return aiSettings
   },
   { role: 'admin' },

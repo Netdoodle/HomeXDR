@@ -322,6 +322,28 @@ func TestAISettingsAndTriage(t *testing.T) {
 	if code, _ := admin.do("PUT", "/api/settings/ai", map[string]any{"provider": "acme", "min_severity": "medium", "daily_limit": 1, "max_tool_calls": 1}, true); code != 400 {
 		t.Fatalf("bad provider = %d", code)
 	}
+	// Each provider keeps its own key; none is ever returned.
+	const oaKey = "sk-openai-test-9876543210wxyz"
+	code, body = admin.do("PUT", "/api/settings/ai", map[string]any{"enabled": true, "provider": "openai", "model": "some-model",
+		"min_severity": "medium", "daily_limit": 25, "max_tool_calls": 15, "api_key": oaKey}, true)
+	keys, _ := body["keys"].(map[string]any)
+	if code != 200 || body["key_hint"] != "...wxyz" || keys["anthropic"].(map[string]any)["set"] != true || keys["openai"].(map[string]any)["set"] != true {
+		t.Fatalf("put openai = %d %v", code, body)
+	}
+	b, _ := json.Marshal(body)
+	if strings.Contains(string(b), oaKey) || strings.Contains(string(b), "1234567890") || body["api_keys"] != nil {
+		t.Fatalf("keys leaked: %s", b)
+	}
+	code, body = admin.do("PUT", "/api/settings/ai", map[string]any{"enabled": true, "provider": "local", "model": "m",
+		"base_url": "http://192.168.120.20:11434/v1", "min_severity": "medium", "daily_limit": 25, "max_tool_calls": 15}, true)
+	if code != 200 || body["ready"] != true || body["base_url"] != "http://192.168.120.20:11434/v1" {
+		t.Fatalf("local = %d %v", code, body)
+	}
+	code, body = admin.do("PUT", "/api/settings/ai", map[string]any{"enabled": true, "provider": "anthropic", "model": "claude-opus-5-5",
+		"min_severity": "high", "daily_limit": 25, "max_tool_calls": 15}, true)
+	if code != 200 || body["key_set"] != true || body["key_hint"] != "...cdef" {
+		t.Fatalf("back to claude = %d %v", code, body)
+	}
 
 	// Triage endpoints on a real alert.
 	if _, err := c.State.CreateEndpoint(ctx, "h1", api.HostInfo{Hostname: "lab-1", OS: event.OS{Platform: "linux"}}, nil, "1"); err != nil {
