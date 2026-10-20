@@ -3,8 +3,11 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -204,6 +207,57 @@ func (chDialect) arrayLike(col, pattern string) (string, []any) {
 
 func (chDialect) like(expr string) string { return expr + " ILIKE ?" }
 
+var chPlainRefs = func() map[string]bool {
+	m := map[string]bool{"raw": true}
+	for i := range Columns {
+		m[chDialect{}.column(&Columns[i])] = true
+	}
+	return m
+}()
+
+func (chDialect) num(x string) string     { return "toFloat64OrNull(toString(" + x + "))" }
+func (chDialect) float(x string) string   { return "toFloat64(" + x + ")" }
+func (chDialect) str(x string) string     { return "toString(" + x + ")" }
+func (chDialect) integer(x string) string { return "toInt64(" + x + ")" }
+func (chDialect) epoch(ts string) string  { return "(toUnixTimestamp64Milli(" + ts + ") / 1000)" }
+func (chDialect) bucket(ts string, ms int64) string {
+	m := strconv.FormatInt(ms, 10)
+	return "(intDiv(toUnixTimestamp64Milli(" + ts + "), " + m + ") * " + m + ")"
+}
+func (chDialect) concat(a, b string) string { return "concat(" + a + ", " + b + ")" }
+func (chDialect) div(a, b string) string    { return "(" + a + " / nullIf(" + b + ", 0))" }
+func (chDialect) mod(a, b string) string    { return "(" + a + " % nullIf(" + b + ", 0))" }
+func (chDialect) strLen(x string) string    { return "lengthUTF8(" + x + ")" }
+func (chDialect) substr(s, start, n string) string {
+	if n == "" {
+		return "substringUTF8(" + s + ", " + start + ")"
+	}
+	return "substringUTF8(" + s + ", " + start + ", " + n + ")"
+}
+func (chDialect) rexGroup(s string, g int) string {
+	return "extractGroups(ifNull(toString(" + s + "), ''), ?)[" + strconv.Itoa(g) + "]"
+}
+func (chDialect) rexMatch(s string) string { return "match(ifNull(toString(" + s + "), ''), ?)" }
+func (chDialect) ilike(a, b string) string { return "(" + a + " ILIKE " + b + ")" }
+func (chDialect) arrayStr(a string) string { return "arrayStringConcat(" + a + ", ',')" }
+func (chDialect) arrayHas(arr, v string) string {
+	return "has(arrayMap(x -> lower(x), " + arr + "), lower(" + v + "))"
+}
+func (chDialect) arrayNonEmpty(a string) string { return "notEmpty(" + a + ")" }
+func (chDialect) explode(arr, _ string) (string, string) {
+	return "arrayJoin(" + arr + ")", ""
+}
+func (chDialect) values(x string) string {
+	return "arraySort(groupUniqArray(" + strconv.Itoa(maxValues) + ")(" + x + "))"
+}
+func (chDialect) boolean(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+func (chDialect) plainRef(s string) bool { return chPlainRefs[s] }
+
 func (c *ClickHouse) where(q SearchQuery) (string, []any, error) {
 	n, err := ParseQuery(q.Query)
 	if err != nil {
@@ -257,32 +311,55 @@ func (c *ClickHouse) where(q SearchQuery) (string, []any, error) {
 	return strings.Join(parts, " AND "), args, nil
 }
 
-// Search runs a query.
+// Search runs a search.
 func (c *ClickHouse) Search(ctx context.Context, q SearchQuery) (*SearchResult, error) {
-	start := time.Now()
-	where, args, err := c.where(q)
+	return search(ctx, c, q)
+}
+
+// searchSettings protect ingestion from heavy searches: ClickHouse runs with a memory
+// cap, so large GROUP BYs and sorts spill to disk instead.
+var searchSettings = clickhouse.Settings{
+	"max_execution_time":                 120,
+	"max_memory_usage":                   1_500_000_000,
+	"max_bytes_before_external_group_by": 500_000_000,
+	"max_bytes_before_external_sort":     500_000_000,
+}
+
+func (c *ClickHouse) pd() pipeDialect   { return chDialect{} }
+func (c *ClickHouse) tableName() string { return c.table }
+
+func (c *ClickHouse) userError(err error) bool {
+	var ex *clickhouse.Exception
+	return errors.As(err, &ex)
+}
+
+func (c *ClickHouse) rows(ctx context.Context, query string, args ...any) ([][]any, error) {
+	rows, err := c.conn.Query(clickhouse.Context(ctx, clickhouse.WithSettings(searchSettings)), query, args...)
 	if err != nil {
-		return nil, &QueryError{Err: err}
-	}
-	limit, offset := clamp(q.Limit, q.Offset)
-	order := "DESC"
-	if q.Asc {
-		order = "ASC"
-	}
-	res := &SearchResult{Events: []*event.Event{}}
-	var total uint64
-	if err := c.conn.QueryRow(ctx, "SELECT count() FROM "+c.table+" WHERE "+where, args...).Scan(&total); err != nil {
 		return nil, err
 	}
-	res.Total = int64(total)
-	evs, err := c.queryRaw(ctx, "SELECT raw FROM "+c.table+" WHERE "+where+
-		" ORDER BY ts "+order+", id "+order+" LIMIT ? OFFSET ?", append(args, limit, offset)...)
-	if err != nil {
-		return nil, err
+	defer rows.Close()
+	types := rows.ColumnTypes()
+	var out [][]any
+	for rows.Next() {
+		ptrs := make([]any, len(types))
+		for i, t := range types {
+			st := t.ScanType()
+			if st == nil {
+				st = reflect.TypeOf((*any)(nil)).Elem()
+			}
+			ptrs[i] = reflect.New(st).Interface()
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+		row := make([]any, len(ptrs))
+		for i, p := range ptrs {
+			row[i] = normalize(reflect.ValueOf(p).Elem().Interface())
+		}
+		out = append(out, row)
 	}
-	res.Events = evs
-	res.TookMs = time.Since(start).Milliseconds()
-	return res, nil
+	return out, rows.Err()
 }
 
 func (c *ClickHouse) queryRaw(ctx context.Context, query string, args ...any) ([]*event.Event, error) {

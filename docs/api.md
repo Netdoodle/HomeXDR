@@ -112,21 +112,38 @@ type CommandRecord = {
 
 ```ts
 // request
-{ query: string; from?: string; to?: string; host_id?: string; limit?: number; offset?: number; order?: "asc" | "desc" }
+{ query: string; from?: string; to?: string; host_id?: string; limit?: number; offset?: number;
+  order?: "asc" | "desc"; timeline?: boolean }
 // response
-{ events: Event[]; total?: number; took_ms: number }
+{
+  mode: "events" | "table";
+  events: Event[];                       // events mode (empty for tables)
+  extra?: Record<string, unknown>[];     // eval / rex fields, one per event
+  total: number;                         // matching events, or table rows
+  columns?: { name: string; type: "string" | "number" | "time" | "bool" | "array" }[];
+  rows?: unknown[][];                    // table mode; times are RFC 3339 strings
+  truncated?: boolean;                   // more than 10,000 rows
+  chart?: "timechart";                   // rows are _time, then one column per series
+  timeline?: { t: string; count: number }[];  // with timeline: true, the filter's events over time
+  timeline_span?: number;                // bucket size in seconds of timeline / the timechart
+  took_ms: number;
+}
 ```
 
-Query language (translated server-side into parameterized SQL; never string-concatenated):
+`query` is a filter, optionally followed by Splunk-style commands
+(`index=opnsense | stats count by src`); see [search.md](search.md) for the full language.
+It is compiled server-side into a single parameterized SQL query; user values never become
+SQL text. `from` defaults to 24 hours ago when neither bound is given. An invalid query, or
+one the database rejects (a type error, a resource limit), returns 400 with the reason.
 
-- `field:value` exact match (case-insensitive for strings), `field:val*` / `*val` / `*val*`
-  wildcards, `field:"quoted value"` (matched literally: `*` and `?` are not wildcards inside
-  quotes; `\"` and `\\` escape), `field:>10`, `field:<=443`
-- A field name ends at the first colon, so `file.path:C:\Temp\x.exe` needs no quotes
-- `AND`, `OR`, `NOT` (uppercase only), `-term`, parentheses; adjacent terms are ANDed
+Filter summary:
+
+- `field:value` or `field=value` (case-insensitive), `field!=value`, `field:val*` wildcards,
+  `field:"quoted value"` (literal; `\"` and `\\` escape), `field:>10` or `field>10`
+- `AND`, `OR`, `NOT` (uppercase), `&&`, `||`, `!`, `-term`, parentheses; adjacent terms are ANDed
 - Bare words do a substring match on `message`, `process.command_line` and `file.path`
-- Field names are ECS paths from `shared/event` (`process.name`, `destination.ip`,
-  `event.category`, `host.name`, `data.LogonType`, ...)
+- Field names are ECS paths from `shared/event`; Splunk names such as `index`, `src`,
+  `dest_port` are accepted, and bare unknown names mean `data.<name>`
 - An empty query returns the newest events
 
 Example: `event.category:process AND process.name:powershell.exe AND NOT user.name:SYSTEM`

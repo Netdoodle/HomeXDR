@@ -29,6 +29,7 @@ const (
 	maxStringField  = 400
 	maxArrayItems   = 15
 	maxSearchEvents = 50
+	maxSearchRows   = 100 // table rows from a search pipeline
 )
 
 // toolbox builds the tools for one alert investigation.
@@ -45,7 +46,8 @@ func (b *toolbox) tools() []Tool {
 			Name: "search_events",
 			Description: `Search stored telemetry (endpoint agents, OPNsense firewall logs, Suricata IDS alerts, syslog).
 Use it to look at what else happened on the alert's host, who else talked to an IP or domain, or whether something is routine.
-Query language: field:value (case-insensitive), field:val* wildcards, field:"quoted value", field:>N comparisons, AND / OR / NOT, parentheses; bare words match message, command line and file path. An empty query returns the newest events.
+Query language: field:value or field=value (case-insensitive), field!=value, field:val* wildcards, field:"quoted value", field>N / field:>N comparisons, AND / OR / NOT, parentheses; bare words match message, command line and file path. An empty query returns the newest events.
+Splunk-style commands can follow the filter with |, and then a table is returned instead of events: stats count, dc(f), sum(f), avg(f), min(f), max(f), values(f) [as name] [by f, ...]; top [limit=N] f; rare f; table f, ...; sort [-]f; head N; dedup f; where <expression>; eval name=<expression>; rex field=f "(?<name>regex)". Example: destination.ip:203.0.113.7 | stats count, dc(host.name) as hosts by event.module.
 Useful fields: host.name, host.id, event.category (process, network, file, authentication, dns, registry), event.action, event.outcome, event.module (opnsense, suricata, procconn, fanotify, ...), process.name, process.command_line, process.entity_id, process.parent.name, user.name, file.path, source.ip, destination.ip, destination.port, destination.domain, dns.question.name, network.community_id.
 The time window defaults to 24 hours before the alert's first hit until now. Results are newest first and trimmed.`,
 			Properties: map[string]any{
@@ -260,7 +262,7 @@ func render(v any) (string, error) {
 		return string(b), nil
 	}
 	if m, ok := v.(map[string]any); ok {
-		for _, key := range []string{"events", "alerts", "children"} {
+		for _, key := range []string{"events", "rows", "alerts", "children"} {
 			list, ok := m[key].([]any)
 			for ok && len(list) > 1 && len(b) > maxToolOutput {
 				list = list[:len(list)*2/3]
@@ -326,13 +328,29 @@ func (b *toolbox) searchEvents(ctx context.Context, in json.RawMessage) (string,
 	if err != nil {
 		return "", err
 	}
+	window := map[string]string{"from": from.UTC().Format(time.RFC3339), "to": to.UTC().Format(time.RFC3339)}
+	if res.Mode == "table" {
+		rows := make([]any, 0, min(len(res.Rows), maxSearchRows))
+		for _, r := range res.Rows[:min(len(res.Rows), maxSearchRows)] {
+			rows = append(rows, r)
+		}
+		names := make([]string, len(res.Columns))
+		for i, c := range res.Columns {
+			names[i] = c.Name
+		}
+		out := map[string]any{"columns": names, "rows": rows, "total_rows": res.Total, "window": window}
+		if len(res.Rows) > maxSearchRows || res.Truncated {
+			out["trimmed"] = "more rows than returned; sort or filter to see the rest"
+		}
+		return render(out)
+	}
 	list := make([]any, len(res.Events))
 	for i, e := range res.Events {
 		list[i] = eventMap(e)
 	}
 	return render(map[string]any{
 		"total_matching": res.Total, "returned": len(list),
-		"window": map[string]string{"from": from.UTC().Format(time.RFC3339), "to": to.UTC().Format(time.RFC3339)},
+		"window": window,
 		"events": list,
 	})
 }

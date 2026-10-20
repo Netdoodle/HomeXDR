@@ -57,7 +57,10 @@ directive, so modules build independently without a `go.work` file.
    (`HOMEXDR_RETENTION_MAX_SIZE`, e.g. `1TB`), or both: the size cap is checked every ten
    minutes and removes the oldest days first (whole daily partitions in ClickHouse).
 7. Analysts use the **web console** to triage alerts, explore process trees, search
-   events, run artifacts and hunts, and take response actions.
+   events, run artifacts and hunts, and take response actions. Searches use a
+   Splunk-style language ([search.md](search.md)): `events.ParsePipeline` parses the
+   filter and `|` commands, and a planner (`events/plan.go`) compiles the whole pipeline
+   into one parameterized SQL query for the event store's dialect.
 8. Response actions become **signed commands** that the agent picks up by long-polling,
    verifies, checks against its local policy, executes and reports back.
 

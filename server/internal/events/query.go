@@ -143,9 +143,12 @@ func lex(q string) ([]token, error) {
 				toks = append(toks, token{kind: tNot, text: text})
 				continue
 			}
-			t, err := parseTerm(text)
+			t, negate, err := parseTerm(text)
 			if err != nil {
 				return nil, fmt.Errorf("at %d: %w", start, err)
+			}
+			if negate {
+				toks = append(toks, token{kind: tNot, text: "!="})
 			}
 			toks = append(toks, token{kind: tTerm, text: text, term: t})
 		}
@@ -153,51 +156,100 @@ func lex(q string) ([]token, error) {
 	return toks, nil
 }
 
-// parseTerm splits field:value at the first unquoted, unescaped colon.
-func parseTerm(text string) (TermNode, error) {
-	split := -1
+// parseTerm parses one term. It splits at the first unquoted, unescaped operator:
+// "field:value" (the original syntax), or Splunk-style "field=value", "field!=value"
+// (negate is set), "field>N", "field>=N", "field<N", "field<=N". The Splunk-style forms
+// fall back to a bare word when the field or value part does not fit, so words that
+// merely contain those characters still search as before.
+func parseTerm(text string) (TermNode, bool, error) {
+	at, op := -1, ""
 	inQuote := false
+scan:
 	for i := 0; i < len(text); i++ {
-		switch text[i] {
-		case '\\':
+		c := text[i]
+		switch {
+		case c == '\\':
 			i++
-		case '"':
+			continue
+		case c == '"':
 			inQuote = !inQuote
-		case ':':
-			if !inQuote && split < 0 {
-				split = i
+			continue
+		case inQuote:
+			continue
+		}
+		switch c {
+		case ':', '=':
+			at, op = i, string(c)
+			break scan
+		case '!':
+			if i+1 < len(text) && text[i+1] == '=' {
+				at, op = i, "!="
+				break scan
+			}
+		case '<', '>':
+			at, op = i, string(c)
+			if i+1 < len(text) && text[i+1] == '=' {
+				op += "="
+			}
+			break scan
+		}
+	}
+	if op == ":" && at > 0 {
+		t, err := colonTerm(text[:at], text[at+1:])
+		return t, false, err
+	}
+	if at > 0 && op != ":" {
+		field, rawVal := text[:at], text[at+len(op):]
+		if fieldRe.MatchString(field) && rawVal != "" {
+			switch op {
+			case "=", "!=":
+				t, err := fieldValue(canonicalField(field), rawVal)
+				return t, op == "!=", err
+			default:
+				if v, _ := unquote(rawVal); isNumber(v) {
+					return TermNode{Field: canonicalField(field), Op: compareOps[op], Value: v}, false, nil
+				}
 			}
 		}
 	}
-	if split <= 0 {
-		v, quoted := unquote(text)
-		if v == "" {
-			return TermNode{}, errors.New("empty term")
-		}
-		if quoted {
-			return TermNode{Op: "like", Value: unescape(v), Literal: true}, nil
-		}
-		return TermNode{Op: "like", Value: v}, nil
+	v, quoted := unquote(text)
+	if v == "" {
+		return TermNode{}, false, errors.New("empty term")
 	}
-	field := text[:split]
+	if quoted {
+		return TermNode{Op: "like", Value: unescape(v), Literal: true}, false, nil
+	}
+	return TermNode{Op: "like", Value: v}, false, nil
+}
+
+var compareOps = map[string]string{">=": "gte", "<=": "lte", ">": "gt", "<": "lt"}
+
+func isNumber(s string) bool {
+	_, err := strconv.ParseFloat(s, 64)
+	return err == nil
+}
+
+// colonTerm parses the original "field:value" syntax, including field:>N comparisons.
+func colonTerm(field, rawVal string) (TermNode, error) {
 	if !fieldRe.MatchString(field) {
 		return TermNode{}, fmt.Errorf("invalid field name %q", field)
 	}
-	rawVal := text[split+1:]
-	op := ""
+	field = canonicalField(field)
 	for _, p := range []struct{ prefix, op string }{{">=", "gte"}, {"<=", "lte"}, {">", "gt"}, {"<", "lt"}} {
 		if strings.HasPrefix(rawVal, p.prefix) {
-			op, rawVal = p.op, rawVal[len(p.prefix):]
-			break
+			v, _ := unquote(rawVal[len(p.prefix):])
+			if !isNumber(v) {
+				return TermNode{}, fmt.Errorf("%s: comparison needs a number, got %q", field, v)
+			}
+			return TermNode{Field: field, Op: p.op, Value: v}, nil
 		}
 	}
+	return fieldValue(field, rawVal)
+}
+
+// fieldValue builds an equality, wildcard or exists term.
+func fieldValue(field, rawVal string) (TermNode, error) {
 	v, quoted := unquote(rawVal)
-	if op != "" {
-		if _, err := strconv.ParseFloat(v, 64); err != nil {
-			return TermNode{}, fmt.Errorf("%s: comparison needs a number, got %q", field, v)
-		}
-		return TermNode{Field: field, Op: op, Value: v}, nil
-	}
 	if v == "*" && !quoted {
 		return TermNode{Field: field, Op: "exists"}, nil
 	}
@@ -474,7 +526,7 @@ func compileTerm(t TermNode, d dialect) (string, []any, error) {
 		}
 	}
 
-	path := strings.Split(t.Field, ".")
+	path := jsonPath(t.Field)
 	switch t.Op {
 	case "gt", "gte", "lt", "lte":
 		expr, args := d.jsonNumber(path)

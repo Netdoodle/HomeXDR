@@ -23,7 +23,8 @@ var ErrNotFound = errors.New("event not found")
 type Store interface {
 	// Insert stores events. It must be durable when it returns nil.
 	Insert(ctx context.Context, evs []*event.Event) error
-	// Search runs a query-language search.
+	// Search runs a search: a filter in the query language, optionally followed by
+	// pipeline commands (see pipeline.go).
 	Search(ctx context.Context, q SearchQuery) (*SearchResult, error)
 	// Get returns one event by ID.
 	Get(ctx context.Context, id string) (*event.Event, error)
@@ -53,22 +54,44 @@ type Store interface {
 
 // SearchQuery is a search request.
 type SearchQuery struct {
-	Query      string    // query language, see query.go
+	Query      string    // query language (query.go), optionally with | commands (pipeline.go)
 	From, To   time.Time // zero means unbounded
 	HostID     string
 	HostIDs    []string // any-of, combined with HostID
 	EntityID   string   // process.entity_id
 	Categories []string // event.category any-of
-	Limit      int
+	Limit      int      // events per page (events results only)
 	Offset     int
 	Asc        bool
+	Timeline   bool // also count matching events over time (SearchResult.Timeline)
 }
 
-// SearchResult is a page of events.
+// SearchResult is a page of events, or a table when the pipeline has a transforming
+// command (stats, timechart, top, rare, table).
 type SearchResult struct {
+	Mode   string         `json:"mode"` // "events" or "table"
 	Events []*event.Event `json:"events"`
-	Total  int64          `json:"total"`
-	TookMs int64          `json:"took_ms"`
+	// Extra holds eval and rex fields, one map per event (events mode).
+	Extra []map[string]any `json:"extra,omitempty"`
+	// Total is the number of matching events (events mode) or rows (table mode).
+	Total     int64          `json:"total"`
+	Columns   []ResultColumn `json:"columns,omitempty"`
+	Rows      [][]any        `json:"rows,omitempty"`
+	Truncated bool           `json:"truncated,omitempty"` // more rows than returned
+	// Chart is "timechart" when the rows are time series: _time, then one column per series.
+	Chart string `json:"chart,omitempty"`
+	// Timeline counts the events matching the filter over time (SearchQuery.Timeline).
+	Timeline []TimeCount `json:"timeline,omitempty"`
+	// TimelineSpan is the bucket size in seconds of Timeline, or of a timechart.
+	TimelineSpan int64 `json:"timeline_span,omitempty"`
+	TookMs       int64 `json:"took_ms"`
+}
+
+// ResultColumn describes a table column. Type is string, number, time (RFC 3339
+// strings), bool or array (of strings).
+type ResultColumn struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 // TimeCount is one timeline bucket.

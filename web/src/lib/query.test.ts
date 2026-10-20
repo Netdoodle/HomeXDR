@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addTerm, compileQuery, formatQuery, formatTerm, parseQuery, quoteValue, resolvePath, validateQuery } from './query'
+import { addTerm, compileQuery, fieldRef, formatQuery, formatTerm, isTableSearch, parseQuery, quoteValue, resolvePath, splitPipeline, validateQuery } from './query'
 
 const ev = {
   '@timestamp': '2026-10-19T10:00:00Z',
@@ -138,5 +138,51 @@ describe('building queries', () => {
 
   it('supports negated terms', () => {
     expect(addTerm('a:1', 'user.name', 'SYSTEM', { negate: true })).toBe('a:1 AND NOT user.name:SYSTEM')
+  })
+})
+
+describe('Splunk-style filters and pipelines', () => {
+  it('parses field=value, != and bare comparisons like the server', () => {
+    expect(parseQuery('index=opnsense')).toMatchObject({ field: 'index', op: ':', value: 'opnsense' })
+    expect(parseQuery('user!=root')).toMatchObject({ type: 'not', child: { field: 'user', value: 'root' } })
+    expect(parseQuery('dest_port>1024')).toMatchObject({ field: 'dest_port', op: '>', value: '1024' })
+    expect(parseQuery('msg="a b"')).toMatchObject({ field: 'msg', value: 'a b', quoted: true })
+    expect(parseQuery('x<y')).toEqual({ type: 'term', op: ':', value: 'x<y', quoted: false })
+    expect(parseQuery('foo=')).toEqual({ type: 'term', op: ':', value: 'foo=', quoted: false })
+    expect(parseQuery('a || -b')).toMatchObject({ type: 'or', children: [{ value: 'a' }, { type: 'not', child: { value: 'b' } }] })
+  })
+
+  it('splits pipelines at unquoted pipes', () => {
+    expect(splitPipeline('a || b').commands).toEqual([])
+    expect(splitPipeline(`don't | head`).commands).toEqual([{ text: 'head', pos: 8 }])
+    const p = splitPipeline('x | where match(m, "a|b")\n| stats count')
+    expect(p.filter).toBe('x ')
+    expect(p.commands.map((c) => c.text)).toEqual(['where match(m, "a|b")', 'stats count'])
+    expect(isTableSearch('x | stats count')).toBe(true)
+    expect(isTableSearch('x | head 5')).toBe(false)
+  })
+
+  it('validates command names', () => {
+    expect(validateQuery('x | stats count by host')).toBeNull()
+    expect(validateQuery('x | bogus')?.message).toMatch(/Unknown command "bogus"/)
+    expect(validateQuery('x |')?.message).toMatch(/Missing command/)
+    expect(validateQuery('(x | stats count')?.message).toMatch(/closing parenthesis/)
+  })
+
+  it('adds filter terms before the first pipe', () => {
+    expect(addTerm('x | stats count by host', 'a', '1')).toBe('x AND a:1 | stats count by host')
+    expect(addTerm('| top src', 'a', '1')).toBe('a:1 | top src')
+    expect(addTerm('x\n| stats count', 'a', '1')).toBe('x AND a:1\n| stats count')
+  })
+
+  it('quotes odd field names for commands', () => {
+    expect(fieldRef('data.suricata.sid')).toBe('data.suricata.sid')
+    expect(fieldRef("we'ird-name")).toBe("'we\\'ird-name'")
+  })
+
+  it('evaluates aliases and data fields in mock mode', () => {
+    expect(compileQuery('host=DESKTOP-7QK2M4 dest_port>400')(ev)).toBe(true)
+    expect(compileQuery('LogonType=3')(ev)).toBe(true)
+    expect(compileQuery('user!=alex')(ev)).toBe(true)
   })
 })

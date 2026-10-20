@@ -1,6 +1,8 @@
 package events
 
 import (
+	"reflect"
+	"strings"
 	"time"
 
 	"github.com/Netdoodle/homexdr/shared/event"
@@ -191,6 +193,46 @@ var columnByField = func() map[string]*Column {
 	m["event.id"] = m["id"]
 	return m
 }()
+
+// fieldAliases are Splunk and CIM-style names accepted for HomeXDR's fields.
+var fieldAliases = map[string]string{
+	"index": "event.module", "sourcetype": "event.dataset", "host": "host.name",
+	"category": "event.category", "outcome": "event.outcome",
+	"bytes": "network.bytes", "packets": "network.packets",
+	"src": "source.ip", "src_ip": "source.ip", "src_port": "source.port",
+	"dest": "destination.ip", "dest_ip": "destination.ip", "dest_port": "destination.port",
+	"user": "user.name", "action": "event.action", "process": "process.name", "_time": "@timestamp",
+}
+
+// canonicalField maps an alias to its HomeXDR field.
+func canonicalField(f string) string {
+	if a, ok := fieldAliases[f]; ok {
+		return a
+	}
+	return f
+}
+
+// topLevel are the event's top-level JSON keys.
+var topLevel = func() map[string]bool {
+	m := map[string]bool{}
+	t := reflect.TypeOf(event.Event{})
+	for i := 0; i < t.NumField(); i++ {
+		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ","); name != "" && name != "-" {
+			m[name] = true
+		}
+	}
+	return m
+}()
+
+// jsonPath is a field's path in the event JSON. A name without a dot that is not a
+// top-level event field is looked up in data, where parsed log fields live, so
+// "LogonType" finds data.LogonType.
+func jsonPath(field string) []string {
+	if !strings.Contains(field, ".") && !topLevel[field] {
+		return []string{"data", field}
+	}
+	return strings.Split(field, ".")
+}
 
 func nonNil(s []string) []string {
 	if s == nil {

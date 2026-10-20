@@ -63,6 +63,16 @@
   --chart-bar: #4c8dff;
   --chart-bar-alt: #8a7dff;
   --chart-track: #1d2431;
+  /* categorical series, in fixed order (validated for CVD separation on --surface-1) */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --series-other: #5d6676;
 
   /* code */
   --code-bg: #0e131b;
@@ -139,6 +149,15 @@
     --chart-bar: #2563eb;
     --chart-bar-alt: #6250d6;
     --chart-track: #edf0f5;
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --series-5: #e87ba4;
+    --series-6: #008300;
+    --series-7: #6250d6;
+    --series-8: #e34948;
+    --series-other: #a3abb8;
     --code-bg: #f6f8fb;
     --code-key: #1d4fd0;
     --code-string: #17703a;
@@ -190,6 +209,15 @@
   --chart-bar: #2563eb;
   --chart-bar-alt: #6250d6;
   --chart-track: #edf0f5;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --series-8: #e34948;
+  --series-other: #a3abb8;
   --code-bg: #f6f8fb;
   --code-key: #1d4fd0;
   --code-string: #17703a;

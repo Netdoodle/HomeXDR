@@ -23,7 +23,8 @@ import type {
   User,
 } from '../api/types'
 import { COMMAND_TYPES, SEVERITIES } from '../api/types'
-import { compileQuery, QuerySyntaxError } from '../lib/query'
+import { buckets, pickSpan, runPipeline } from '../lib/pipeline'
+import { compileQuery, QuerySyntaxError, splitPipeline, validateQuery } from '../lib/query'
 import { hasRole } from '../lib/roles'
 import { OPEN_ALERT_STATUSES } from '../lib/severity'
 import { events, eventById, processes, type MockProcess } from './events'
@@ -592,9 +593,13 @@ route('GET', '/api/commands/:id/download', ({ params }) => {
 route('POST', '/api/events/search', ({ body }) => {
   const b = obj(body)
   const started = performance.now()
+  const query = String(b.query ?? '')
+  const invalid = validateQuery(query)
+  if (invalid) fail(400, `query: ${invalid.message} at position ${invalid.pos + 1}`)
+  const parts = splitPipeline(query)
   let match: (e: unknown) => boolean
   try {
-    match = compileQuery(String(b.query ?? ''))
+    match = compileQuery(parts.filter)
   } catch (e) {
     if (e instanceof QuerySyntaxError) fail(400, `query: ${e.message} at position ${e.pos + 1}`)
     throw e
@@ -603,10 +608,35 @@ route('POST', '/api/events/search', ({ body }) => {
   const to = typeof b.to === 'string' ? b.to : null
   const hostId = typeof b.host_id === 'string' ? b.host_id : null
   let out = events.filter((e) => (!hostId || e.host.id === hostId) && timeFilter(e, from, to) && match(e))
+  const range = { from: from ? Date.parse(from) : Date.now() - 24 * HOUR, to: to ? Date.parse(to) : Date.now() }
+  const took_ms = () => Math.max(1, Math.round(performance.now() - started + 8))
+  let timeline: { timeline?: { t: string; count: number }[]; timeline_span?: number } = {}
+  if (b.timeline) {
+    const span = pickSpan(range.to - range.from)
+    const counts = new Map<number, number>()
+    for (const e of out) {
+      const t = Math.floor(Date.parse(e['@timestamp']) / (span * 1000)) * span * 1000
+      counts.set(t, (counts.get(t) ?? 0) + 1)
+    }
+    timeline = { timeline: buckets(range.from, range.to, span).map((t) => ({ t: new Date(t).toISOString(), count: counts.get(t) ?? 0 })), timeline_span: span }
+  }
+  if (parts.commands.length > 0) {
+    try {
+      const res = runPipeline(out, query, range)
+      if (res.mode === 'events') {
+        const limit = Math.min(1000, Math.max(1, Number(b.limit ?? 100) || 100))
+        const offset = Math.max(0, Number(b.offset ?? 0) || 0)
+        res.events = res.events.slice(offset, offset + limit)
+      }
+      return { ...res, ...timeline, took_ms: took_ms() }
+    } catch (e) {
+      fail(400, `invalid query: ${(e as Error).message}`)
+    }
+  }
   if (b.order === 'asc') out = [...out].reverse()
   const limit = Math.min(1000, Math.max(1, Number(b.limit ?? 100) || 100))
   const offset = Math.max(0, Number(b.offset ?? 0) || 0)
-  return { events: out.slice(offset, offset + limit), total: out.length, took_ms: Math.max(1, Math.round(performance.now() - started + 8)) }
+  return { mode: 'events', events: out.slice(offset, offset + limit), total: out.length, ...timeline, took_ms: took_ms() }
 })
 
 route('GET', '/api/events/:id', ({ params }) => eventById(params.id) ?? fail(404, 'event not found'))

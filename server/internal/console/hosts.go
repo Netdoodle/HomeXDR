@@ -178,6 +178,8 @@ func (h *Handler) searchEvents(w http.ResponseWriter, r *http.Request, _ *store.
 		Limit  int    `json:"limit"`
 		Offset int    `json:"offset"`
 		Order  string `json:"order"`
+		// Timeline adds counts of the filter's events over time.
+		Timeline bool `json:"timeline"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -193,7 +195,7 @@ func (h *Handler) searchEvents(w http.ResponseWriter, r *http.Request, _ *store.
 	}
 	res, err := h.c.Events.Search(r.Context(), events.SearchQuery{
 		Query: req.Query, From: from, To: to, HostID: req.HostID,
-		Limit: req.Limit, Offset: req.Offset, Asc: req.Order == "asc",
+		Limit: req.Limit, Offset: req.Offset, Asc: req.Order == "asc", Timeline: req.Timeline,
 	})
 	if err != nil {
 		h.fail(w, err)

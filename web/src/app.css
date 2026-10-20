@@ -1988,3 +1988,325 @@ dialog.modal::backdrop {
   line-height: 1.5;
   margin: 0;
 }
+
+/* ------------------------------------------------------------------ search */
+
+.query-bar .query-input textarea.input {
+  display: block;
+  height: auto;
+  min-height: 34px;
+  padding: 8px 10px 8px 30px;
+  line-height: 1.45;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+.input.sm {
+  height: 26px;
+  font-size: var(--fs-xs);
+}
+.help-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 8px 20px;
+  margin-top: 8px;
+}
+.query-help h4 {
+  margin: 8px 0 4px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.query-help ul.plain {
+  margin: 0;
+  padding-left: 16px;
+}
+.query-help ul.plain li {
+  margin-bottom: 4px;
+}
+.help-commands {
+  border-collapse: collapse;
+}
+.help-commands td {
+  padding: 2px 10px 2px 0;
+  vertical-align: top;
+}
+.help-commands td:first-child {
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .help-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .help-commands td:first-child {
+    white-space: normal;
+  }
+}
+
+.timeline-panel {
+  margin-bottom: 10px;
+  transition: opacity 0.15s;
+}
+.chart .hit.zoomable {
+  cursor: zoom-in;
+}
+.chart .hit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.search-layout {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .search-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fields-sidebar {
+    position: static;
+    max-height: 320px;
+  }
+}
+.fields-sidebar {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 140px);
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+.fields-sidebar > .input {
+  width: 100%;
+}
+.fields-sidebar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.fields-head {
+  margin: 10px 4px 4px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.field-name {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.field-name:hover,
+.field-name.open {
+  background: var(--surface-hover);
+}
+.field-name .num {
+  flex: none;
+  font-size: 11px;
+}
+.field-values {
+  margin: 2px 0 6px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.value-list {
+  margin-top: 6px !important;
+}
+.value-list li {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 0 4px;
+  font-size: 11.5px;
+}
+.value-list .num {
+  margin: 0 2px 0 4px;
+  font-size: 11px;
+}
+.value-list .v-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--chart-track);
+}
+.value-list .v-track span {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--chart-bar);
+}
+
+.stats-table th {
+  padding: 0;
+}
+.stats-table th.num,
+.stats-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.th-sort {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.stats-table th.num .th-sort {
+  justify-content: flex-end;
+}
+.th-sort:hover {
+  color: var(--text);
+}
+.stats-table td {
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viz {
+  padding: 12px;
+}
+.viz-toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+}
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.segmented button {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.segmented button.active {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+.chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+}
+.chart-legend .key {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.chart-legend .key.line {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+}
+.chart .series-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.chart .crosshair {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.chart .marker {
+  stroke: var(--surface-1);
+  stroke-width: 2;
+}
+.chart .stack.hover path {
+  opacity: 0.85;
+}
+.series-tooltip {
+  min-width: 140px;
+  max-width: 280px;
+}
+.series-tooltip .tt-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+.series-tooltip .tt-key {
+  flex: none;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+}
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 40px;
+  padding: 20px 16px;
+}
+.figure-label {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.figure-value {
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text);
+}
+.computed-fields {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.computed-fields dt {
+  color: var(--text-muted);
+}
+.computed-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

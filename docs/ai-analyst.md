@@ -19,7 +19,7 @@ The code is in `server/internal/triage`; the console settings are under
 
   | Tool | What it returns |
   |---|---|
-  | `search_events` | Events matching a query (the console's query language), on one or all hosts, in a time window; newest first, trimmed |
+  | `search_events` | Events matching a search (the console's [search language](search.md)), on one or all hosts, in a time window; newest first, trimmed. With commands such as `\| stats count by destination.ip` it returns the table instead (up to 100 rows) |
   | `get_event` | One event in full (long values trimmed) |
   | `get_process_tree` | A process, its ancestors and its children/grandchildren |
   | `get_host` | Host details, sensors and open alert count |

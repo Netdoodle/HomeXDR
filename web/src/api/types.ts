@@ -371,11 +371,32 @@ export interface SearchRequest {
   limit?: number
   offset?: number
   order?: 'asc' | 'desc'
+  /** Also count the filter's events over time (SearchResponse.timeline). */
+  timeline?: boolean
+}
+
+export interface ResultColumn {
+  name: string
+  type: 'string' | 'number' | 'time' | 'bool' | 'array'
 }
 
 export interface SearchResponse {
+  /** "table" when the search ends in stats, timechart, top, rare, table or fields. */
+  mode?: 'events' | 'table'
   events: Event[]
+  /** eval / rex fields, one map per event. */
+  extra?: Record<string, unknown>[]
+  /** Matching events, or table rows. */
   total?: number
+  columns?: ResultColumn[]
+  rows?: unknown[][]
+  /** More rows than returned (10,000 max). */
+  truncated?: boolean
+  /** "timechart": rows are _time then one column per series. */
+  chart?: string
+  timeline?: { t: string; count: number }[]
+  /** Bucket size in seconds of timeline, or of a timechart. */
+  timeline_span?: number
   took_ms: number
 }
 

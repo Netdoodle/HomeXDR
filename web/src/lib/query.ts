@@ -1,11 +1,13 @@
 // Client-side model of the event query language in docs/api.md.
 //
-//   field:value          exact match (case-insensitive for strings)
+//   field:value          exact match (case-insensitive for strings); also field=value
+//   field!=value         not equal
 //   field:val* / *val    wildcards (unquoted values only)
 //   field:"quoted value" exact, literal match
-//   field:>10 field:<=443 comparisons
-//   AND, OR, NOT, ( )    boolean logic; adjacent terms are ANDed
+//   field:>10 field:<=443 comparisons; also field>10, field<=443
+//   AND, OR, NOT, ( )    boolean logic (also &&, ||, !, -term); adjacent terms are ANDed
 //   bare words           substring match on message, process.command_line, file.path
+//   ... | command ...    Splunk-style pipeline commands (see PIPE_COMMANDS)
 //
 // The server does the real translation to SQL. The UI uses this module to validate input
 // before sending it, to append `field:value` terms safely, and (in mock mode) to filter
@@ -41,7 +43,10 @@ type Token =
   | { kind: 'term'; term: TermNode; pos: number }
 
 const FIELD_RE = /^[@A-Za-z_][\w.@-]*$/
-const KEYWORDS: Record<string, 'and' | 'or' | 'not'> = { AND: 'and', OR: 'or', NOT: 'not' }
+const KEYWORDS: Record<string, 'and' | 'or' | 'not'> = { AND: 'and', OR: 'or', NOT: 'not', '&&': 'and', '||': 'or', '!': 'not' }
+
+/** Splunk-style operators inside a word, in the order the server checks them. */
+const WORD_OPS = /:|!=|<=|>=|=|<|>/
 
 function readQuoted(q: string, start: number): { value: string; end: number } {
   // q[start] === '"'
@@ -90,6 +95,11 @@ export function tokenize(q: string): Token[] {
       i = end
       continue
     }
+    if (c === '-' && i + 1 < q.length && !/\s/.test(q[i + 1]) && (i === 0 || /[\s(]/.test(q[i - 1]))) {
+      tokens.push({ kind: 'not', pos: i })
+      i++
+      continue
+    }
     // A word runs until whitespace, a paren or a quote.
     const start = i
     while (i < q.length && !/\s/.test(q[i]) && q[i] !== '(' && q[i] !== ')' && q[i] !== '"') i++
@@ -99,7 +109,34 @@ export function tokenize(q: string): Token[] {
       tokens.push({ kind: kw, pos: start })
       continue
     }
-    const colon = word.indexOf(':')
+    const opMatch = WORD_OPS.exec(word)
+    const at = opMatch ? opMatch.index : -1
+    const splunkOp = opMatch && opMatch[0] !== ':' ? opMatch[0] : ''
+    if (splunkOp && at > 0 && FIELD_RE.test(word.slice(0, at))) {
+      // field=value, field!=value, field>N ... (a bare word when the parts don't fit)
+      const field = word.slice(0, at)
+      const rest = word.slice(at + splunkOp.length)
+      if (splunkOp === '=' || splunkOp === '!=') {
+        let value = rest
+        let quoted = false
+        if (rest === '' && q[i] === '"') {
+          const r = readQuoted(q, i)
+          i = r.end
+          if (!isBoundary(q[i])) throw new QuerySyntaxError('Unexpected text after quoted value', i)
+          value = r.value
+          quoted = true
+        }
+        if (value !== '' || quoted) {
+          if (splunkOp === '!=') tokens.push({ kind: 'not', pos: start })
+          tokens.push({ kind: 'term', pos: start, term: { type: 'term', field, op: ':', value, quoted } })
+          continue
+        }
+      } else if (isNumeric(rest)) {
+        tokens.push({ kind: 'term', pos: start, term: { type: 'term', field, op: splunkOp as CompareOp, value: rest, quoted: false } })
+        continue
+      }
+    }
+    const colon = opMatch && opMatch[0] === ':' ? at : -1
     const field = colon > 0 ? word.slice(0, colon) : ''
     if (colon > 0 && FIELD_RE.test(field)) {
       let rest = word.slice(colon + 1)
@@ -192,15 +229,135 @@ export function parseQuery(q: string): QueryNode | null {
   return node
 }
 
-/** Returns null when the query is valid, or the syntax error. */
+/** Returns null when the query is valid, or the syntax error. Commands after | are checked
+ * for a known name only; the server reports anything else. */
 export function validateQuery(q: string): QuerySyntaxError | null {
   try {
-    parseQuery(q)
+    const { filter, commands } = splitPipeline(q)
+    parseQuery(filter)
+    for (const c of commands) {
+      if (!c.text) throw new QuerySyntaxError('Missing command after |', c.pos)
+      const name = commandName(c.text)
+      if (!(PIPE_COMMANDS as readonly string[]).includes(name)) {
+        throw new QuerySyntaxError(`Unknown command "${name}" (commands: ${PIPE_COMMANDS.join(', ')})`, c.pos)
+      }
+    }
     return null
   } catch (e) {
     if (e instanceof QuerySyntaxError) return e
     throw e
   }
+}
+
+// ---------------------------------------------------------------------------------------
+// Pipelines
+
+/** Commands the server accepts after |. */
+export const PIPE_COMMANDS = [
+  'stats',
+  'timechart',
+  'top',
+  'rare',
+  'table',
+  'fields',
+  'sort',
+  'head',
+  'limit',
+  'dedup',
+  'where',
+  'eval',
+  'rename',
+  'rex',
+  'search',
+] as const
+
+/** Commands whose result is a table rather than events. */
+export const TABLE_COMMANDS = new Set(['stats', 'timechart', 'top', 'rare', 'table', 'fields'])
+
+export interface PipelineParts {
+  /** The filter before the first |. */
+  filter: string
+  /** Index of the first | (or the query length). */
+  pipeAt: number
+  /** Each command's trimmed text and where it starts in the query. */
+  commands: { text: string; pos: number }[]
+}
+
+/** Splits a search at unquoted | like the server: || is OR, and single quotes (field
+ * names) only quote after the first |. */
+export function splitPipeline(q: string): PipelineParts {
+  const cuts: number[] = []
+  let inDouble = false
+  let inSingle = false
+  for (let i = 0; i < q.length; i++) {
+    const c = q[i]
+    if (c === '\\' && i + 1 < q.length) {
+      i++
+    } else if (c === '"' && !inSingle) {
+      inDouble = !inDouble
+    } else if (c === "'" && !inDouble && cuts.length > 0) {
+      inSingle = !inSingle
+    } else if (c === '|' && q[i + 1] === '|') {
+      i++
+    } else if (c === '|' && !inDouble && !inSingle) {
+      cuts.push(i)
+    }
+  }
+  const pipeAt = cuts.length ? cuts[0] : q.length
+  const commands = cuts.map((at, k) => {
+    const end = k + 1 < cuts.length ? cuts[k + 1] : q.length
+    const raw = q.slice(at + 1, end)
+    const lead = raw.length - raw.trimStart().length
+    return { text: raw.trim(), pos: at + 1 + lead }
+  })
+  return { filter: q.slice(0, pipeAt), pipeAt, commands }
+}
+
+export function commandName(text: string): string {
+  return (/^\S*/.exec(text)?.[0] ?? '').toLowerCase()
+}
+
+/** True when the search ends in a table (stats, timechart, top, rare, table, fields). */
+export function isTableSearch(q: string): boolean {
+  return splitPipeline(q).commands.some((c) => TABLE_COMMANDS.has(commandName(c.text)))
+}
+
+/** A field name as a pipeline command argument: quoted when it is not a plain name. */
+export function fieldRef(field: string): string {
+  return /^[A-Za-z_@][\w@.]*$/.test(field) ? field : `'${field.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+}
+
+/** Splunk and CIM-style names the server accepts for HomeXDR's fields. */
+export const FIELD_ALIASES: Record<string, string> = {
+  index: 'event.module',
+  sourcetype: 'event.dataset',
+  host: 'host.name',
+  category: 'event.category',
+  outcome: 'event.outcome',
+  bytes: 'network.bytes',
+  packets: 'network.packets',
+  src: 'source.ip',
+  src_ip: 'source.ip',
+  src_port: 'source.port',
+  dest: 'destination.ip',
+  dest_ip: 'destination.ip',
+  dest_port: 'destination.port',
+  user: 'user.name',
+  action: 'event.action',
+  process: 'process.name',
+  _time: '@timestamp',
+}
+
+export function canonicalField(f: string): string {
+  return FIELD_ALIASES[f] ?? f
+}
+
+/** Values of a field, with aliases and the server's data.* lookup for bare names. */
+export function fieldValues(obj: unknown, field: string): Primitive[] {
+  const f = canonicalField(field)
+  const vals = resolvePath(obj, f)
+  if (vals.length === 0 && !f.includes('.')) return resolvePath(obj, 'data.' + f)
+  return vals
 }
 
 // ---------------------------------------------------------------------------------------
@@ -234,11 +391,15 @@ function topLevelHasOr(q: string): boolean {
  */
 export function addTerm(query: string, field: string, value: unknown, opts: { negate?: boolean } = {}): string {
   const term = (opts.negate ? 'NOT ' : '') + formatTerm(field, value)
-  const q = query.trim()
-  if (!q) return term
-  if (topLevelTerms(q).includes(term)) return q
-  const base = topLevelHasOr(q) ? `(${q})` : q
-  return `${base} AND ${term}`
+  const { filter, pipeAt, commands } = splitPipeline(query)
+  const q = filter.trim()
+  let next: string
+  if (!q) next = term
+  else if (topLevelTerms(q).includes(term)) next = q
+  else next = `${topLevelHasOr(q) ? `(${q})` : q} AND ${term}`
+  if (commands.length === 0) return next
+  const gap = /\s*$/.exec(filter)?.[0] || ' '
+  return next + gap + query.slice(pipeAt).trimEnd()
 }
 
 function nodeToString(n: QueryNode): string {
@@ -373,7 +534,7 @@ function matchTerm(obj: unknown, term: TermNode): boolean {
     if (!needle) return true
     return BARE_WORD_FIELDS.some((f) => resolvePath(obj, f).some((v) => String(v).toLowerCase().includes(needle)))
   }
-  return resolvePath(obj, term.field).some((v) => matchValue(v, term))
+  return fieldValues(obj, term.field).some((v) => matchValue(v, term))
 }
 
 export function evaluate(node: QueryNode | null, obj: unknown): boolean {

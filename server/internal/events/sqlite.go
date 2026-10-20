@@ -3,15 +3,20 @@ package events
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Netdoodle/homexdr/shared/event"
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 // SQLite is the lite-mode event store. Times are stored as Unix milliseconds and array
@@ -144,7 +149,9 @@ func (s *SQLite) Insert(ctx context.Context, evs []*event.Event) error {
 
 type sqliteDialect struct{}
 
-func (sqliteDialect) column(c *Column) string { return c.Name }
+// column qualifies names: pipelines join json_each, whose id and type columns would
+// otherwise clash with the events table's.
+func (sqliteDialect) column(c *Column) string { return "events." + c.Name }
 
 func (sqliteDialect) jsonPath(path []string) string {
 	var b strings.Builder
@@ -166,14 +173,150 @@ func (d sqliteDialect) jsonNumber(path []string) (string, []any) {
 }
 
 func (sqliteDialect) arrayEq(col, value string) (string, []any) {
-	return "EXISTS (SELECT 1 FROM json_each(events." + col + ") WHERE lower(value) = lower(?))", []any{value}
+	return "EXISTS (SELECT 1 FROM json_each(" + col + ") WHERE lower(value) = lower(?))", []any{value}
 }
 
 func (sqliteDialect) arrayLike(col, pattern string) (string, []any) {
-	return "EXISTS (SELECT 1 FROM json_each(events." + col + ") WHERE value LIKE ? ESCAPE '\\')", []any{pattern}
+	return "EXISTS (SELECT 1 FROM json_each(" + col + ") WHERE value LIKE ? ESCAPE '\\')", []any{pattern}
 }
 
 func (sqliteDialect) like(expr string) string { return expr + " LIKE ? ESCAPE '\\'" }
+
+var sqlitePlainRefs = func() map[string]bool {
+	m := map[string]bool{"raw": true}
+	for i := range Columns {
+		m[sqliteDialect{}.column(&Columns[i])] = true
+	}
+	return m
+}()
+
+// hx_num, hx_rex and hx_match are Go functions registered with SQLite (see init).
+func (sqliteDialect) num(x string) string     { return "hx_num(" + x + ")" }
+func (sqliteDialect) float(x string) string   { return x }
+func (sqliteDialect) str(x string) string     { return "CAST(" + x + " AS TEXT)" }
+func (sqliteDialect) integer(x string) string { return "CAST(" + x + " AS INTEGER)" }
+func (sqliteDialect) epoch(ts string) string  { return "(" + ts + " / 1000.0)" }
+func (sqliteDialect) bucket(ts string, ms int64) string {
+	m := strconv.FormatInt(ms, 10)
+	return "((" + ts + " / " + m + ") * " + m + ")"
+}
+func (sqliteDialect) concat(a, b string) string { return "(" + a + " || " + b + ")" }
+func (sqliteDialect) div(a, b string) string {
+	return "(CAST(" + a + " AS REAL) / nullif(" + b + ", 0))"
+}
+func (sqliteDialect) mod(a, b string) string { return "(" + a + " % nullif(" + b + ", 0))" }
+func (sqliteDialect) strLen(x string) string { return "length(" + x + ")" }
+func (sqliteDialect) substr(s, start, n string) string {
+	if n == "" {
+		return "substr(" + s + ", " + start + ")"
+	}
+	return "substr(" + s + ", " + start + ", " + n + ")"
+}
+func (sqliteDialect) rexGroup(s string, g int) string {
+	return "hx_rex(" + s + ", ?, " + strconv.Itoa(g) + ")"
+}
+func (sqliteDialect) rexMatch(s string) string { return "hx_match(" + s + ", ?)" }
+func (sqliteDialect) ilike(a, b string) string { return "(" + a + " LIKE " + b + " ESCAPE '\\')" }
+func (sqliteDialect) arrayStr(a string) string {
+	return "(SELECT group_concat(value, ',') FROM json_each(" + a + "))"
+}
+func (sqliteDialect) arrayHas(arr, v string) string {
+	return "EXISTS (SELECT 1 FROM json_each(" + arr + ") WHERE lower(value) = lower(" + v + "))"
+}
+func (sqliteDialect) arrayNonEmpty(a string) string { return "(json_array_length(" + a + ") > 0)" }
+func (sqliteDialect) explode(arr, alias string) (string, string) {
+	if aliasRe.MatchString(arr) {
+		arr = "events." + arr
+	}
+	return alias + ".value", ", json_each(" + arr + ") AS " + alias
+}
+func (sqliteDialect) values(x string) string { return "json_group_array(DISTINCT " + x + ")" }
+func (sqliteDialect) boolean(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
+func (sqliteDialect) plainRef(s string) bool { return sqlitePlainRefs[s] }
+
+func init() {
+	sqlite.MustRegisterDeterministicScalarFunction("hx_num", 1, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		switch v := args[0].(type) {
+		case int64, float64:
+			return v, nil
+		case string:
+			return parseNumber(v), nil
+		case []byte:
+			return parseNumber(string(v)), nil
+		}
+		return nil, nil
+	})
+	sqlite.MustRegisterDeterministicScalarFunction("hx_rex", 3, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		re, err := cachedRegexp(args[1])
+		if err != nil {
+			return nil, err
+		}
+		g, _ := args[2].(int64)
+		m := re.FindStringSubmatch(textArg(args[0]))
+		if int(g) >= len(m) || g < 0 {
+			return "", nil
+		}
+		return m[g], nil
+	})
+	sqlite.MustRegisterDeterministicScalarFunction("hx_match", 2, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		re, err := cachedRegexp(args[1])
+		if err != nil {
+			return nil, err
+		}
+		if re.MatchString(textArg(args[0])) {
+			return int64(1), nil
+		}
+		return int64(0), nil
+	})
+}
+
+func parseNumber(s string) driver.Value {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return nil
+	}
+	return f
+}
+
+func textArg(v driver.Value) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case []byte:
+		return string(x)
+	}
+	return fmt.Sprint(v)
+}
+
+var rexCache struct {
+	sync.Mutex
+	m map[string]*regexp.Regexp
+}
+
+func cachedRegexp(p driver.Value) (*regexp.Regexp, error) {
+	pattern := textArg(p)
+	rexCache.Lock()
+	defer rexCache.Unlock()
+	if re, ok := rexCache.m[pattern]; ok {
+		return re, nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	if rexCache.m == nil || len(rexCache.m) >= 64 {
+		rexCache.m = map[string]*regexp.Regexp{}
+	}
+	rexCache.m[pattern] = re
+	return re, nil
+}
 
 func (s *SQLite) where(q SearchQuery) (string, []any, error) {
 	n, err := ParseQuery(q.Query)
@@ -212,7 +355,7 @@ func (s *SQLite) where(q SearchQuery) (string, []any, error) {
 				ors = append(ors, "dns_question != ''")
 				continue
 			}
-			e, a := sqliteDialect{}.arrayEq("category", c)
+			e, a := sqliteDialect{}.arrayEq("events.category", c)
 			ors = append(ors, e)
 			args = append(args, a...)
 		}
@@ -221,30 +364,52 @@ func (s *SQLite) where(q SearchQuery) (string, []any, error) {
 	return strings.Join(parts, " AND "), args, nil
 }
 
-// Search runs a query.
+// Search runs a search.
 func (s *SQLite) Search(ctx context.Context, q SearchQuery) (*SearchResult, error) {
-	start := time.Now()
-	where, args, err := s.where(q)
+	return search(ctx, s, q)
+}
+
+func (s *SQLite) pd() pipeDialect   { return sqliteDialect{} }
+func (s *SQLite) tableName() string { return "events" }
+
+func (s *SQLite) userError(err error) bool {
+	var se *sqlite.Error
+	if !errors.As(err, &se) {
+		return false
+	}
+	switch se.Code() & 0xff {
+	case 1, 20, 25: // SQLITE_ERROR, SQLITE_MISMATCH, SQLITE_RANGE
+		return true
+	}
+	return false
+}
+
+func (s *SQLite) rows(ctx context.Context, query string, args ...any) ([][]any, error) {
+	rows, err := s.r.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, &QueryError{Err: err}
-	}
-	limit, offset := clamp(q.Limit, q.Offset)
-	order := "DESC"
-	if q.Asc {
-		order = "ASC"
-	}
-	res := &SearchResult{Events: []*event.Event{}}
-	if err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE `+where, args...).Scan(&res.Total); err != nil {
 		return nil, err
 	}
-	evs, err := s.queryRaw(ctx, `SELECT raw FROM events WHERE `+where+` ORDER BY ts `+order+`, id `+order+` LIMIT ? OFFSET ?`,
-		append(args, limit, offset)...)
+	defer rows.Close()
+	cols, err := rows.Columns()
 	if err != nil {
 		return nil, err
 	}
-	res.Events = evs
-	res.TookMs = time.Since(start).Milliseconds()
-	return res, nil
+	var out [][]any
+	for rows.Next() {
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+		for i, v := range vals {
+			vals[i] = normalize(v)
+		}
+		out = append(out, vals)
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLite) queryRaw(ctx context.Context, query string, args ...any) ([]*event.Event, error) {

@@ -7,7 +7,7 @@ import { formatCount, formatNumber } from '../lib/format'
 import { formatBucketLabel, formatDateTime } from '../lib/time'
 
 /** Tracks an element's content width so the SVG can be drawn at 1:1 pixels. */
-function useWidth<T extends HTMLElement>(fallback: number) {
+export function useWidth<T extends HTMLElement>(fallback: number) {
   const ref = useRef<T>(null)
   const [width, setWidth] = useState(fallback)
   useEffect(() => {
@@ -22,7 +22,7 @@ function useWidth<T extends HTMLElement>(fallback: number) {
   return [ref, width] as const
 }
 
-function niceMax(v: number): number {
+export function niceMax(v: number): number {
   if (v <= 0) return 1
   const exp = Math.pow(10, Math.floor(Math.log10(v)))
   const f = v / exp

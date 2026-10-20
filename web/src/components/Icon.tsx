@@ -52,6 +52,8 @@ const PATHS = {
   menu: 'M2.5 4h11M2.5 8h11M2.5 12h11',
   dot: 'M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z',
   sparkle: 'M8 1.8 9.3 6.7 14.2 8 9.3 9.3 8 14.2 6.7 9.3 1.8 8 6.7 6.7Z',
+  chart: 'M2.5 13.5h11M4.5 11V8M7.5 11V4.5M10.5 11V6.5',
+  table: 'M2.5 3h11v10h-11zM2.5 6.5h11M2.5 10h11M6.5 3v10',
 } as const
 
 export type IconName = keyof typeof PATHS

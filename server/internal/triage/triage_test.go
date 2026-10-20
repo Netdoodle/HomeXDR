@@ -319,6 +319,9 @@ func TestTools(t *testing.T) {
 	if _, err := tools["search_events"].Run(ctx, json.RawMessage(`{"query":"(broken"}`)); err == nil {
 		t.Fatal("invalid query accepted")
 	}
+	if out := run("search_events", `{"query":"| stats count by host.name"}`); !strings.Contains(out, `"columns":["host.name","count"]`) || !strings.Contains(out, `"lab-1"`) {
+		t.Fatalf("search_events pipeline: %s", out)
+	}
 	if _, err := tools["submit_triage"].Run(ctx, json.RawMessage(`{"verdict":"fine","confidence":"high","summary":"x"}`)); err == nil {
 		t.Fatal("invalid verdict accepted")
 	}
