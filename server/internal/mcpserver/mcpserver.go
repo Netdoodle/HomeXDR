@@ -1,6 +1,6 @@
 // Package mcpserver serves HomeXDR's AI analyst tools over the Model Context Protocol
-// (Streamable HTTP transport, stateless JSON responses), so MCP clients such as Claude
-// Code or Claude Desktop can investigate alerts with the user's own Claude plan.
+// (Streamable HTTP transport, stateless JSON responses), so any MCP client (Claude Code,
+// Gemini CLI, Codex CLI, Cursor...) can investigate alerts under its own subscription.
 //
 //	POST /mcp         JSON-RPC 2.0: initialize, ping, tools/list, tools/call
 //	GET  /mcp/status  for the MCP runner: whether investigations are waiting

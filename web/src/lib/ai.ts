@@ -35,8 +35,8 @@ export const ENGINE_CHOICES: Choice<AIEngine>[] = [
   },
   {
     value: 'mcp',
-    label: 'Claude through MCP (your Claude plan)',
-    note: 'Claude Code investigates through the HomeXDR MCP server, under your Claude plan with no API bill. Plan usage limits apply. Needs MCP access on, and the MCP runner for automatic investigations.',
+    label: 'An MCP client (your AI subscription)',
+    note: 'An AI tool that speaks MCP (Claude Code, Gemini CLI, Codex CLI, Cursor and others) investigates through the HomeXDR MCP server, under its own subscription with no API bill. Its usage limits apply. Needs MCP access on; automatic investigations also need the MCP runner (Claude Code for now).',
   },
 ]
 

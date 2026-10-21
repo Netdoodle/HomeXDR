@@ -39,7 +39,7 @@ The code is in `server/internal/triage`; the console settings are under
 
 | Setting | Choices |
 |---|---|
-| Investigate with | **An AI provider API** (below), or **Claude through MCP**, which uses your Claude plan through Claude Code (see [MCP](#mcp-investigating-with-your-claude-plan)). |
+| Investigate with | **An AI provider API** (below), or **An MCP client**: any AI tool that speaks MCP, under its own subscription (see [MCP](#mcp-investigating-with-any-mcp-client)). |
 | Provider | **Claude (Anthropic)**, the default and best tested. **OpenAI (ChatGPT)** through the OpenAI API. **Google Gemini** through Google's OpenAI-compatible endpoint. **Local model** through any OpenAI-compatible server (Ollama, LM Studio, vLLM, llama.cpp), so alert data never leaves your network. |
 | Model | Claude: `claude-opus-5-5` (default, the most thorough), `claude-sonnet-5-5` (faster and cheaper), `claude-haiku-5-5` (cheapest), or any Claude model ID. Other providers: any model that supports tool (function) calling; **List models** asks the provider what it offers. |
 | Endpoint URL | OpenAI and Gemini use their public endpoints unless overridden. Local needs one, e.g. Ollama `http://host:11434/v1`, LM Studio `http://host:1234/v1`, vLLM `http://host:8000/v1`. |
@@ -82,12 +82,13 @@ server errors are retried with backoff (honouring `Retry-After`). A refusal
 models vary a lot in how well they call tools: if one finishes without a report, it is
 asked for one twice, then the run is stored as failed.
 
-## MCP: investigating with your Claude plan
+## MCP: investigating with any MCP client
 
-Instead of an API key, investigations can run through Claude Code (or another MCP client)
-under your own Claude plan. HomeXDR serves the analyst's tools over the Model Context
-Protocol at `http://<console>/mcp` (Streamable HTTP). Choose **Investigate with: Claude
-through MCP** in Settings → AI analyst, turn **MCP access** on and create an **MCP token**.
+Instead of an API key, investigations can run through any MCP client (Claude Code, Gemini
+CLI, Codex CLI, Cursor and others) under that tool's own subscription. HomeXDR serves the
+analyst's tools over the Model Context Protocol at `http://<console>/mcp` (Streamable HTTP,
+`Authorization: Bearer` header). Choose **Investigate with: An MCP client** in Settings →
+AI analyst, turn **MCP access** on and create an **MCP token**.
 
 The MCP server offers the same read-only tools as the built-in analyst, plus:
 
@@ -97,21 +98,25 @@ The MCP server offers the same read-only tools as the built-in analyst, plus:
 | `get_alert` | One alert, its first matching events and any earlier AI report |
 | `submit_triage` | Records a report on an alert (`alert_id` plus the report fields). Annotation only, as with the API |
 
-Connect Claude Code once (the settings page shows this command with your URL and token):
+Connect your client once. For Claude Code (the settings page shows this command with your
+URL and token):
 
 ```bash
 claude mcp add --transport http --scope user homexdr http://192.168.120.20:18080/mcp --header "Authorization: Bearer hxm_..."
 ```
 
-Then ask it, for example, "investigate the waiting HomeXDR alerts" or "triage HomeXDR alert
-<id>". Reports show on the alert as written by the client (e.g. `claude-code 2.1.124`)
-through MCP, with the tool calls it made.
+Other clients take the same URL and header in their own MCP config format. Then ask the
+client, for example, "investigate the waiting HomeXDR alerts" or "triage HomeXDR alert
+<id>". Reports show on the alert as written by the client it reported (e.g.
+`claude-code 2.1.306`) through MCP, with the tool calls it made.
 
 ### Automatic investigations: the MCP runner
 
 **Trigger MCP investigations automatically** queues new alerts at the trigger level for
-MCP. Something has to start Claude for them: `homexdr-mcp-runner`, a small program for a
-computer where Claude Code is installed and signed in. It checks `/mcp/status` every 30
+MCP. Something has to start an AI client for them: `homexdr-mcp-runner`, a small program
+for a computer where the client is installed and signed in. It currently drives Claude Code;
+with another client, ask it to work through the queue yourself or schedule it with that
+client's own headless mode. It checks `/mcp/status` every 30
 seconds and, when investigations are waiting, runs Claude Code headless:
 
 ```

@@ -1,6 +1,6 @@
 package triage
 
-// The MCP side of the AI analyst. An MCP client (Claude Code, Claude Desktop) gets the
+// The MCP side of the AI analyst. Any MCP client (Claude Code, Gemini CLI, Codex CLI...) gets the
 // same read-only tools as the built-in analyst, plus:
 //
 //	next_investigation  claims the oldest alert queued for the MCP engine

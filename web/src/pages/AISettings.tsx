@@ -344,7 +344,7 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
 
           <Section
             title="Alert data sent to the provider"
-            help={form.engine === 'mcp' ? 'Through MCP, Claude reads the data under your Claude plan’s terms, as in any Claude Code session.' : undefined}
+            help={form.engine === 'mcp' ? 'Through MCP, the AI client reads the data under the terms of its own service, as in any session with that tool.' : undefined}
           >
             <ChoiceCards name="Data" choices={DATA_CHOICES} value={form.engine === 'api' && form.provider === 'local' ? 'local' : 'as-is'} />
           </Section>
@@ -405,9 +405,9 @@ function MCPAccess({
       </div>
       <div className="panel-body stack" style={{ gap: 14 }}>
         <p className="muted small" style={{ margin: 0 }}>
-          Lets Claude Code (or another MCP client) use HomeXDR&apos;s read-only investigation tools at <span className="mono">{mcpURL(origin)}</span>, with your
-          Claude plan. Ask it to investigate any alert, or let the runner work through queued ones. Reports are stored next to the alert, as with
-          the API; MCP clients cannot change anything else.
+          Lets any MCP client (Claude Code, Gemini CLI, Codex CLI, Cursor and others) use HomeXDR&apos;s read-only investigation tools at{' '}
+          <span className="mono">{mcpURL(origin)}</span>, under that tool&apos;s own subscription. Ask it to investigate any alert, or let the runner
+          work through queued ones. Reports are stored next to the alert, as with the API; MCP clients cannot change anything else.
         </p>
 
         <label className={`choice${form.mcp_auto_trigger ? ' selected' : ''}`}>
@@ -421,8 +421,8 @@ function MCPAccess({
             <div className="choice-title">Trigger MCP investigations automatically</div>
             <div className="choice-note">
               {form.engine !== 'mcp'
-                ? 'Choose “Claude through MCP” above to use this.'
-                : 'New alerts at the trigger level are queued, and the MCP runner starts Claude Code for them. Off: investigations start only when you click “Investigate with AI” on an alert, or ask Claude yourself.'}
+                ? 'Choose “An MCP client” above to use this.'
+                : 'New alerts at the trigger level are queued, and the MCP runner starts an AI client for them. Off: investigations start only when you click “Investigate with AI” on an alert, or ask your MCP client yourself.'}
             </div>
           </div>
         </label>
@@ -435,7 +435,7 @@ function MCPAccess({
                 Runner <strong>{settings.mcp.runner_name}</strong> last checked in <RelTime iso={runnerSeen} />.
               </>
             ) : (
-              <>No MCP runner has checked in. Queued investigations wait until one does, or until you ask Claude in Claude Code.</>
+              <>No MCP runner has checked in. Queued investigations wait until one does, or until you ask your MCP client to investigate them.</>
             )}{' '}
             {settings.mcp.pending > 0 ? <>{plural(settings.mcp.pending, 'alert')} waiting.</> : null}
           </div>
@@ -449,24 +449,24 @@ function MCPAccess({
           </summary>
           <div className="stack" style={{ gap: 10, marginTop: 8 }}>
             <div className="field">
-              <span className="label">Claude Code (create a token below and put it in place of &lt;MCP token&gt;)</span>
+              <span className="label">Claude Code, for example (create a token below and put it in place of &lt;MCP token&gt;)</span>
               <div className="copy-field">
                 <pre className="codeblock wrap">{snippets.claudeCode}</pre>
                 <CopyButton text={snippets.claudeCode} small />
               </div>
               <span className="help">
-                Then ask Claude, for example: “Investigate the waiting HomeXDR alerts” or “Triage HomeXDR alert &lt;id&gt;”.
+                Then ask it, for example: “Investigate the waiting HomeXDR alerts” or “Triage HomeXDR alert &lt;id&gt;”.
               </span>
             </div>
             <div className="field">
-              <span className="label">Other MCP clients (Streamable HTTP with a header)</span>
+              <span className="label">Other MCP clients (Gemini CLI, Codex CLI, Cursor, ...): an HTTP server with this header; the config format varies by client</span>
               <div className="copy-field">
                 <pre className="codeblock wrap">{snippets.json}</pre>
                 <CopyButton text={snippets.json} small />
               </div>
             </div>
             <div className="field">
-              <span className="label">MCP runner, on a computer where Claude Code is installed and signed in</span>
+              <span className="label">MCP runner, for automatic investigations (it drives Claude Code for now), on a computer where it is installed and signed in</span>
               <div className="copy-field">
                 <pre className="codeblock wrap">{snippets.runner}</pre>
                 <CopyButton text={snippets.runner} small />
