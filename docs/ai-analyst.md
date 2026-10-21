@@ -136,8 +136,20 @@ echo hxm_... > mcp-token.txt
 ```
 
 Options: `-model sonnet` (default: Claude Code's), `-interval 30s`, `-timeout 30m`,
-`-per-run 5`, `-name` (shown in the console), `-once`. Keep it running with Task Scheduler
-(Windows), a systemd unit or a user script. The settings page shows when the runner last
+`-per-run 5`, `-name` (shown in the console), `-log-file`, `-claude` (path to Claude Code),
+`-once`. Keep it running with Task Scheduler (Windows), a systemd unit or a user script.
+
+On Windows, build it without a console window and start it at logon. It then starts Claude
+Code hidden too. Use a folder outside `AppData` if you set it up from a packaged app's
+terminal, which may redirect `AppData` writes where Task Scheduler cannot see them:
+
+```powershell
+go build -ldflags "-H=windowsgui" -o $HOME\HomeXDR\homexdr-mcp-runner.exe ./cmd/homexdr-mcp-runner
+$a = New-ScheduledTaskAction -Execute "$HOME\HomeXDR\homexdr-mcp-runner.exe" -WorkingDirectory "$HOME\HomeXDR" `
+  -Argument "-url http://192.168.120.20:18080 -token-file `"$HOME\HomeXDR\mcp-token.txt`" -claude `"$HOME\.local\bin\claude.exe`" -log-file `"$HOME\HomeXDR\runner.log`""
+$s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask "HomeXDR MCP runner" -Action $a -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) -Settings $s
+``` The settings page shows when the runner last
 checked in.
 
 Turning the toggle off stops new alerts being queued; **Investigate with AI** on an alert

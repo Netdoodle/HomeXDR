@@ -42,6 +42,7 @@ type config struct {
 	interval, timeout               time.Duration
 	perRun                          int
 	once                            bool
+	logFile                         string
 }
 
 type status struct {
@@ -54,9 +55,20 @@ type status struct {
 }
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	cfg, err := parseFlags()
+	var out io.Writer = os.Stderr
+	if cfg.logFile != "" {
+		f, ferr := openLog(cfg.logFile)
+		if ferr != nil {
+			fmt.Fprintln(os.Stderr, "homexdr-mcp-runner:", ferr)
+			os.Exit(2)
+		}
+		defer f.Close()
+		out = f
+	}
+	log := slog.New(slog.NewTextHandler(out, nil))
 	if err != nil {
+		log.Error("bad configuration", "err", err)
 		fmt.Fprintln(os.Stderr, "homexdr-mcp-runner:", err)
 		os.Exit(2)
 	}
@@ -81,6 +93,7 @@ func parseFlags() (config, error) {
 	flag.DurationVar(&cfg.timeout, "timeout", 30*time.Minute, "time limit for one Claude Code run")
 	flag.IntVar(&cfg.perRun, "per-run", 5, "alerts to investigate in one Claude Code run")
 	flag.BoolVar(&cfg.once, "once", false, "check once, run if needed, and exit")
+	flag.StringVar(&cfg.logFile, "log-file", "", "append the log to this file instead of stderr (kept under 5 MB; the previous one is .old)")
 	flag.Parse()
 	cfg.url = strings.TrimRight(strings.TrimSpace(cfg.url), "/")
 	if cfg.url == "" {
@@ -101,6 +114,15 @@ func parseFlags() (config, error) {
 		return cfg, errors.New("-per-run must be between 1 and 50")
 	}
 	return cfg, nil
+}
+
+// openLog opens the log file for appending, first moving a large one to .old.
+func openLog(path string) (*os.File, error) {
+	if st, err := os.Stat(path); err == nil && st.Size() > 5<<20 {
+		_ = os.Remove(path + ".old")
+		_ = os.Rename(path, path+".old")
+	}
+	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 }
 
 func run(ctx context.Context, cfg config, log *slog.Logger) error {
@@ -202,6 +224,7 @@ func investigate(ctx context.Context, cfg config, log *slog.Logger) error {
 	defer cancel()
 	cmd := exec.CommandContext(rctx, cfg.claude, claudeArgs(cfg, confPath)...)
 	cmd.Dir = work
+	hideWindow(cmd)
 	cmd.Stdin = strings.NewReader(fmt.Sprintf(prompt, cfg.perRun))
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
