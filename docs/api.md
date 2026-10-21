@@ -219,6 +219,17 @@ change alerts or anything else.
 | PUT | `/api/settings/ai` | `AISettingsUpdate` → `AISettings` (admin); audited without the key |
 | POST | `/api/settings/ai/test` | `AISettingsUpdate` → `{"ok": bool, "model"?: string, "error"?: string}` (admin): a minimal request with the given values |
 | POST | `/api/settings/ai/models` | `AISettingsUpdate` → `{"models": string[], "error"?: string}` (admin): the models the selected provider offers |
+| GET | `/api/settings/ai/mcp-tokens` | `{"tokens": MCPToken[]}` (admin) |
+| POST | `/api/settings/ai/mcp-tokens` | `{"name"}` → `MCPToken` with `token` (`hxm_...`), shown once (admin, audited) |
+| DELETE | `/api/settings/ai/mcp-tokens/{id}` | 204 (admin, audited): revokes the token |
+
+The MCP endpoint is outside `/api` and takes `Authorization: Bearer hxm_...` instead of a
+session; it answers only while `mcp_enabled` is on:
+
+| Method | Path | |
+|---|---|---|
+| POST | `/mcp` | MCP Streamable HTTP (JSON responses, no sessions): `initialize`, `ping`, `tools/list`, `tools/call` |
+| GET | `/mcp/status` | `{"engine", "auto_trigger", "pending", "run", "ready", "not_ready_reason"}` for the MCP runner; `X-HomeXDR-Runner: <name>` records the runner |
 
 ```ts
 type AIVerdict = "benign" | "suspicious" | "malicious" | "inconclusive"
@@ -245,8 +256,15 @@ type AISettings = {
   providers: { id: string; name: string; available: boolean; default_base_url?: string;
                needs_key: boolean; needs_base_url: boolean; key_env: string }[];
   default_model: string; auto_today: number;
+  engine: "api" | "mcp";          // who runs investigations: the server (API) or an MCP client
+  mcp_enabled: boolean;           // the /mcp endpoint answers MCP tokens
+  mcp_auto_trigger: boolean;      // engine mcp: queue new alerts for the MCP runner
+  mcp: { pending: number; tokens: number; runner_name?: string; runner_seen_at?: string };
 }
-// AISettingsUpdate: the editable fields of AISettings (including base_url), plus api_key
+type MCPToken = { id: string; name: string; token?: string; created_at: string; created_by: string; last_used_at?: string }
+// Alerts' ai_triage records also carry engine: "api" | "mcp".
+// AISettingsUpdate: the editable fields of AISettings (including base_url and the engine
+// and MCP switches), plus api_key
 // (sets the selected provider's key when not empty) and clear_api_key. Other providers'
 // keys are kept.
 ```

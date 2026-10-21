@@ -33,5 +33,6 @@ export const queryKeys = {
   audit: (offset: number) => ['settings', 'audit', offset] as const,
   integrations: ['settings', 'integrations'] as const,
   aiSettings: ['settings', 'ai'] as const,
+  mcpTokens: ['settings', 'ai', 'mcp-tokens'] as const,
   health: ['health'] as const,
 }

@@ -88,6 +88,14 @@ type Settings struct {
 	MinSeverity  string `json:"min_severity"` // informational | low | medium | high | critical
 	DailyLimit   int    `json:"daily_limit"`  // automatic investigations per day
 	MaxToolCalls int    `json:"max_tool_calls"`
+	// Engine runs investigations: "api" (the server, through Provider) or "mcp" (an
+	// MCP client such as Claude Code claims them with next_investigation).
+	Engine string `json:"engine"`
+	// MCPEnabled turns on the /mcp endpoint for MCP access tokens.
+	MCPEnabled bool `json:"mcp_enabled"`
+	// MCPAutoTrigger queues new alerts for MCP investigation (engine "mcp"); the MCP
+	// runner starts Claude Code for them. Off: MCP investigations run only on request.
+	MCPAutoTrigger bool `json:"mcp_auto_trigger"`
 }
 
 // normalize folds a request's (or legacy) APIKey into APIKeys for the selected provider.
@@ -118,7 +126,7 @@ func (s Settings) EndpointURL() string {
 // DefaultSettings: on (it does nothing until an API key is set), Claude, medium and above.
 func DefaultSettings() Settings {
 	return Settings{Enabled: true, Provider: ProviderAnthropic, Model: DefaultModel, MinSeverity: store.SevMedium,
-		DailyLimit: 50, MaxToolCalls: 20}
+		DailyLimit: 50, MaxToolCalls: 20, Engine: store.EngineAPI}
 }
 
 func severityRank(s string) int {
@@ -148,6 +156,13 @@ func (s *Settings) Validate() error {
 		return fmt.Errorf("unknown provider %q", s.Provider)
 	}
 	s.normalize()
+	switch s.Engine {
+	case "":
+		s.Engine = store.EngineAPI
+	case store.EngineAPI, store.EngineMCP:
+	default:
+		return fmt.Errorf("engine must be api or mcp")
+	}
 	if s.Model == "" && s.Provider == ProviderAnthropic {
 		s.Model = DefaultModel
 	}
@@ -259,11 +274,17 @@ type Service struct {
 
 	mu      sync.Mutex
 	running string // alert being investigated
+
+	mcpMu       sync.Mutex
+	mcpSessions map[string]*mcpSession // by MCP token ID
+	runnerName  string                 // last MCP runner that checked in
+	runnerSeen  time.Time
 }
 
 // New returns a service. Call Run to start the worker.
 func New(st *store.Store, ev events.Store, log *slog.Logger) *Service {
-	return &Service{st: st, ev: ev, log: log, wake: make(chan struct{}, 1), newProvider: defaultProvider}
+	return &Service{st: st, ev: ev, log: log, wake: make(chan struct{}, 1), newProvider: defaultProvider,
+		mcpSessions: map[string]*mcpSession{}}
 }
 
 func defaultProvider(s Settings, key string) (provider, error) {
@@ -284,6 +305,9 @@ func (s *Service) Settings(ctx context.Context) Settings {
 	set := DefaultSettings()
 	if err := s.st.GetKV(ctx, settingsKey, &set); err != nil && !errors.Is(err, store.ErrNotFound) {
 		s.log.Warn("ai triage: read settings", "err", err)
+	}
+	if set.Engine == "" { // stored by a version without engines
+		set.Engine = store.EngineAPI
 	}
 	if set.APIKey != "" { // stored by an older version: it was the Claude key
 		if set.APIKeys == nil {
@@ -327,13 +351,20 @@ func KeyFor(set Settings, providerID string) (key, source string) {
 	return "", ""
 }
 
-// Ready reports whether automatic investigations can run, and if not, why.
+// Ready reports whether investigations can run with the selected engine, and if not, why.
 func (s *Service) Ready(set Settings) (bool, string) {
+	if !set.Enabled {
+		return false, "the AI analyst is turned off"
+	}
+	if set.Engine == store.EngineMCP {
+		if !set.MCPEnabled {
+			return false, "MCP access is turned off"
+		}
+		return true, ""
+	}
 	info, known := providerInfo(set.Provider)
 	key, _ := s.Key(set)
 	switch {
-	case !set.Enabled:
-		return false, "the AI analyst is turned off"
 	case !known || !info.Available:
 		return false, "the selected provider is not available"
 	case info.NeedsKey && key == "":
@@ -364,13 +395,16 @@ func (s *Service) AlertCreated(ctx context.Context, a *store.Alert) {
 	if ok, _ := s.Ready(set); !ok || severityRank(a.Severity) < severityRank(set.MinSeverity) {
 		return
 	}
+	if set.Engine == store.EngineMCP && !set.MCPAutoTrigger {
+		return // MCP investigations run on request only
+	}
 	if s.AutoToday(ctx) >= set.DailyLimit {
-		if _, err := s.st.SkipTriage(ctx, a.ID, TriggerAuto, fmt.Sprintf("daily limit of %d automatic investigations reached", set.DailyLimit)); err != nil {
+		if _, err := s.st.SkipTriage(ctx, a.ID, TriggerAuto, set.Engine, fmt.Sprintf("daily limit of %d automatic investigations reached", set.DailyLimit)); err != nil {
 			s.log.Warn("ai triage: record skip", "alert", a.ID, "err", err)
 		}
 		return
 	}
-	if _, err := s.st.QueueTriage(ctx, a.ID, TriggerAuto, ""); err != nil {
+	if _, err := s.st.QueueTriage(ctx, a.ID, TriggerAuto, "", set.Engine); err != nil {
 		if !errors.Is(err, store.ErrConflict) {
 			s.log.Warn("ai triage: queue", "alert", a.ID, "err", err)
 		}
@@ -391,7 +425,7 @@ func (s *Service) Request(ctx context.Context, alertID, user string) (*store.Tri
 	if _, err := s.st.GetAlert(ctx, alertID); err != nil {
 		return nil, err
 	}
-	t, err := s.st.QueueTriage(ctx, alertID, TriggerManual, user)
+	t, err := s.st.QueueTriage(ctx, alertID, TriggerManual, user, set.Engine)
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +501,7 @@ func (s *Service) Run(ctx context.Context) {
 	defer tick.Stop()
 	for {
 		for ctx.Err() == nil {
-			t, err := s.st.ClaimTriage(ctx)
+			t, err := s.st.ClaimTriage(ctx, store.EngineAPI)
 			if errors.Is(err, store.ErrNotFound) {
 				break
 			}
@@ -476,6 +510,10 @@ func (s *Service) Run(ctx context.Context) {
 				break
 			}
 			s.process(ctx, t)
+		}
+		if n, err := s.st.FailStaleTriages(ctx, store.EngineMCP, time.Now().Add(-mcpTimeout),
+			"the MCP client did not submit a report within "+mcpTimeout.String()); err == nil && n > 0 {
+			s.log.Warn("ai triage: MCP investigations timed out", "count", n)
 		}
 		select {
 		case <-ctx.Done():

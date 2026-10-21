@@ -738,10 +738,14 @@ export interface AIToolCall {
   ms: number
 }
 
+export type AIEngine = 'api' | 'mcp'
+
 export interface AITriage {
   alert_id: string
   status: AITriageStatus
   trigger: 'auto' | 'manual'
+  /** api: the server's own worker; mcp: an MCP client such as Claude Code */
+  engine?: AIEngine
   requested_by?: string
   provider?: string
   model?: string
@@ -802,6 +806,22 @@ export interface AISettings {
   providers: AIProvider[]
   default_model: string
   auto_today: number
+  engine: AIEngine
+  /** the /mcp endpoint answers MCP tokens */
+  mcp_enabled: boolean
+  /** new alerts are queued for MCP clients (engine mcp) */
+  mcp_auto_trigger: boolean
+  mcp: { pending: number; tokens: number; runner_name?: string; runner_seen_at?: string }
+}
+
+export interface MCPToken {
+  id: string
+  name: string
+  /** only when just created */
+  token?: string
+  created_at: string
+  created_by: string
+  last_used_at?: string
 }
 
 export interface AISettingsUpdate {
@@ -812,6 +832,9 @@ export interface AISettingsUpdate {
   daily_limit: number
   max_tool_calls: number
   base_url?: string
+  engine: AIEngine
+  mcp_enabled: boolean
+  mcp_auto_trigger: boolean
   /** sets the selected provider's key when not empty */
   api_key?: string
   clear_api_key?: boolean

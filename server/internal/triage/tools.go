@@ -49,11 +49,11 @@ Use it to look at what else happened on the alert's host, who else talked to an 
 Query language: field:value or field=value (case-insensitive), field!=value, field:val* wildcards, field:"quoted value", field>N / field:>N comparisons, AND / OR / NOT, parentheses; bare words match message, command line and file path. An empty query returns the newest events.
 Splunk-style commands can follow the filter with |, and then a table is returned instead of events: stats count, dc(f), sum(f), avg(f), min(f), max(f), values(f) [as name] [by f, ...]; top [limit=N] f; rare f; table f, ...; sort [-]f; head N; dedup f; where <expression>; eval name=<expression>; rex field=f "(?<name>regex)". Example: destination.ip:203.0.113.7 | stats count, dc(host.name) as hosts by event.module.
 Useful fields: host.name, host.id, event.category (process, network, file, authentication, dns, registry), event.action, event.outcome, event.module (opnsense, suricata, procconn, fanotify, ...), process.name, process.command_line, process.entity_id, process.parent.name, user.name, file.path, source.ip, destination.ip, destination.port, destination.domain, dns.question.name, network.community_id.
-The time window defaults to 24 hours before the alert's first hit until now. Results are newest first and trimmed.`,
+The time window defaults to 24 hours before the alert's first hit (or the last 24 hours) until now. Results are newest first and trimmed.`,
 			Properties: map[string]any{
 				"query":   map[string]any{"type": "string", "description": "Query in the language above, e.g. process.name:curl AND destination.port:443"},
 				"host_id": map[string]any{"type": "string", "description": "Only events from this host (agent ID). Omit to search every host."},
-				"from":    map[string]any{"type": "string", "description": "Window start, RFC 3339. Default: 24 hours before the alert's first hit."},
+				"from":    map[string]any{"type": "string", "description": "Window start, RFC 3339. Default: 24 hours before the alert's first hit, or 24 hours ago."},
 				"to":      map[string]any{"type": "string", "description": "Window end, RFC 3339. Default: now."},
 				"limit":   map[string]any{"type": "integer", "description": "Events to return, 1-50. Default 20."},
 			},
@@ -191,18 +191,25 @@ func (b *toolbox) submit(_ context.Context, in json.RawMessage) (string, error) 
 	if err := json.Unmarshal(in, &r); err != nil {
 		return "", fmt.Errorf("invalid report: %v", err)
 	}
-	switch {
-	case !oneOf(r.Verdict, "benign", "suspicious", "malicious", "inconclusive"):
-		return "", fmt.Errorf("verdict must be benign, suspicious, malicious or inconclusive")
-	case !oneOf(r.Confidence, "low", "medium", "high"):
-		return "", fmt.Errorf("confidence must be low, medium or high")
-	case !oneOf(r.SeverityAssessment, store.SevInformational, store.SevLow, store.SevMedium, store.SevHigh, store.SevCritical):
-		return "", fmt.Errorf("severity_assessment must be a severity level")
-	case strings.TrimSpace(r.Summary) == "":
-		return "", errors.New("summary is empty")
+	if err := validateReport(&r); err != nil {
+		return "", err
 	}
 	b.report = &r
 	return "Report recorded. The investigation is complete.", nil
+}
+
+func validateReport(r *Report) error {
+	switch {
+	case !oneOf(r.Verdict, "benign", "suspicious", "malicious", "inconclusive"):
+		return fmt.Errorf("verdict must be benign, suspicious, malicious or inconclusive")
+	case !oneOf(r.Confidence, "low", "medium", "high"):
+		return fmt.Errorf("confidence must be low, medium or high")
+	case !oneOf(r.SeverityAssessment, store.SevInformational, store.SevLow, store.SevMedium, store.SevHigh, store.SevCritical):
+		return fmt.Errorf("severity_assessment must be a severity level")
+	case strings.TrimSpace(r.Summary) == "":
+		return errors.New("summary is empty")
+	}
+	return nil
 }
 
 // --- helpers ---
@@ -306,7 +313,10 @@ func (b *toolbox) searchEvents(ctx context.Context, in json.RawMessage) (string,
 	if err := json.Unmarshal(in, &p); err != nil {
 		return "", fmt.Errorf("invalid input: %v", err)
 	}
-	from := b.alert.FirstSeen.Add(-24 * time.Hour)
+	from := time.Now().Add(-24 * time.Hour)
+	if b.alert != nil {
+		from = b.alert.FirstSeen.Add(-24 * time.Hour)
+	}
 	to := time.Now()
 	if p.From != "" {
 		t, err := time.Parse(time.RFC3339, p.From)
@@ -525,7 +535,7 @@ func (b *toolbox) listAlerts(ctx context.Context, in json.RawMessage) (string, e
 		if a.AITriage != nil && a.AITriage.Verdict != "" {
 			item["ai_verdict"] = a.AITriage.Verdict
 		}
-		if a.ID == b.alert.ID {
+		if b.alert != nil && a.ID == b.alert.ID {
 			item["note"] = "this is the alert under investigation"
 		}
 		list = append(list, item)
@@ -541,9 +551,11 @@ func (b *toolbox) networkFlow(ctx context.Context, in json.RawMessage) (string, 
 		return "", errors.New("community_id is required")
 	}
 	q := `network.community_id:"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(p.CommunityID) + `"`
-	res, err := b.ev.Search(ctx, events.SearchQuery{
-		Query: q, From: b.alert.FirstSeen.Add(-7 * 24 * time.Hour), To: time.Now(), Limit: 30, Asc: true,
-	})
+	from := time.Now().Add(-7 * 24 * time.Hour)
+	if b.alert != nil {
+		from = b.alert.FirstSeen.Add(-7 * 24 * time.Hour)
+	}
+	res, err := b.ev.Search(ctx, events.SearchQuery{Query: q, From: from, To: time.Now(), Limit: 30, Asc: true})
 	if err != nil {
 		return "", err
 	}

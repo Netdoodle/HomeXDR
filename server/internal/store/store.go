@@ -188,8 +188,19 @@ CREATE TABLE IF NOT EXISTS kv (
 `
 
 func (s *Store) migrate(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, schema+triageSchema); err != nil {
+	if _, err := s.db.ExecContext(ctx, schema+triageSchema+mcpTokenSchema); err != nil {
 		return fmt.Errorf("store: migrate: %w", err)
+	}
+	for _, m := range triageMigrations {
+		var n int
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('alert_triage') WHERE name = ?`, m.column).Scan(&n); err != nil {
+			return fmt.Errorf("store: migrate: %w", err)
+		}
+		if n == 0 {
+			if _, err := s.db.ExecContext(ctx, m.ddl); err != nil {
+				return fmt.Errorf("store: migrate %s: %w", m.column, err)
+			}
+		}
 	}
 	return nil
 }

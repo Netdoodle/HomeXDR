@@ -6,6 +6,7 @@ import type {
   AIReport,
   AISettings,
   AISettingsUpdate,
+  MCPToken,
   AITriage,
   AgentConfig,
   Alert,
@@ -1058,7 +1059,41 @@ const aiSettings: AISettings = {
   ],
   default_model: 'claude-opus-5-5',
   auto_today: 3,
+  engine: 'api',
+  mcp_enabled: false,
+  mcp_auto_trigger: false,
+  mcp: { pending: 0, tokens: 1, runner_name: 'DESKTOP-DOODLE', runner_seen_at: new Date(Date.now() - 40_000).toISOString() },
 }
+
+const mcpTokens: MCPToken[] = [
+  { id: 'mcp-1', name: 'desktop runner', created_at: new Date(Date.now() - 3 * 86_400_000).toISOString(), created_by: 'admin', last_used_at: new Date(Date.now() - 40_000).toISOString() },
+]
+
+route('GET', '/api/settings/ai/mcp-tokens', () => ({ tokens: mcpTokens }), { role: 'admin' })
+route(
+  'POST',
+  '/api/settings/ai/mcp-tokens',
+  ({ body }) => {
+    const name = String(obj(body).name ?? '').trim() || 'mcp'
+    const t: MCPToken = { id: makeId(Date.now()), name, created_at: new Date().toISOString(), created_by: 'admin' }
+    mcpTokens.unshift(t)
+    aiSettings.mcp.tokens = mcpTokens.length
+    return { ...t, token: 'hxm_demo' + makeId(Date.now()).toLowerCase() }
+  },
+  { role: 'admin' },
+)
+route(
+  'DELETE',
+  '/api/settings/ai/mcp-tokens/:id',
+  ({ params }) => {
+    const i = mcpTokens.findIndex((t) => t.id === params.id)
+    if (i < 0) fail(404, 'not found')
+    mcpTokens.splice(i, 1)
+    aiSettings.mcp.tokens = mcpTokens.length
+    return undefined
+  },
+  { role: 'admin' },
+)
 
 const triages: Record<string, AITriage> = {}
 
@@ -1165,6 +1200,8 @@ route(
       base_url: b.base_url || undefined,
       min_severity: b.min_severity ?? aiSettings.min_severity, daily_limit: b.daily_limit ?? aiSettings.daily_limit,
       max_tool_calls: b.max_tool_calls ?? aiSettings.max_tool_calls,
+      engine: b.engine ?? aiSettings.engine, mcp_enabled: b.mcp_enabled ?? aiSettings.mcp_enabled,
+      mcp_auto_trigger: b.mcp_auto_trigger ?? aiSettings.mcp_auto_trigger,
     })
     if (b.clear_api_key) aiSettings.keys[provider] = { set: false }
     else if (b.api_key) aiSettings.keys[provider] = { set: true, hint: '...' + b.api_key.slice(-4), source: 'settings' }
@@ -1173,7 +1210,11 @@ route(
     Object.assign(aiSettings, { key_set: k.set, key_hint: k.hint, key_source: k.source })
     const reason = !aiSettings.enabled
       ? 'the AI analyst is turned off'
-      : info?.needs_key && !k.set
+      : aiSettings.engine === 'mcp'
+        ? aiSettings.mcp_enabled
+          ? undefined
+          : 'MCP access is turned off'
+        : info?.needs_key && !k.set
         ? 'no API key is set'
         : provider === 'local' && !aiSettings.base_url
           ? 'no base URL is set'

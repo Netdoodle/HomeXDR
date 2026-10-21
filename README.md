@@ -17,7 +17,9 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
 - **AI analyst.** New alerts above a chosen severity are triaged by an AI model through
   read-only tools: verdict, confidence, evidence and recommended next steps, written next
   to the alert. It annotates only. Claude by default; OpenAI, Gemini, or a local model
-  through any OpenAI-compatible server (Ollama, LM Studio, vLLM).
+  through any OpenAI-compatible server (Ollama, LM Studio, vLLM). Or use your Claude plan
+  instead of an API key: HomeXDR is also an MCP server, and an optional runner starts
+  Claude Code for new alerts.
 - **Automatic updates.** A cron job on the Docker host rebuilds and redeploys the server
   when the git branch moves, with health checks and rollback. Agents that opt in update
   themselves to releases signed with a key the server never holds.

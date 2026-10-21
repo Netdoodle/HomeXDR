@@ -5,6 +5,7 @@ import { normalizeRule, normalizeValidate } from './normalize'
 import type {
   AISettings,
   AISettingsUpdate,
+  MCPToken,
   AITriage,
   AgentConfig,
   Alert,
@@ -159,6 +160,9 @@ export const getAISettings = () => http.get<AISettings>('/api/settings/ai')
 export const putAISettings = (s: AISettingsUpdate) => http.put<AISettings>('/api/settings/ai', s)
 export const testAISettings = (s: AISettingsUpdate) => http.post<{ ok: boolean; model?: string; error?: string }>('/api/settings/ai/test', s)
 export const listAIModels = (s: AISettingsUpdate) => http.post<{ models: string[]; error?: string }>('/api/settings/ai/models', s)
+export const listMCPTokens = () => http.get<{ tokens: MCPToken[] }>('/api/settings/ai/mcp-tokens')
+export const createMCPToken = (name: string) => http.post<MCPToken>('/api/settings/ai/mcp-tokens', { name })
+export const deleteMCPToken = (id: string) => http.del<void>(`/api/settings/ai/mcp-tokens/${enc(id)}`)
 export const listTokens = () => http.get<{ tokens: EnrollmentToken[] }>('/api/enrollment-tokens')
 export const createToken = (t: EnrollmentTokenCreate) => http.post<EnrollmentToken>('/api/enrollment-tokens', t)
 export const deleteToken = (id: string) => http.del(`/api/enrollment-tokens/${enc(id)}`)

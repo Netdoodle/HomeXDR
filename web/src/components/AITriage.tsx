@@ -108,10 +108,11 @@ export function AITriagePanel({ alertId }: { alertId: string }) {
           <p className="row small" style={{ margin: 0 }}>
             <Spinner small />
             {t.status === 'queued' ? (
-              <span>Queued for investigation…</span>
+              <span>{t.engine === 'mcp' ? 'Waiting for Claude through MCP (the MCP runner or a Claude Code session)…' : 'Queued for investigation…'}</span>
             ) : (
               <span>
-                Investigating{t.started_at ? (
+                {t.engine === 'mcp' ? 'Claude is investigating through MCP' : 'Investigating'}
+                {t.started_at ? (
                   <>
                     {' '}
                     since <RelTime iso={t.started_at} />
@@ -216,8 +217,12 @@ function ReportView({ triage: t }: { triage: AITriage }) {
       <TranscriptView triage={t} />
       <p className="xsmall faint" style={{ margin: 0 }}>
         {t.model ? `Written by ${t.model}` : 'Written by the AI analyst'}
+        {t.engine === 'mcp' ? ' through MCP' : ''}
         {t.finished_at ? ` on ${formatDateTime(t.finished_at)}` : ''} · {t.trigger === 'manual' ? `requested by ${t.requested_by}` : 'automatic'} ·{' '}
-        {formatTokens(t.usage.input_tokens + t.usage.cache_read_tokens)} tokens in, {formatTokens(t.usage.output_tokens)} out. AI output can be wrong,
+        {t.engine === 'mcp'
+          ? `${t.tool_calls} tool calls, on the Claude plan.`
+          : `${formatTokens(t.usage.input_tokens + t.usage.cache_read_tokens)} tokens in, ${formatTokens(t.usage.output_tokens)} out.`}{' '}
+        AI output can be wrong,
         and it worked from data that may contain attacker-written text.
       </p>
     </div>

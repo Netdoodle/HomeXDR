@@ -97,6 +97,9 @@ func New(c *core.Core) *Handler {
 	h.route("PUT /api/settings/ai", admin, h.putAISettings)
 	h.route("POST /api/settings/ai/test", admin, h.testAISettings)
 	h.route("POST /api/settings/ai/models", admin, h.listAIModels)
+	h.route("GET /api/settings/ai/mcp-tokens", admin, h.listMCPTokens)
+	h.route("POST /api/settings/ai/mcp-tokens", admin, h.createMCPToken)
+	h.route("DELETE /api/settings/ai/mcp-tokens/{id}", admin, h.deleteMCPToken)
 
 	h.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")

@@ -1,6 +1,6 @@
 // Labels and settings notes for the AI analyst (docs/ai-analyst.md).
 
-import type { AITriageStatus, AIVerdict, Severity } from '../api/types'
+import type { AIEngine, AITriageStatus, AIVerdict, Severity } from '../api/types'
 
 export const VERDICT_LABEL: Record<AIVerdict, string> = {
   benign: 'Benign',
@@ -25,6 +25,20 @@ export interface Choice<T extends string = string> {
   /** offered but not built yet */
   planned?: boolean
 }
+
+/** Who runs investigations. */
+export const ENGINE_CHOICES: Choice<AIEngine>[] = [
+  {
+    value: 'api',
+    label: 'An AI provider API',
+    note: 'The server investigates on its own with an API key (Claude, OpenAI, Gemini) or a local model. Pay-as-you-go for cloud providers.',
+  },
+  {
+    value: 'mcp',
+    label: 'Claude through MCP (your Claude plan)',
+    note: 'Claude Code investigates through the HomeXDR MCP server, under your Claude plan with no API bill. Plan usage limits apply. Needs MCP access on, and the MCP runner for automatic investigations.',
+  },
+]
 
 /** Notes for the providers the server lists; unknown ones fall back to the name only. */
 export const PROVIDER_NOTES: Record<string, string> = {
@@ -89,6 +103,21 @@ export const AUTONOMY_CHOICES: Choice[] = [
     planned: true,
   },
 ]
+
+/** The MCP endpoint of the console the browser is using. */
+export function mcpURL(origin: string = window.location.origin): string {
+  return `${origin.replace(/\/$/, '')}/mcp`
+}
+
+/** Commands and config for connecting MCP clients; the token is a placeholder unless given. */
+export function mcpSnippets(origin: string, token = '<MCP token>') {
+  const url = mcpURL(origin)
+  return {
+    claudeCode: `claude mcp add --transport http --scope user homexdr ${url} --header "Authorization: Bearer ${token}"`,
+    json: JSON.stringify({ mcpServers: { homexdr: { type: 'http', url, headers: { Authorization: `Bearer ${token}` } } } }, null, 2),
+    runner: `homexdr-mcp-runner -url ${origin.replace(/\/$/, '')} -token-file mcp-token.txt`,
+  }
+}
 
 /** The trigger choice for a min_severity (anything else is shown as a custom level). */
 export function triggerChoice(minSeverity: Severity): Choice<Severity> | undefined {

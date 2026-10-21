@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/server/internal/triage"
@@ -25,6 +26,15 @@ type aiSettingsView struct {
 	Providers      []triage.ProviderInfo `json:"providers"`
 	DefaultModel   string                `json:"default_model"`
 	AutoToday      int                   `json:"auto_today"`
+	MCP            mcpStatus             `json:"mcp"`
+}
+
+// mcpStatus shows how MCP clients are using the analyst.
+type mcpStatus struct {
+	Pending      int        `json:"pending"` // investigations waiting for an MCP client
+	Tokens       int        `json:"tokens"`
+	RunnerName   string     `json:"runner_name,omitempty"`
+	RunnerSeenAt *time.Time `json:"runner_seen_at,omitempty"`
 }
 
 type keyStatus struct {
@@ -54,7 +64,53 @@ func (h *Handler) aiView(r *http.Request, set triage.Settings) aiSettingsView {
 	}
 	sel := v.Keys[set.Provider]
 	v.KeySet, v.KeySource, v.KeyHint = sel.Set, sel.Source, sel.Hint
+	v.MCP.Pending = svc.PendingMCP(r.Context())
+	if toks, err := h.c.State.ListMCPTokens(r.Context()); err == nil {
+		v.MCP.Tokens = len(toks)
+	}
+	if name, at := svc.Runner(); !at.IsZero() {
+		v.MCP.RunnerName, v.MCP.RunnerSeenAt = name, &at
+	}
 	return v
+}
+
+func (h *Handler) listMCPTokens(w http.ResponseWriter, r *http.Request, _ *store.User) {
+	toks, err := h.c.State.ListMCPTokens(r.Context())
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tokens": toks})
+}
+
+func (h *Handler) createMCPToken(w http.ResponseWriter, r *http.Request, u *store.User) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if len(req.Name) > 80 {
+		writeErr(w, http.StatusBadRequest, "name is too long")
+		return
+	}
+	t, err := h.c.State.CreateMCPToken(r.Context(), req.Name, u.Username)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	h.c.Audit(r.Context(), u.Username, "mcp.token.create", t.ID, t.Name)
+	writeJSON(w, http.StatusCreated, t)
+}
+
+func (h *Handler) deleteMCPToken(w http.ResponseWriter, r *http.Request, u *store.User) {
+	id := r.PathValue("id")
+	if err := h.c.State.DeleteMCPToken(r.Context(), id); err != nil {
+		h.fail(w, err)
+		return
+	}
+	h.c.Audit(r.Context(), u.Username, "mcp.token.delete", id, "")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) getAISettings(w http.ResponseWriter, r *http.Request, _ *store.User) {
@@ -97,7 +153,13 @@ func (h *Handler) putAISettings(w http.ResponseWriter, r *http.Request, u *store
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	details := "provider " + next.Provider + ", model " + next.Model + ", min severity " + next.MinSeverity
+	details := "engine " + next.Engine + ", provider " + next.Provider + ", model " + next.Model + ", min severity " + next.MinSeverity
+	if next.MCPEnabled {
+		details += ", MCP access on"
+		if next.MCPAutoTrigger {
+			details += " (auto-trigger)"
+		}
+	}
 	if next.BaseURL != "" {
 		details += ", base URL " + next.BaseURL
 	}

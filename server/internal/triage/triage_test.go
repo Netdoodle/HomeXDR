@@ -138,7 +138,7 @@ func (f *fixture) drain(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 	for {
-		tr, err := f.st.ClaimTriage(ctx)
+		tr, err := f.st.ClaimTriage(ctx, store.EngineAPI)
 		if errors.Is(err, store.ErrNotFound) {
 			return
 		}
@@ -211,7 +211,7 @@ func TestDailyLimitAndManual(t *testing.T) {
 	f := newFixture(t)
 	f.useProvider(&fakeProvider{verdict: "benign"})
 	f.save(t, func(s *Settings) { s.DailyLimit = 1 })
-	if _, err := f.st.QueueTriage(ctx, "other-alert-does-not-exist", TriggerAuto, ""); err == nil {
+	if _, err := f.st.QueueTriage(ctx, "other-alert-does-not-exist", TriggerAuto, "", store.EngineAPI); err == nil {
 		t.Fatal("triage for a missing alert accepted (foreign key)")
 	}
 	// Use up the day's limit with another alert.

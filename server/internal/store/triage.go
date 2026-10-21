@@ -18,12 +18,19 @@ const (
 	TriageSkipped = "skipped" // e.g. the daily limit was reached
 )
 
+// Triage engines: who runs a queued investigation.
+const (
+	EngineAPI = "api" // the server's own worker, through an AI provider's API
+	EngineMCP = "mcp" // an MCP client (e.g. Claude Code) claims it with next_investigation
+)
+
 // Triage is the AI analyst's investigation of one alert. It is stored next to the
 // alert, never in it: the AI annotates and does not change the alert.
 type Triage struct {
 	AlertID     string          `json:"alert_id"`
 	Status      string          `json:"status"`
 	Trigger     string          `json:"trigger"` // auto | manual
+	Engine      string          `json:"engine"`  // api | mcp
 	RequestedBy string          `json:"requested_by,omitempty"`
 	Provider    string          `json:"provider,omitempty"`
 	Model       string          `json:"model,omitempty"`
@@ -75,14 +82,19 @@ CREATE TABLE IF NOT EXISTS alert_triage (
 CREATE INDEX IF NOT EXISTS alert_triage_status ON alert_triage(status, created_at);
 `
 
-const triageCols = `alert_id, status, trigger, requested_by, provider, model, verdict, confidence,
+// triageMigrations add columns to databases created by older versions.
+var triageMigrations = []struct{ column, ddl string }{
+	{"engine", `ALTER TABLE alert_triage ADD COLUMN engine TEXT NOT NULL DEFAULT 'api'`},
+}
+
+const triageCols = `alert_id, status, trigger, engine, requested_by, provider, model, verdict, confidence,
 	report, transcript, error, tool_calls, usage, created_at, started_at, finished_at`
 
 func scanTriage(row interface{ Scan(...any) error }) (*Triage, error) {
 	var t Triage
 	var report, transcript, usage, created string
 	var started, finished sql.NullString
-	err := row.Scan(&t.AlertID, &t.Status, &t.Trigger, &t.RequestedBy, &t.Provider, &t.Model, &t.Verdict,
+	err := row.Scan(&t.AlertID, &t.Status, &t.Trigger, &t.Engine, &t.RequestedBy, &t.Provider, &t.Model, &t.Verdict,
 		&t.Confidence, &report, &transcript, &t.Error, &t.ToolCalls, &usage, &created, &started, &finished)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -103,27 +115,40 @@ func scanTriage(row interface{ Scan(...any) error }) (*Triage, error) {
 	return &t, nil
 }
 
-// QueueTriage queues an investigation of an alert, replacing a finished one. It
-// returns ErrConflict while one is already queued or running.
-func (s *Store) QueueTriage(ctx context.Context, alertID, trigger, requestedBy string) (*Triage, error) {
-	return s.putTriage(ctx, alertID, TriageQueued, trigger, requestedBy, "")
+// QueueTriage queues an investigation of an alert for an engine, replacing a finished
+// one. It returns ErrConflict while one is already queued or running.
+func (s *Store) QueueTriage(ctx context.Context, alertID, trigger, requestedBy, engine string) (*Triage, error) {
+	return s.putTriage(ctx, alertID, TriageQueued, trigger, requestedBy, engine, "")
+}
+
+// StartTriage records an investigation that is already under way (an MCP client
+// investigating an alert it chose), replacing a finished one. ErrConflict as QueueTriage.
+func (s *Store) StartTriage(ctx context.Context, alertID, trigger, requestedBy, engine string) (*Triage, error) {
+	return s.putTriage(ctx, alertID, TriageRunning, trigger, requestedBy, engine, "")
 }
 
 // SkipTriage records that an alert was not investigated, and why.
-func (s *Store) SkipTriage(ctx context.Context, alertID, trigger, reason string) (*Triage, error) {
-	return s.putTriage(ctx, alertID, TriageSkipped, trigger, "", reason)
+func (s *Store) SkipTriage(ctx context.Context, alertID, trigger, engine, reason string) (*Triage, error) {
+	return s.putTriage(ctx, alertID, TriageSkipped, trigger, "", engine, reason)
 }
 
-func (s *Store) putTriage(ctx context.Context, alertID, status, trigger, requestedBy, reason string) (*Triage, error) {
+func (s *Store) putTriage(ctx context.Context, alertID, status, trigger, requestedBy, engine, reason string) (*Triage, error) {
+	if engine == "" {
+		engine = EngineAPI
+	}
 	now := ts(time.Now())
-	res, err := s.db.ExecContext(ctx, `INSERT INTO alert_triage(alert_id, status, trigger, requested_by, error, created_at)
-		VALUES(?, ?, ?, ?, ?, ?)
-		ON CONFLICT(alert_id) DO UPDATE SET status = excluded.status, trigger = excluded.trigger,
+	var started any
+	if status == TriageRunning {
+		started = now
+	}
+	res, err := s.db.ExecContext(ctx, `INSERT INTO alert_triage(alert_id, status, trigger, engine, requested_by, error, created_at, started_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(alert_id) DO UPDATE SET status = excluded.status, trigger = excluded.trigger, engine = excluded.engine,
 			requested_by = excluded.requested_by, provider = '', model = '', verdict = '', confidence = '',
 			report = '', transcript = '', error = excluded.error, tool_calls = 0, usage = '{}',
-			created_at = excluded.created_at, started_at = NULL, finished_at = NULL
+			created_at = excluded.created_at, started_at = excluded.started_at, finished_at = NULL
 		WHERE alert_triage.status NOT IN ('queued', 'running')`,
-		alertID, status, trigger, requestedBy, reason, now)
+		alertID, status, trigger, engine, requestedBy, reason, now, started)
 	if err != nil {
 		return nil, err
 	}
@@ -138,23 +163,59 @@ func (s *Store) GetTriage(ctx context.Context, alertID string) (*Triage, error) 
 	return scanTriage(s.db.QueryRowContext(ctx, `SELECT `+triageCols+` FROM alert_triage WHERE alert_id = ?`, alertID))
 }
 
-// ClaimTriage marks the oldest queued investigation as running and returns it, or
-// ErrNotFound when the queue is empty.
-func (s *Store) ClaimTriage(ctx context.Context) (*Triage, error) {
-	var id string
-	err := s.db.QueryRowContext(ctx,
-		`SELECT alert_id FROM alert_triage WHERE status = 'queued' ORDER BY created_at LIMIT 1`).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+// ClaimTriage marks the oldest investigation queued for an engine as running and
+// returns it, or ErrNotFound when there is none.
+func (s *Store) ClaimTriage(ctx context.Context, engine string) (*Triage, error) {
+	for {
+		var id string
+		err := s.db.QueryRowContext(ctx,
+			`SELECT alert_id FROM alert_triage WHERE status = 'queued' AND engine = ? ORDER BY created_at LIMIT 1`, engine).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		if err != nil {
+			return nil, err
+		}
+		claimed, err := s.ClaimQueuedTriage(ctx, id, engine)
+		if errors.Is(err, ErrConflict) {
+			continue // someone else claimed it first
+		}
+		return claimed, err
 	}
+}
+
+// ClaimQueuedTriage marks one alert's investigation, queued for engine, as running.
+// ErrConflict when it is not queued for that engine.
+func (s *Store) ClaimQueuedTriage(ctx context.Context, alertID, engine string) (*Triage, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE alert_triage SET status = 'running', started_at = ?
+		WHERE alert_id = ? AND status = 'queued' AND engine = ?`, ts(time.Now()), alertID, engine)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE alert_triage SET status = 'running', started_at = ?
-		WHERE alert_id = ? AND status = 'queued'`, ts(time.Now()), id); err != nil {
-		return nil, err
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, ErrConflict
 	}
-	return s.GetTriage(ctx, id)
+	return s.GetTriage(ctx, alertID)
+}
+
+// CountQueuedTriages counts investigations waiting for an engine.
+func (s *Store) CountQueuedTriages(ctx context.Context, engine string) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_triage WHERE status = 'queued' AND engine = ?`, engine).Scan(&n)
+	return n, err
+}
+
+// FailStaleTriages marks an engine's investigations that have been running since before
+// t as failed with reason (an MCP client that stopped without reporting). They are not
+// requeued, so a client that keeps failing cannot loop.
+func (s *Store) FailStaleTriages(ctx context.Context, engine string, before time.Time, reason string) (int, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE alert_triage SET status = 'failed', error = ?, finished_at = ?
+		WHERE status = 'running' AND engine = ? AND started_at < ?`, reason, ts(time.Now()), engine, ts(before))
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 // FinishTriage stores the outcome of a running investigation.
@@ -167,9 +228,10 @@ func (s *Store) FinishTriage(ctx context.Context, t *Triage) error {
 	return err
 }
 
-// RequeueRunningTriages puts investigations interrupted by a restart back in the queue.
+// RequeueRunningTriages puts the server's own (API engine) investigations interrupted
+// by a restart back in the queue.
 func (s *Store) RequeueRunningTriages(ctx context.Context) (int, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE alert_triage SET status = 'queued', started_at = NULL WHERE status = 'running'`)
+	res, err := s.db.ExecContext(ctx, `UPDATE alert_triage SET status = 'queued', started_at = NULL WHERE status = 'running' AND engine = 'api'`)
 	if err != nil {
 		return 0, err
 	}

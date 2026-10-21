@@ -2,14 +2,19 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { api, queryKeys, type AISettings, type AISettingsUpdate, type Severity } from '../api'
+import { api, queryKeys, type AIEngine, type AISettings, type AISettingsUpdate, type MCPToken, type Severity } from '../api'
 import { Icon } from '../components/Icon'
+import { CopyButton, RelTime } from '../components/Misc'
 import { ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
+import { plural } from '../lib/format'
 import {
   AUTONOMY_CHOICES,
   BASE_URL_HELP,
   DATA_CHOICES,
+  ENGINE_CHOICES,
+  mcpSnippets,
+  mcpURL,
   KEY_HELP,
   MODEL_CHOICES,
   PROVIDER_NOTES,
@@ -75,6 +80,9 @@ function toUpdate(s: AISettings): AISettingsUpdate {
     min_severity: s.min_severity,
     daily_limit: s.daily_limit,
     max_tool_calls: s.max_tool_calls,
+    engine: s.engine ?? 'api',
+    mcp_enabled: s.mcp_enabled ?? false,
+    mcp_auto_trigger: s.mcp_auto_trigger ?? false,
   }
 }
 
@@ -178,17 +186,32 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
           <div className={settings.ready ? 'callout ok' : 'callout warn'}>
             <Icon name={settings.ready ? 'check' : 'warning'} size={14} />
             <div>
-              {settings.ready ? (
+              {!settings.ready ? (
+                <>Not running: {settings.not_ready_reason}.</>
+              ) : settings.engine === 'mcp' ? (
+                <>
+                  Investigations run through MCP. {plural(settings.mcp.pending, 'alert')} waiting.{' '}
+                  {settings.mcp_auto_trigger
+                    ? `${settings.auto_today} of ${settings.daily_limit} automatic investigations used today.`
+                    : 'Automatic triggering is off: investigations start only when you ask.'}
+                </>
+              ) : (
                 <>
                   Running with {settings.providers.find((p) => p.id === settings.provider)?.name ?? settings.provider} ({settings.model}).{' '}
                   {settings.auto_today} of {settings.daily_limit} automatic investigations used today.
                 </>
-              ) : (
-                <>Not running: {settings.not_ready_reason}.</>
               )}
             </div>
           </div>
 
+          <Section title="Investigate with">
+            <ChoiceCards name="Engine" choices={ENGINE_CHOICES} value={form.engine} onChange={(v) => set('engine', v as AIEngine)} />
+          </Section>
+
+          {form.engine === 'mcp' ? (
+            <MCPAccess settings={settings} form={form} set={set} />
+          ) : (
+            <>
           <Section title="Provider">
             <ChoiceCards name="Provider" choices={providers} value={form.provider} onChange={chooseProvider} />
           </Section>
@@ -286,6 +309,8 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
               </>
             )}
           </Section>
+            </>
+          )}
 
           <Section title="Which alerts to investigate">
             <ChoiceCards name="Trigger" choices={triggers} value={form.min_severity} onChange={(v) => set('min_severity', v as Severity)} />
@@ -317,8 +342,11 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
             </div>
           </Section>
 
-          <Section title="Alert data sent to the provider">
-            <ChoiceCards name="Data" choices={DATA_CHOICES} value={form.provider === 'local' ? 'local' : 'as-is'} />
+          <Section
+            title="Alert data sent to the provider"
+            help={form.engine === 'mcp' ? 'Through MCP, Claude reads the data under your Claude plan’s terms, as in any Claude Code session.' : undefined}
+          >
+            <ChoiceCards name="Data" choices={DATA_CHOICES} value={form.engine === 'api' && form.provider === 'local' ? 'local' : 'as-is'} />
           </Section>
 
           <Section title="What the AI may do">
@@ -335,13 +363,233 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
             <button type="submit" className="btn primary" disabled={save.isPending}>
               Save
             </button>
-            <button type="button" className="btn" disabled={runTest.isPending} onClick={() => runTest.mutate()}>
-              Test connection
-            </button>
+            {form.engine === 'api' ? (
+              <button type="button" className="btn" disabled={runTest.isPending} onClick={() => runTest.mutate()}>
+                Test connection
+              </button>
+            ) : null}
             {save.isPending || runTest.isPending || listModels.isPending ? <Spinner small /> : null}
           </div>
         </div>
       </section>
+      {form.engine === 'api' ? <MCPAccess settings={settings} form={form} set={set} /> : null}
     </form>
+  )
+}
+
+/** MCP access: the endpoint switch, automatic triggering, the runner and tokens. */
+function MCPAccess({
+  settings,
+  form,
+  set,
+}: {
+  settings: AISettings
+  form: AISettingsUpdate
+  set: <K extends keyof AISettingsUpdate>(k: K, v: AISettingsUpdate[K]) => void
+}) {
+  const origin = window.location.origin
+  const snippets = mcpSnippets(origin)
+  const runnerSeen = settings.mcp.runner_seen_at
+  const runnerFresh = runnerSeen ? Date.now() - Date.parse(runnerSeen) < 3 * 60_000 : false
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <h2>MCP access</h2>
+        <label className="row small" style={{ gap: 8 }}>
+          <span className="toggle">
+            <input type="checkbox" checked={form.mcp_enabled} onChange={(e) => set('mcp_enabled', e.target.checked)} aria-label="MCP access on" />
+            <span />
+          </span>
+          {form.mcp_enabled ? 'On' : 'Off'}
+        </label>
+      </div>
+      <div className="panel-body stack" style={{ gap: 14 }}>
+        <p className="muted small" style={{ margin: 0 }}>
+          Lets Claude Code (or another MCP client) use HomeXDR&apos;s read-only investigation tools at <span className="mono">{mcpURL(origin)}</span>, with your
+          Claude plan. Ask it to investigate any alert, or let the runner work through queued ones. Reports are stored next to the alert, as with
+          the API; MCP clients cannot change anything else.
+        </p>
+
+        <label className={`choice${form.mcp_auto_trigger ? ' selected' : ''}`}>
+          <input
+            type="checkbox"
+            checked={form.mcp_auto_trigger}
+            disabled={!form.mcp_enabled || form.engine !== 'mcp'}
+            onChange={(e) => set('mcp_auto_trigger', e.target.checked)}
+          />
+          <div>
+            <div className="choice-title">Trigger MCP investigations automatically</div>
+            <div className="choice-note">
+              {form.engine !== 'mcp'
+                ? 'Choose “Claude through MCP” above to use this.'
+                : 'New alerts at the trigger level are queued, and the MCP runner starts Claude Code for them. Off: investigations start only when you click “Investigate with AI” on an alert, or ask Claude yourself.'}
+            </div>
+          </div>
+        </label>
+
+        <div className={runnerFresh ? 'callout ok' : 'callout'}>
+          <Icon name={runnerFresh ? 'check' : 'info'} size={14} />
+          <div>
+            {runnerSeen ? (
+              <>
+                Runner <strong>{settings.mcp.runner_name}</strong> last checked in <RelTime iso={runnerSeen} />.
+              </>
+            ) : (
+              <>No MCP runner has checked in. Queued investigations wait until one does, or until you ask Claude in Claude Code.</>
+            )}{' '}
+            {settings.mcp.pending > 0 ? <>{plural(settings.mcp.pending, 'alert')} waiting.</> : null}
+          </div>
+        </div>
+
+        <MCPTokens origin={origin} />
+
+        <details>
+          <summary className="small" style={{ cursor: 'pointer' }}>
+            How to connect
+          </summary>
+          <div className="stack" style={{ gap: 10, marginTop: 8 }}>
+            <div className="field">
+              <span className="label">Claude Code (create a token below and put it in place of &lt;MCP token&gt;)</span>
+              <div className="copy-field">
+                <pre className="codeblock wrap">{snippets.claudeCode}</pre>
+                <CopyButton text={snippets.claudeCode} small />
+              </div>
+              <span className="help">
+                Then ask Claude, for example: “Investigate the waiting HomeXDR alerts” or “Triage HomeXDR alert &lt;id&gt;”.
+              </span>
+            </div>
+            <div className="field">
+              <span className="label">Other MCP clients (Streamable HTTP with a header)</span>
+              <div className="copy-field">
+                <pre className="codeblock wrap">{snippets.json}</pre>
+                <CopyButton text={snippets.json} small />
+              </div>
+            </div>
+            <div className="field">
+              <span className="label">MCP runner, on a computer where Claude Code is installed and signed in</span>
+              <div className="copy-field">
+                <pre className="codeblock wrap">{snippets.runner}</pre>
+                <CopyButton text={snippets.runner} small />
+              </div>
+              <span className="help">
+                Save the token in mcp-token.txt. The runner checks every 30 seconds and runs Claude Code with only the HomeXDR tools (no shell,
+                files or web) when investigations are waiting. Build it with <span className="mono">go build ./cmd/homexdr-mcp-runner</span>; see
+                docs/ai-analyst.md.
+              </span>
+            </div>
+          </div>
+        </details>
+      </div>
+    </section>
+  )
+}
+
+function MCPTokens({ origin }: { origin: string }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [name, setName] = useState('')
+  const [created, setCreated] = useState<MCPToken | null>(null)
+  const tokens = useQuery({ queryKey: queryKeys.mcpTokens, queryFn: api.listMCPTokens })
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: queryKeys.mcpTokens })
+    qc.invalidateQueries({ queryKey: queryKeys.aiSettings })
+  }
+  const create = useMutation({
+    mutationFn: () => api.createMCPToken(name.trim()),
+    onSuccess: (t) => {
+      setCreated(t)
+      setName('')
+      refresh()
+    },
+    onError: (e) => toast.error(e),
+  })
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.deleteMCPToken(id),
+    onSuccess: () => {
+      toast.success('Token revoked')
+      refresh()
+    },
+    onError: (e) => toast.error(e),
+  })
+  const list = tokens.data?.tokens ?? []
+  return (
+    <div className="field" style={{ gap: 8 }}>
+      <span className="label">MCP tokens</span>
+      <span className="help">Each MCP client or runner uses its own token. A token can read all telemetry and alerts, and record AI reports.</span>
+      {created?.token ? (
+        <div className="callout ok">
+          <Icon name="key" size={14} />
+          <div className="stack" style={{ gap: 6, minWidth: 0, flex: 1 }}>
+            <span>
+              Token <strong>{created.name}</strong> created. Copy it now: it is not shown again.
+            </span>
+            <div className="copy-field">
+              <pre className="codeblock wrap">{created.token}</pre>
+              <CopyButton text={created.token} small />
+            </div>
+            <div className="copy-field">
+              <pre className="codeblock wrap">{mcpSnippets(origin, created.token).claudeCode}</pre>
+              <CopyButton text={mcpSnippets(origin, created.token).claudeCode} label="Copy Claude Code command" small />
+            </div>
+            <button type="button" className="linklike xsmall" style={{ alignSelf: 'flex-start' }} onClick={() => setCreated(null)}>
+              Done
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {tokens.isError ? (
+        <ErrorState error={tokens.error} onRetry={() => tokens.refetch()} />
+      ) : list.length ? (
+        <table className="table compact">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Created</th>
+              <th>Last used</th>
+              <th aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((t) => (
+              <tr key={t.id}>
+                <td>{t.name}</td>
+                <td className="small">
+                  <RelTime iso={t.created_at} /> by {t.created_by}
+                </td>
+                <td className="small">{t.last_used_at ? <RelTime iso={t.last_used_at} /> : <span className="faint">never</span>}</td>
+                <td style={{ textAlign: 'right' }}>
+                  <button
+                    type="button"
+                    className="btn sm"
+                    disabled={revoke.isPending}
+                    onClick={() => {
+                      if (window.confirm(`Revoke the MCP token "${t.name}"? Clients using it stop working.`)) revoke.mutate(t.id)
+                    }}
+                  >
+                    Revoke
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : tokens.isPending ? null : (
+        <span className="small faint">No tokens yet.</span>
+      )}
+      <div className="row" style={{ gap: 8 }}>
+        <input
+          className="input"
+          style={{ flex: 1, maxWidth: 320 }}
+          placeholder="Token name, e.g. desktop runner"
+          value={name}
+          maxLength={80}
+          onChange={(e) => setName(e.target.value)}
+          aria-label="New token name"
+        />
+        <button type="button" className="btn" disabled={create.isPending} onClick={() => create.mutate()}>
+          <Icon name="plus" size={12} /> Create token
+        </button>
+      </div>
+    </div>
   )
 }

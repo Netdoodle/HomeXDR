@@ -23,6 +23,7 @@ import (
 	"github.com/Netdoodle/homexdr/server/internal/console"
 	"github.com/Netdoodle/homexdr/server/internal/core"
 	"github.com/Netdoodle/homexdr/server/internal/events"
+	"github.com/Netdoodle/homexdr/server/internal/mcpserver"
 	"github.com/Netdoodle/homexdr/server/internal/pki"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/server/internal/syslog"
@@ -118,6 +119,10 @@ func serve() error {
 	web := webui.Handler(cfg.WebDir)
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/api/", consoleAPI)
+	// MCP endpoint for Claude Code / Claude Desktop (bearer MCP tokens; off until enabled).
+	mcpAPI := mcpserver.New(st, c.Triage, log)
+	httpMux.Handle("/mcp", mcpAPI)
+	httpMux.Handle("/mcp/", mcpAPI)
 	httpMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		status := map[string]string{"status": "ok", "event_store": "ok", "state_store": "ok"}
 		code := http.StatusOK
