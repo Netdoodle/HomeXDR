@@ -40,9 +40,11 @@ type Handler struct {
 func New(c *core.Core) *Handler {
 	h := &Handler{c: c, mux: http.NewServeMux()}
 	h.mux.HandleFunc("POST "+api.PathEnroll, h.enroll)
+	h.mux.HandleFunc("POST "+api.PathRenew, h.renew)
 	h.mux.HandleFunc("GET "+api.PathAgentRelease, h.releaseManifest)
 	h.mux.HandleFunc("GET "+api.PathAgentReleaseSig, h.releaseSignature)
 	h.mux.HandleFunc("GET /v1/download/{name}", h.download)
+	h.mux.HandleFunc("GET "+api.PathReleases+"{version}/{name}", h.archivedRelease)
 	h.mux.HandleFunc("GET /v1/install/linux.sh", h.installScript)
 	h.mux.HandleFunc("GET /v1/ca.crt", h.caCert)
 	h.mux.Handle("POST "+api.PathHeartbeat, h.agent(h.heartbeat))
@@ -73,26 +75,99 @@ func decode(r *http.Request, limit int64, v any) error {
 // agent authenticates a request by its client certificate.
 func (h *Handler) agent(next func(http.ResponseWriter, *http.Request, *store.Host)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.VerifiedChains[0]) == 0 {
-			writeErr(w, http.StatusUnauthorized, "client certificate required")
-			return
-		}
-		leaf := r.TLS.VerifiedChains[0][0]
-		host, err := h.c.State.GetHost(r.Context(), leaf.Subject.CommonName)
-		if err != nil {
-			writeErr(w, http.StatusUnauthorized, "unknown agent")
-			return
-		}
-		if host.Revoked {
-			writeErr(w, http.StatusForbidden, "agent revoked")
-			return
-		}
-		if host.CertSerial != "" && host.CertSerial != leaf.SerialNumber.Text(16) {
-			writeErr(w, http.StatusForbidden, "certificate superseded")
+		host, status, msg := h.authAgent(r, false)
+		if host == nil {
+			writeErr(w, status, msg)
 			return
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, host.ID)), host)
 	})
+}
+
+// authAgent identifies the agent behind a request by its client certificate, or returns
+// the HTTP status and message to refuse it with. allowExpired is for renewal only.
+//
+// A host accepts its current certificate and, after a renewal, the pending new one; the
+// first request with the new certificate makes it current and retires the old one. A
+// decommissioned agent that authenticates is restored.
+func (h *Handler) authAgent(r *http.Request, allowExpired bool) (*store.Host, int, string) {
+	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+		return nil, http.StatusUnauthorized, "client certificate required"
+	}
+	leaf, err := h.c.PKI.VerifyAgentCert(r.TLS.PeerCertificates, allowExpired)
+	if err != nil {
+		if !allowExpired && time.Now().After(r.TLS.PeerCertificates[0].NotAfter) {
+			if _, err := h.c.PKI.VerifyAgentCert(r.TLS.PeerCertificates, true); err == nil {
+				return nil, http.StatusUnauthorized, "certificate expired: renew it at " + api.PathRenew
+			}
+		}
+		return nil, http.StatusUnauthorized, "invalid client certificate"
+	}
+	ctx := r.Context()
+	host, err := h.c.State.GetHost(ctx, leaf.Subject.CommonName)
+	if err != nil {
+		return nil, http.StatusUnauthorized, "unknown agent"
+	}
+	if host.Revoked {
+		return nil, http.StatusForbidden, "agent revoked"
+	}
+	serial := leaf.SerialNumber.Text(16)
+	switch {
+	case host.CertSerial == "" || serial == host.CertSerial:
+		if host.CertExpires == nil || !host.CertExpires.Equal(leaf.NotAfter) {
+			if err := h.c.State.UseCert(ctx, host.ID, serial, leaf.NotAfter); err != nil {
+				h.c.Log.Warn("record agent certificate", "host", host.ID, "err", err)
+			}
+		}
+	case serial == host.PendingCertSerial:
+		if err := h.c.State.UseCert(ctx, host.ID, serial, leaf.NotAfter); err != nil {
+			h.c.Log.Error("switch to renewed agent certificate", "host", host.ID, "err", err)
+			return nil, http.StatusInternalServerError, "internal error"
+		}
+		h.c.Log.Info("agent switched to its renewed certificate", "host", host.ID, "expires", leaf.NotAfter)
+	default:
+		return nil, http.StatusForbidden, "certificate superseded"
+	}
+	if host.DecommissionedAt != nil {
+		if was, err := h.c.State.RecommissionHost(ctx, host.ID); err == nil && was {
+			days := int(time.Since(*host.DecommissionedAt).Hours() / 24)
+			h.c.Audit(ctx, "agent", "agent.recommission", host.ID,
+				fmt.Sprintf("%s reconnected %d days after it was decommissioned", host.Hostname, days))
+			h.c.Log.Info("decommissioned agent reconnected; restored", "host", host.ID, "hostname", host.Hostname)
+		}
+	}
+	return host, 0, ""
+}
+
+// renew issues a new client certificate to an agent, even one whose certificate expired.
+func (h *Handler) renew(w http.ResponseWriter, r *http.Request) {
+	host, status, msg := h.authAgent(r, true)
+	if host == nil {
+		writeErr(w, status, msg)
+		return
+	}
+	var req api.RenewRequest
+	if err := decode(r, 64<<10, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	certPEM, serial, err := h.c.PKI.SignAgentCSR([]byte(req.CSRPEM), host.ID)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.c.State.SetPendingCert(r.Context(), host.ID, serial); err != nil {
+		h.c.Log.Error("renew: store certificate", "host", host.ID, "err", err)
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	old := "unknown"
+	if host.CertExpires != nil {
+		old = host.CertExpires.UTC().Format(time.DateOnly)
+	}
+	h.c.Audit(r.Context(), "agent", "agent.cert.renew", host.ID, fmt.Sprintf("%s: certificate expiring %s renewed", host.Hostname, old))
+	h.c.Log.Info("agent certificate renewed", "host", host.ID, "hostname", host.Hostname, "previous_expiry", old)
+	writeJSON(w, http.StatusOK, api.RenewResponse{CertPEM: string(certPEM)})
 }
 
 func (h *Handler) enroll(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +236,7 @@ func (h *Handler) heartbeat(w http.ResponseWriter, r *http.Request, host *store.
 	if hb.Host.OS.Platform == "" {
 		hb.Host.OS = host.OS
 	}
-	wasOffline := host.Status == "offline"
+	wasOffline := host.Status == "offline" || host.Status == "decommissioned"
 	updated, err := h.c.State.Heartbeat(r.Context(), host.ID, hb.Host, hb.Status)
 	if err != nil {
 		h.c.Log.Error("heartbeat", "err", err)
@@ -176,9 +251,7 @@ func (h *Handler) heartbeat(w http.ResponseWriter, r *http.Request, host *store.
 		resp.Config = &cfg
 	}
 	resp.CommandsPending, _ = h.c.State.HasPendingCommands(r.Context(), host.ID)
-	if rel := h.c.Release.Offer(); rel != nil && rel.Version != hb.Status.Version {
-		resp.Update = &api.AgentUpdate{Version: rel.Version, CommitTime: rel.CommitTime}
-	}
+	resp.Update = h.c.UpdateOffer(r.Context(), updated)
 	writeJSON(w, http.StatusOK, resp)
 	if wasOffline {
 		go h.c.CatchUpHunts(context.WithoutCancel(r.Context()), updated)
@@ -479,6 +552,31 @@ func (h *Handler) releaseSignature(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(sig)
+}
+
+// archivedRelease serves a file of an archived release (manifest, signature or binary).
+func (h *Handler) archivedRelease(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.c.Release.ArchiveFile(r.PathValue("version"), r.PathValue("name"))
+	if !ok {
+		writeErr(w, http.StatusNotFound, "no such archived release file")
+		return
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "no such archived release file")
+		return
+	}
+	defer f.Close()
+	switch name := r.PathValue("name"); {
+	case name == api.AgentReleaseName:
+		w.Header().Set("Content-Type", "application/json")
+	case strings.HasSuffix(name, ".sig"):
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	default:
+		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = io.Copy(w, f)
 }
 
 func (h *Handler) download(w http.ResponseWriter, r *http.Request) {

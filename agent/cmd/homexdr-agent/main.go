@@ -397,6 +397,11 @@ func cmdStatus(p platform.Platform, args []string) error {
 	default:
 		fmt.Fprintf(w, "auto update:\toff\n")
 	}
+	if id, err := identity.Load(dataDir); err == nil {
+		c := id.Certificate()
+		renew := c.NotAfter.Add(-c.NotAfter.Sub(c.NotBefore) / 3)
+		fmt.Fprintf(w, "certificate:\texpires %s (renews automatically from %s)\n", c.NotAfter.Local().Format("2006-01-02"), renew.Local().Format("2006-01-02"))
+	}
 	if m, ok := selfupdate.Pending(dataDir); ok {
 		fmt.Fprintf(w, "update:\t%s installed %s ago (from %s), not yet confirmed; %d start(s)\n",
 			m.Version, time.Since(m.InstalledAt).Round(time.Second), m.PreviousVersion, m.Starts)

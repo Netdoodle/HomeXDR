@@ -2310,3 +2310,34 @@ dialog.modal::backdrop {
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* ------------------------------------------------------------------ agent lifecycle */
+
+.dot.decommissioned {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--status-offline);
+}
+.badge.upd {
+  font-weight: 500;
+}
+.badge.upd.updating,
+.badge.upd.pending {
+  color: var(--text-2);
+  background: var(--surface-3);
+}
+.badge.upd.failed {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.badge.upd.current {
+  color: var(--text-muted);
+}
+.badge.upd.ahead,
+.badge.upd.off,
+.badge.upd.none {
+  color: var(--text-muted);
+  background: var(--surface-2);
+}
+.warn-text {
+  color: var(--warn);
+}

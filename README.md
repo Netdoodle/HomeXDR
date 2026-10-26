@@ -23,7 +23,12 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
   for new alerts.
 - **Automatic updates.** A cron job on the Docker host rebuilds and redeploys the server
   when the git branch moves, with health checks and rollback. Agents that opt in update
-  themselves to releases signed with a key the server never holds.
+  themselves to releases signed with a key the server never holds, following an update
+  policy: latest, N-1 or a pinned version per label, a maintenance window, and staged
+  rollout to canary agents first.
+- **Hands-off agents.** Agent certificates renew themselves, even after an agent was off
+  past its expiry. Agents offline for a set number of days are decommissioned (hidden from
+  lists) and come back on their own when they reconnect.
 
 > Status: early development. Not ready for production use.
 

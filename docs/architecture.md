@@ -79,7 +79,9 @@ directive, so modules build independently without a `go.work` file.
 - **Enrollment.** An admin creates an enrollment token in the console. The agent enrolls with
   `--server`, `--token` and `--ca-pin sha256:<hex>` (SHA-256 of the CA certificate's DER),
   sends a CSR, and receives a client certificate with `CN=<agent id>`. Without a pin the
-  agent refuses to enroll unless `--insecure-tofu` is given.
+  agent refuses to enroll unless `--insecure-tofu` is given. The certificate (one year)
+  renews itself; revoking an agent is what stops it for good, since a revoked agent cannot
+  renew. See [protocol.md](protocol.md#certificate-renewal).
 - **Commands are signed.** The agent pins the command key at enrollment and rejects any
   command that fails verification, is expired, targets another agent, or was seen before.
 - **No remote shell.** Every response action is a fixed, typed operation (kill a process,
@@ -168,8 +170,10 @@ fields work in rules without mapping.
 
 `deploy/update/homexdr-update.sh` runs from cron on the Docker host. When the tracked git
 branch moves it builds the image, signs the bundled agent release, recreates the server
-container and rolls back if the new one does not become healthy. Agents with
-`auto_update` then pick up the new agent from their next heartbeat. On Unraid,
+container and rolls back if the new one does not become healthy. The server archives each
+signed agent release it ships, and agents with `auto_update` are offered one according to
+the update policy (Settings → Agent updates: latest, N-1 or pinned per label, maintenance
+window, staged rollout). See [protocol.md](protocol.md#agent-updates). On Unraid,
 `deploy/unraid/homexdr-agent.plg` installs the agent at boot (Unraid's root file system is
 in RAM) and runs it while the array is started.
 

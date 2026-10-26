@@ -18,12 +18,13 @@ func (h *Handler) listHosts(w http.ResponseWriter, r *http.Request, _ *store.Use
 	q := r.URL.Query()
 	hosts, err := h.c.State.ListHosts(r.Context(), store.HostFilter{
 		Q: q.Get("q"), Status: q.Get("status"), Label: q.Get("label"), Platform: q.Get("platform"), Kind: q.Get("kind"),
+		IncludeDecommissioned: q.Get("include_decommissioned") == "1" || q.Get("include_decommissioned") == "true",
 	})
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"hosts": hosts, "total": len(hosts)})
+	writeJSON(w, http.StatusOK, map[string]any{"hosts": h.hostViews(r.Context(), hosts), "total": len(hosts)})
 }
 
 func (h *Handler) getHost(w http.ResponseWriter, r *http.Request, _ *store.User) {
@@ -32,7 +33,7 @@ func (h *Handler) getHost(w http.ResponseWriter, r *http.Request, _ *store.User)
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, host)
+	writeJSON(w, http.StatusOK, h.hostViews(r.Context(), []*store.Host{host})[0])
 }
 
 func (h *Handler) patchHost(w http.ResponseWriter, r *http.Request, u *store.User) {

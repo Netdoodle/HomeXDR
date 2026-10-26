@@ -1,4 +1,5 @@
-import type { AlertStatus, CommandStatus, Host, HostStatus, MitreMapping, Severity } from '../api/types'
+import type { AlertStatus, CommandStatus, Host, HostStatus, HostUpdate, MitreMapping, Severity } from '../api/types'
+import { UPDATE_STATE_LABEL } from '../lib/agents'
 import {
   ALERT_STATUS_LABEL,
   COMMAND_STATUS_LABEL,
@@ -98,6 +99,15 @@ export function RiskScore({ score }: { score: number }) {
         <span style={{ width: `${pct}%` }} />
       </span>
       {score}
+    </span>
+  )
+}
+
+export function UpdateBadge({ update }: { update?: HostUpdate }) {
+  if (!update) return null
+  return (
+    <span className={`badge upd ${update.state}`} title={update.reason ?? (update.target ? `Target ${update.target}` : undefined)}>
+      {UPDATE_STATE_LABEL[update.state]}
     </span>
   )
 }

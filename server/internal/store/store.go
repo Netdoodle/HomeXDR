@@ -191,18 +191,30 @@ func (s *Store) migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, schema+triageSchema+mcpTokenSchema); err != nil {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
-	for _, m := range triageMigrations {
+	for _, m := range columnMigrations {
 		var n int
-		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('alert_triage') WHERE name = ?`, m.column).Scan(&n); err != nil {
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, m.table, m.column).Scan(&n); err != nil {
 			return fmt.Errorf("store: migrate: %w", err)
 		}
 		if n == 0 {
-			if _, err := s.db.ExecContext(ctx, m.ddl); err != nil {
-				return fmt.Errorf("store: migrate %s: %w", m.column, err)
+			if _, err := s.db.ExecContext(ctx, `ALTER TABLE `+m.table+` ADD COLUMN `+m.column+` `+m.def); err != nil {
+				return fmt.Errorf("store: migrate %s.%s: %w", m.table, m.column, err)
 			}
 		}
 	}
 	return nil
+}
+
+// columnMigrations add columns to databases created by older versions.
+var columnMigrations = []struct{ table, column, def string }{
+	{"alert_triage", "engine", `TEXT NOT NULL DEFAULT 'api'`},
+	// Agent lifecycle: certificate renewal, decommissioning and update policy.
+	{"hosts", "pending_cert_serial", `TEXT NOT NULL DEFAULT ''`},
+	{"hosts", "cert_expires", `TEXT`},
+	{"hosts", "decommissioned_at", `TEXT`},
+	{"hosts", "update_now_at", `TEXT`},
+	{"hosts", "update_offered", `TEXT NOT NULL DEFAULT ''`},
+	{"hosts", "update_offered_at", `TEXT`},
 }
 
 // tsLayout is fixed-width so timestamps sort lexically.

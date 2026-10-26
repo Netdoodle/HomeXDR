@@ -43,6 +43,7 @@ export const HOST_STATUS_LABEL: Record<HostStatus, string> = {
   offline: 'Offline',
   isolated: 'Isolated',
   revoked: 'Revoked',
+  decommissioned: 'Decommissioned',
 }
 
 export const COMMAND_STATUS_LABEL: Record<CommandStatus, string> = {

@@ -103,7 +103,7 @@ func (u *Updater) Install(ctx context.Context, offer api.AgentUpdate) (*api.Agen
 	if u.recentlyFailed(offer.Version) {
 		return nil, nil
 	}
-	rel, err := u.install(ctx)
+	rel, err := u.install(ctx, offer)
 	if err != nil { // includes ErrNotNewer: don't re-fetch the manifest every heartbeat
 		u.mu.Lock()
 		if u.failed == nil {
@@ -129,20 +129,41 @@ func (u *Updater) recentlyFailed(version string) bool {
 	return false
 }
 
-func (u *Updater) install(ctx context.Context) (*api.AgentRelease, error) {
+// releasePaths returns where to fetch an offered release from: an archived release's
+// directory, or the server's bundled release for offers without a path.
+func releasePaths(offer api.AgentUpdate) (manifest, sig, binDir string, err error) {
+	if offer.Path == "" {
+		return api.PathAgentRelease, api.PathAgentReleaseSig, "/v1/download/", nil
+	}
+	rest, ok := strings.CutPrefix(offer.Path, api.PathReleases)
+	if !ok || !strings.HasSuffix(rest, "/") || strings.Count(rest, "/") != 1 || strings.Contains(rest, "..") {
+		return "", "", "", fmt.Errorf("unexpected release path %q", offer.Path)
+	}
+	manifest = offer.Path + api.AgentReleaseName
+	return manifest, manifest + ".sig", offer.Path, nil
+}
+
+func (u *Updater) install(ctx context.Context, offer api.AgentUpdate) (*api.AgentRelease, error) {
 	if len(u.Key) != ed25519.PublicKeySize {
 		return nil, errors.New("no update key configured")
 	}
+	manifestPath, sigPath, binDir, err := releasePaths(offer)
+	if err != nil {
+		return nil, err
+	}
 	var manifest, sig bytes.Buffer
-	if err := u.Fetcher.Fetch(ctx, api.PathAgentRelease, &manifest, api.MaxReleaseManifestBytes); err != nil {
+	if err := u.Fetcher.Fetch(ctx, manifestPath, &manifest, api.MaxReleaseManifestBytes); err != nil {
 		return nil, fmt.Errorf("fetch release manifest: %w", err)
 	}
-	if err := u.Fetcher.Fetch(ctx, api.PathAgentReleaseSig, &sig, 4096); err != nil {
+	if err := u.Fetcher.Fetch(ctx, sigPath, &sig, 4096); err != nil {
 		return nil, fmt.Errorf("fetch release signature: %w", err)
 	}
 	rel, err := api.VerifyRelease(u.Key, manifest.Bytes(), sig.Bytes())
 	if err != nil {
 		return nil, err
+	}
+	if offer.Path != "" && rel.Version != offer.Version {
+		return nil, fmt.Errorf("offered %s but the server sent release %s", offer.Version, rel.Version)
 	}
 	if rel.Version == u.Version {
 		return nil, nil
@@ -173,7 +194,7 @@ func (u *Updater) install(ctx context.Context) (*api.AgentRelease, error) {
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath) // no-op once renamed
 	h := sha256.New()
-	err = u.Fetcher.Fetch(ctx, "/v1/download/"+name, io.MultiWriter(tmp, h), file.Size)
+	err = u.Fetcher.Fetch(ctx, binDir+name, io.MultiWriter(tmp, h), file.Size)
 	if err == nil {
 		err = tmp.Sync()
 	}

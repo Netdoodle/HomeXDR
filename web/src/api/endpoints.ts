@@ -3,6 +3,8 @@
 import { http, rawRequest } from './client'
 import { normalizeRule, normalizeValidate } from './normalize'
 import type {
+  AgentLifecycle,
+  AgentLifecycleView,
   AISettings,
   AISettingsUpdate,
   MCPToken,
@@ -68,6 +70,11 @@ export const getHost = (id: string) => http.get<Host>(`/api/hosts/${enc(id)}`)
 export const updateHostLabels = (id: string, labels: string[]) =>
   http.patch<Host>(`/api/hosts/${enc(id)}`, { labels })
 export const revokeHost = (id: string) => http.del(`/api/hosts/${enc(id)}`)
+export const decommissionHost = (id: string) => http.post<Host>(`/api/hosts/${enc(id)}/decommission`)
+export const recommissionHost = (id: string) => http.post<Host>(`/api/hosts/${enc(id)}/recommission`)
+export const updateHostNow = (id: string) => http.post<Host>(`/api/hosts/${enc(id)}/update-now`)
+export const getAgentLifecycle = () => http.get<AgentLifecycleView>('/api/settings/agent-lifecycle')
+export const putAgentLifecycle = (l: AgentLifecycle) => http.put<AgentLifecycleView>('/api/settings/agent-lifecycle', l)
 export const hostAction = (id: string, cmd: CommandRequest) =>
   http.post<CommandRecord>(`/api/hosts/${enc(id)}/actions`, cmd)
 export const hostCommands = (id: string) =>

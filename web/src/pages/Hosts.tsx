@@ -2,7 +2,8 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { api, queryKeys, type HostFilter } from '../api'
-import { AlertCount, OsLabel, StatusDot, Tags } from '../components/Badges'
+import { AlertCount, OsLabel, StatusDot, Tags, UpdateBadge } from '../components/Badges'
+import { shortVersion } from '../lib/agents'
 import { PageHeader } from '../components/Layout'
 import { RelTime } from '../components/Misc'
 import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
@@ -61,6 +62,7 @@ export function HostsPage() {
           <option value="offline">Offline</option>
           <option value="isolated">Isolated</option>
           <option value="revoked">Revoked</option>
+          <option value="decommissioned">Decommissioned</option>
         </select>
         <select className="select" value={filter.platform ?? ''} onChange={(e) => patch({ platform: e.target.value })} aria-label="Platform">
           <option value="">Any platform</option>
@@ -137,7 +139,15 @@ export function HostsPage() {
                     <td className="truncate">
                       <Tags tags={h.labels} max={4} />
                     </td>
-                    <td className="truncate mono small">{h.agent_version ?? (h.kind === 'network' ? '—' : '?')}</td>
+                    <td className="truncate small" title={h.agent_version}>
+                      <span className="mono">{h.kind === 'network' ? '—' : shortVersion(h.agent_version) || '?'}</span>
+                      {h.update && h.update.state !== 'current' ? (
+                        <>
+                          {' '}
+                          <UpdateBadge update={h.update} />
+                        </>
+                      ) : null}
+                    </td>
                     <td>
                       <RelTime iso={h.last_seen} />
                     </td>

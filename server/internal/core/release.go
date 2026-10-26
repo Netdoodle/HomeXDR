@@ -36,6 +36,10 @@ type Release struct {
 	downloadsDir, sigDir string
 	log                  *slog.Logger
 
+	archiveDir string          // archive.go; "" when disabled
+	keep       int             // archived releases to retain
+	protect    func() []string // versions never to remove
+
 	mu       sync.Mutex
 	loadedAt time.Time
 	cur      releaseState
@@ -48,6 +52,7 @@ type releaseState struct {
 	key      string            // public key from UpdateKeyFile
 	version  string            // manifest version, even when unsigned
 	problem  string            // why no update is offered
+	archive  []ArchivedRelease // verified archived releases, newest first
 }
 
 // ReleaseStatus is shown on the console's settings page.
@@ -116,6 +121,12 @@ func (r *Release) load() releaseState {
 		return st
 	}
 	st.sig, st.info = sig, info
+	if r.archiveDir != "" {
+		if err := r.archiveBundled(st); err != nil {
+			r.log.Warn("archive agent release", "version", info.Version, "err", err)
+		}
+		st.archive = r.pruneArchive(r.scanArchive(key, info.Version))
+	}
 	return st
 }
 

@@ -27,6 +27,8 @@ type Config struct {
 	RulesDir          string         // HOMEXDR_RULES_DIR: built-in Sigma rules
 	DownloadsDir      string         // HOMEXDR_DOWNLOADS_DIR: agent binaries served to hosts
 	SignaturesDir     string         // HOMEXDR_SIGNATURES_DIR: agent release signatures and key, made outside the server
+	ReleasesDir       string         // HOMEXDR_RELEASES_DIR: archived signed agent releases (default <data>/releases)
+	ReleasesKeep      int            // HOMEXDR_RELEASES_KEEP: archived releases to retain (default 5)
 	WebDir            string         // HOMEXDR_WEB_DIR: serve the console from disk instead of the embedded copy
 	SecureCookies     bool           // HOMEXDR_SECURE_COOKIES: set when the console is behind HTTPS
 	LogLevel          string         // HOMEXDR_LOG_LEVEL: debug | info | warn | error
@@ -61,6 +63,11 @@ func Load() (Config, error) {
 	}
 
 	c.SecureCookies, _ = strconv.ParseBool(env("HOMEXDR_SECURE_COOKIES", "false"))
+
+	c.ReleasesDir = env("HOMEXDR_RELEASES_DIR", filepath.Join(c.DataDir, "releases"))
+	if c.ReleasesKeep, err = strconv.Atoi(env("HOMEXDR_RELEASES_KEEP", "5")); err != nil || c.ReleasesKeep < 2 {
+		return c, fmt.Errorf("HOMEXDR_RELEASES_KEEP must be a whole number, at least 2 (N-1 needs two)")
+	}
 
 	for _, s := range strings.Split(os.Getenv("HOMEXDR_SYSLOG_ALLOW"), ",") {
 		if s = strings.TrimSpace(s); s == "" {

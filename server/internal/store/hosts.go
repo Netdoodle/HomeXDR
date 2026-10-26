@@ -46,24 +46,39 @@ type Host struct {
 	BootTime       *time.Time         `json:"boot_time,omitempty"`
 	CPUs           int                `json:"cpus,omitempty"`
 	MemoryBytes    uint64             `json:"memory_bytes,omitempty"`
+	// CertExpires is when the agent's client certificate expires (agents renew it).
+	CertExpires *time.Time `json:"cert_expires,omitempty"`
+	// DecommissionedAt is set while the agent is decommissioned (hidden after being
+	// offline too long); it is cleared when the agent reconnects.
+	DecommissionedAt *time.Time `json:"decommissioned_at,omitempty"`
+	// UpdateNowAt is set when an analyst asked for this agent to update immediately.
+	UpdateNowAt *time.Time `json:"update_now_at,omitempty"`
+	// UpdateOffered is the agent version last offered, and when.
+	UpdateOffered   string     `json:"update_offered,omitempty"`
+	UpdateOfferedAt *time.Time `json:"update_offered_at,omitempty"`
+	// UpdateError is the agent's last failed update attempt, as it reported.
+	UpdateError string `json:"update_error,omitempty"`
 
-	Revoked    bool   `json:"-"`
-	CertSerial string `json:"-"`
-	SourceIP   string `json:"-"`
-	ConfigVer  int64  `json:"-"`
+	Revoked           bool   `json:"-"`
+	CertSerial        string `json:"-"`
+	PendingCertSerial string `json:"-"`
+	SourceIP          string `json:"-"`
+	ConfigVer         int64  `json:"-"`
 }
 
 const hostCols = `h.id, h.kind, h.hostname, h.info, h.status, h.labels, h.enrolled_at, h.last_seen,
-	h.revoked, h.isolated, h.cert_serial, h.source_ip,
+	h.revoked, h.isolated, h.cert_serial, h.source_ip, h.pending_cert_serial, h.cert_expires,
+	h.decommissioned_at, h.update_now_at, h.update_offered, h.update_offered_at,
 	(SELECT COUNT(*) FROM alerts a WHERE a.host_id = h.id AND a.status IN ('new','in_progress'))`
 
 func scanHost(row interface{ Scan(...any) error }) (*Host, error) {
 	var h Host
 	var info, status, labels, enrolled string
-	var last sql.NullString
+	var last, certExpires, decommissioned, updateNow, offeredAt sql.NullString
 	var revoked, isolated int
 	if err := row.Scan(&h.ID, &h.Kind, &h.Hostname, &info, &status, &labels, &enrolled, &last,
-		&revoked, &isolated, &h.CertSerial, &h.SourceIP, &h.OpenAlerts); err != nil {
+		&revoked, &isolated, &h.CertSerial, &h.SourceIP, &h.PendingCertSerial, &certExpires,
+		&decommissioned, &updateNow, &h.UpdateOffered, &offeredAt, &h.OpenAlerts); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -92,8 +107,13 @@ func scanHost(row interface{ Scan(...any) error }) (*Host, error) {
 	h.QueueEvents = st.QueueEvents
 	h.AllowedActions = st.AllowedActions
 	h.ConfigVer = st.ConfigVersion
+	h.UpdateError = st.UpdateError
 	h.EnrolledAt = parseTS(enrolled)
 	h.LastSeen = parseNullTS(last)
+	h.CertExpires = parseNullTS(certExpires)
+	h.DecommissionedAt = parseNullTS(decommissioned)
+	h.UpdateNowAt = parseNullTS(updateNow)
+	h.UpdateOfferedAt = parseNullTS(offeredAt)
 	h.Revoked = revoked != 0
 	h.Isolated = isolated != 0
 	h.Status = hostStatus(&h)
@@ -104,6 +124,8 @@ func hostStatus(h *Host) string {
 	switch {
 	case h.Revoked:
 		return "revoked"
+	case h.DecommissionedAt != nil:
+		return "decommissioned"
 	case h.Isolated:
 		return "isolated"
 	}
@@ -144,6 +166,9 @@ type HostFilter struct {
 	Kind     string
 	IDs      []string
 	Labels   []string // any of
+	// IncludeDecommissioned also returns decommissioned agents (always true when
+	// Status is "decommissioned").
+	IncludeDecommissioned bool
 }
 
 // ListHosts returns hosts matching f, ordered by hostname.
@@ -162,6 +187,9 @@ func (s *Store) ListHosts(ctx context.Context, f HostFilter) ([]*Host, error) {
 	if f.Kind != "" {
 		q += ` AND h.kind = ?`
 		args = append(args, f.Kind)
+	}
+	if !f.IncludeDecommissioned && f.Status != "decommissioned" {
+		q += ` AND h.decommissioned_at IS NULL`
 	}
 	if len(f.IDs) > 0 {
 		q += ` AND h.id IN (` + placeholders(len(f.IDs)) + `)`
@@ -343,4 +371,102 @@ func anyFold(have, want []string) bool {
 		}
 	}
 	return false
+}
+
+// --- agent certificates ---
+
+// SetPendingCert records a renewed certificate's serial. Until the agent first uses it,
+// both the current and the pending certificate are accepted, so an agent that never
+// received or saved the new certificate is not locked out.
+func (s *Store) SetPendingCert(ctx context.Context, id, serial string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE hosts SET pending_cert_serial = ? WHERE id = ?`, serial, id)
+	return err
+}
+
+// UseCert makes serial the host's certificate (promoting a pending one) and records its
+// expiry. The previous certificate stops being accepted.
+func (s *Store) UseCert(ctx context.Context, id, serial string, expires time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE hosts SET cert_serial = ?, pending_cert_serial = '', cert_expires = ? WHERE id = ?`,
+		serial, ts(expires), id)
+	return err
+}
+
+// --- decommissioning ---
+
+// DecommissionHost hides an endpoint agent: it leaves host lists, counts and hunts until
+// it reconnects. Its data is kept. ErrNotFound for unknown, revoked or non-agent hosts.
+func (s *Store) DecommissionHost(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE hosts SET decommissioned_at = ?
+		WHERE id = ? AND kind = ? AND revoked = 0 AND decommissioned_at IS NULL`, ts(time.Now()), id, HostEndpoint)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RecommissionHost restores a decommissioned agent. It reports whether it was decommissioned.
+func (s *Store) RecommissionHost(ctx context.Context, id string) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE hosts SET decommissioned_at = NULL WHERE id = ? AND decommissioned_at IS NOT NULL`, id)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// DecommissionInactive decommissions endpoint agents last seen before t and returns them.
+func (s *Store) DecommissionInactive(ctx context.Context, before time.Time) ([]*Host, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+hostCols+` FROM hosts h
+		WHERE h.kind = ? AND h.revoked = 0 AND h.decommissioned_at IS NULL AND h.last_seen < ?`, HostEndpoint, ts(before))
+	if err != nil {
+		return nil, err
+	}
+	var stale []*Host
+	for rows.Next() {
+		h, err := scanHost(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		stale = append(stale, h)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var out []*Host
+	for _, h := range stale {
+		if err := s.DecommissionHost(ctx, h.ID); err == nil {
+			out = append(out, h)
+		} else if !errors.Is(err, ErrNotFound) {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+// --- updates ---
+
+// RequestUpdateNow asks for an agent to update as soon as it next checks in, outside the
+// maintenance window and staged rollout. A zero time clears the request.
+func (s *Store) RequestUpdateNow(ctx context.Context, id string, at time.Time) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE hosts SET update_now_at = ? WHERE id = ? AND kind = ?`, nullTS(&at), id, HostEndpoint)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// NoteUpdateOffer records the version offered to an agent (when it changes).
+func (s *Store) NoteUpdateOffer(ctx context.Context, id, version string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE hosts SET update_offered = ?, update_offered_at = ?
+		WHERE id = ? AND update_offered != ?`, version, ts(time.Now()), id, version)
+	return err
 }

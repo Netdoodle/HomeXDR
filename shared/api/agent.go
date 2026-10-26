@@ -16,7 +16,10 @@ const ProtocolVersion = "1"
 // Agent API paths, served on the agent listener (default :8443, TLS).
 // Everything except PathEnroll requires a client certificate issued at enrollment.
 const (
-	PathEnroll    = "/v1/enroll"
+	PathEnroll = "/v1/enroll"
+	// PathRenew issues a new client certificate. It is authenticated with the current
+	// certificate, which may have expired: any agent that is not revoked can renew.
+	PathRenew     = "/v1/renew"
 	PathHeartbeat = "/v1/heartbeat"
 	PathEvents    = "/v1/events"
 	// PathCommands is long-polled: GET /v1/commands?wait=<seconds> returns 200 with
@@ -104,6 +107,10 @@ type AgentStatus struct {
 	Sensors       []SensorStatus `json:"sensors,omitempty"`
 	// AllowedActions is the agent's local policy (command types it will execute).
 	AllowedActions []string `json:"allowed_actions,omitempty"`
+	// AutoUpdate reports whether the local config lets the agent install updates.
+	AutoUpdate bool `json:"auto_update,omitempty"`
+	// UpdateError is the last failed update attempt, cleared when one succeeds.
+	UpdateError string `json:"update_error,omitempty"`
 }
 
 // Sensor states.
@@ -381,4 +388,15 @@ type FileHashResult struct {
 type ArtifactParams struct {
 	Name   string            `json:"name"` // a name from Artifacts
 	Params map[string]string `json:"params,omitempty"`
+}
+
+// RenewRequest is POSTed to PathRenew with a CSR for a new key.
+type RenewRequest struct {
+	CSRPEM string `json:"csr_pem"`
+}
+
+// RenewResponse carries the new client certificate. The server accepts both the old and
+// the new certificate until the agent first uses the new one.
+type RenewResponse struct {
+	CertPEM string `json:"cert_pem"`
 }

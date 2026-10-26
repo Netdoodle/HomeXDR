@@ -91,8 +91,9 @@ func ServerHostPort(u *url.URL) (string, int) {
 func TLSConfig(id *identity.Identity) *tls.Config {
 	ca := id.CA
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS12,
-		Certificates: []tls.Certificate{id.TLSCertificate()},
+		MinVersion: tls.VersionTLS12,
+		// The current certificate, so a renewal applies to new connections at once.
+		GetClientCertificate: id.ClientCertificate,
 		// The standard verifier would also require a hostname match. We skip it and run
 		// our own chain check in VerifyConnection instead, which still requires the
 		// pinned CA and the ServerAuth usage.
@@ -129,6 +130,21 @@ func New(serverURL string, id *identity.Identity) (*Client, error) {
 
 // Close releases idle connections.
 func (c *Client) Close() { c.hc.CloseIdleConnections() }
+
+// Renew asks the server for a new client certificate for the key in csrPEM. It works with
+// an expired certificate too (only revoked agents are refused).
+func (c *Client) Renew(ctx context.Context, csrPEM []byte) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var out api.RenewResponse
+	if err := c.postJSON(ctx, api.PathRenew, api.RenewRequest{CSRPEM: string(csrPEM)}, &out, http.StatusOK); err != nil {
+		return nil, err
+	}
+	if out.CertPEM == "" {
+		return nil, errors.New("renew: empty certificate")
+	}
+	return []byte(out.CertPEM), nil
+}
 
 // URL returns the server base URL.
 func (c *Client) URL() *url.URL { return c.base }

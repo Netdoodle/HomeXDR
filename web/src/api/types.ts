@@ -43,7 +43,7 @@ export interface Overview {
 // Hosts
 
 export type Platform = 'windows' | 'linux' | 'darwin' | 'network'
-export type HostStatus = 'online' | 'offline' | 'isolated' | 'revoked'
+export type HostStatus = 'online' | 'offline' | 'isolated' | 'revoked' | 'decommissioned'
 export type SensorState = 'running' | 'degraded' | 'failed' | 'disabled'
 
 export interface HostSensor {
@@ -75,6 +75,16 @@ export interface Host {
   boot_time?: string
   cpus?: number
   memory_bytes?: number
+  /** when the agent's client certificate expires (agents renew it automatically) */
+  cert_expires?: string
+  /** set while the agent is decommissioned; cleared when it reconnects */
+  decommissioned_at?: string
+  update_now_at?: string
+  update_offered?: string
+  update_offered_at?: string
+  update_error?: string
+  /** endpoint agents: what the update policy wants for this agent */
+  update?: HostUpdate
 }
 
 export interface HostFilter {
@@ -82,6 +92,58 @@ export interface HostFilter {
   status?: string
   label?: string
   platform?: string
+  include_decommissioned?: boolean
+}
+
+// ---------------------------------------------------------------------------------------
+// Agent lifecycle (decommissioning, update policy)
+
+export type UpdateMode = 'latest' | 'n-1' | 'pinned' | 'off'
+
+export interface UpdateRule {
+  mode: UpdateMode
+  version?: string
+}
+
+export type UpdateState = 'current' | 'pending' | 'updating' | 'failed' | 'ahead' | 'off' | 'none'
+
+export interface HostUpdate {
+  rule: UpdateRule
+  /** "default" or the label whose rule applies */
+  source: string
+  target?: string
+  state: UpdateState
+  reason?: string
+}
+
+export interface AgentLifecycle {
+  /** 0 = never */
+  decommission_after_days: number
+  updates: {
+    default: UpdateRule
+    labels: { label: string; rule: UpdateRule }[]
+    staged: { enabled: boolean; canary_label: string; delay_hours: number }
+    window: { enabled: boolean; start: string; end: string; timezone: string }
+  }
+}
+
+export interface ArchivedRelease {
+  version: string
+  commit?: string
+  commit_time: number
+  archived_at: string
+  bundled: boolean
+  files: string[]
+  /** agents running it */
+  agents: number
+}
+
+export interface AgentLifecycleView {
+  settings: AgentLifecycle
+  releases: ArchivedRelease[]
+  release_status: { version?: string; signed: boolean; update_key?: string; problem?: string }
+  canary_agents: number
+  decommissioned_agents: number
 }
 
 // ---------------------------------------------------------------------------------------

@@ -44,6 +44,9 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 		Syslog: NewSyslogStats(),
 	}
 	c.Release = NewRelease(cfg.DownloadsDir, cfg.SignaturesDir, log)
+	if cfg.ReleasesDir != "" {
+		c.Release.SetArchive(cfg.ReleasesDir, cfg.ReleasesKeep, c.pinnedVersions)
+	}
 	c.Triage = triage.New(st, ev, log)
 	c.Rules = NewRuleSet(c)
 	if err := c.Rules.Reload(ctx); err != nil {
@@ -94,7 +97,7 @@ func (c *Core) Audit(ctx context.Context, user, action, target, details string) 
 func (c *Core) RunMaintenance(ctx context.Context) {
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
-	lastPurge, lastTrim := time.Time{}, time.Time{}
+	lastPurge, lastTrim, lastDecommission := time.Time{}, time.Time{}, time.Time{}
 	for {
 		if n, err := c.State.ExpireCommands(ctx); err != nil {
 			c.Log.Warn("expire commands", "err", err)
@@ -114,6 +117,10 @@ func (c *Core) RunMaintenance(ctx context.Context) {
 				c.Log.Warn("event retention purge", "err", err)
 			}
 			lastPurge = time.Now()
+		}
+		if time.Since(lastDecommission) > time.Hour {
+			c.decommissionInactive(ctx)
+			lastDecommission = time.Now()
 		}
 		if c.Cfg.RetentionMaxBytes > 0 && time.Since(lastTrim) > 10*time.Minute {
 			c.trimEvents(ctx)

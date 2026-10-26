@@ -43,6 +43,9 @@ func New(c *core.Core) *Handler {
 	h.route("GET /api/hosts/{id}", viewer, h.getHost)
 	h.route("PATCH /api/hosts/{id}", analyst, h.patchHost)
 	h.route("DELETE /api/hosts/{id}", admin, h.deleteHost)
+	h.route("POST /api/hosts/{id}/decommission", admin, h.decommissionHost)
+	h.route("POST /api/hosts/{id}/recommission", admin, h.recommissionHost)
+	h.route("POST /api/hosts/{id}/update-now", admin, h.updateHostNow)
 	h.route("POST /api/hosts/{id}/actions", analyst, h.hostAction)
 	h.route("GET /api/hosts/{id}/commands", viewer, h.hostCommands)
 	h.route("GET /api/hosts/{id}/timeline", viewer, h.hostTimeline)
@@ -82,6 +85,8 @@ func New(c *core.Core) *Handler {
 	h.route("GET /api/hunts/{id}/results", viewer, h.huntResults)
 
 	h.route("GET /api/settings/server", viewer, h.serverSettings)
+	h.route("GET /api/settings/agent-lifecycle", admin, h.getAgentLifecycle)
+	h.route("PUT /api/settings/agent-lifecycle", admin, h.putAgentLifecycle)
 	h.route("GET /api/enrollment-tokens", admin, h.listTokens)
 	h.route("POST /api/enrollment-tokens", admin, h.createToken)
 	h.route("DELETE /api/enrollment-tokens/{id}", admin, h.deleteToken)

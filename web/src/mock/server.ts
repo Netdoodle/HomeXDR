@@ -6,6 +6,9 @@ import type {
   AIReport,
   AISettings,
   AISettingsUpdate,
+  AgentLifecycle,
+  ArchivedRelease,
+  HostUpdate,
   MCPToken,
   AITriage,
   AgentConfig,
@@ -337,20 +340,119 @@ route('GET', '/api/hosts', ({ query }) => {
   const platform = query.get('platform')
   advanceCommands()
   recomputeOpenAlerts()
+  const withDecommissioned = status.includes('decommissioned') || query.get('include_decommissioned') === 'true'
   const out = hosts.filter(
     (h) =>
+      (withDecommissioned || h.status !== 'decommissioned') &&
       (!q || h.hostname.toLowerCase().includes(q) || h.ips.some((ip) => ip.includes(q))) &&
       (!status.length || status.includes(h.status)) &&
       (!label || h.labels.includes(label)) &&
       (!platform || h.os.platform === platform),
   )
-  return { hosts: out, total: out.length }
+  return { hosts: out.map(withUpdate), total: out.length }
 })
+
+// --- agent lifecycle ---------------------------------------------------------------------
+
+const RELEASES: ArchivedRelease[] = [
+  { version: '0.0.0-20261026120000.4d1c2b9', commit_time: Date.parse('2026-10-26T12:00:00Z') / 1000, archived_at: new Date(Date.now() - 20 * HOUR).toISOString(), bundled: true, files: ['homexdr-agent-linux-amd64'], agents: 0 },
+  { version: '0.1.0', commit_time: Date.parse('2026-10-15T08:00:00Z') / 1000, archived_at: new Date(Date.now() - 11 * 24 * HOUR).toISOString(), bundled: false, files: ['homexdr-agent-linux-amd64'], agents: 0 },
+]
+
+const lifecycle: AgentLifecycle = {
+  decommission_after_days: 0,
+  updates: {
+    default: { mode: 'latest' },
+    labels: [],
+    staged: { enabled: false, canary_label: 'canary', delay_hours: 24 },
+    window: { enabled: false, start: '02:00', end: '05:00', timezone: 'America/Chicago' },
+  },
+}
+
+function updateFor(h: Host): HostUpdate | undefined {
+  if (h.kind !== 'endpoint' || h.status === 'revoked') return undefined
+  const rule = lifecycle.updates.labels.find((l) => h.labels.some((x) => x.toLowerCase() === l.label.toLowerCase()))
+  const r = rule?.rule ?? lifecycle.updates.default
+  const source = rule?.label ?? 'default'
+  if (r.mode === 'off' && !h.update_now_at) return { rule: r, source, state: 'off', reason: 'updates are off for these agents' }
+  const target = r.mode === 'n-1' ? RELEASES[1] : r.mode === 'pinned' ? RELEASES.find((x) => x.version === r.version) : RELEASES[0]
+  if (!target) return { rule: r, source, state: 'none', reason: 'pinned version is not in the release archive' }
+  if (h.agent_version === target.version) return { rule: r, source, target: target.version, state: 'current' }
+  if (lifecycle.updates.window.enabled && !h.update_now_at)
+    return { rule: r, source, target: target.version, state: 'pending', reason: `waiting for the maintenance window (${lifecycle.updates.window.start}-${lifecycle.updates.window.end})` }
+  return { rule: r, source, target: target.version, state: 'updating', reason: h.update_now_at ? 'update requested now' : undefined }
+}
+
+function withUpdate(h: Host): Host {
+  return {
+    ...h,
+    cert_expires: h.kind === 'endpoint' ? h.cert_expires ?? new Date(Date.parse(h.enrolled_at) + 365 * 24 * HOUR).toISOString() : undefined,
+    update: updateFor(h),
+  }
+}
+
+function lifecycleView() {
+  const releases = RELEASES.map((r) => ({ ...r, agents: hosts.filter((h) => h.agent_version === r.version).length }))
+  return {
+    settings: lifecycle,
+    releases,
+    release_status: { version: RELEASES[0].version, signed: true, update_key: 'ed25519:mock' },
+    canary_agents: hosts.filter((h) => h.labels.includes(lifecycle.updates.staged.canary_label)).length,
+    decommissioned_agents: hosts.filter((h) => h.status === 'decommissioned').length,
+  }
+}
+
+route('GET', '/api/settings/agent-lifecycle', () => lifecycleView(), { role: 'admin' })
+route(
+  'PUT',
+  '/api/settings/agent-lifecycle',
+  ({ body }) => {
+    const b = obj(body) as unknown as AgentLifecycle
+    if (b.decommission_after_days < 0) fail(400, 'decommission_after_days must be between 0 (off) and 3650')
+    if (b.updates.default.mode === 'pinned' && !b.updates.default.version) fail(400, 'default rule: a pinned rule needs a release version')
+    Object.assign(lifecycle, b)
+    return lifecycleView()
+  },
+  { role: 'admin' },
+)
+route(
+  'POST',
+  '/api/hosts/:id/decommission',
+  ({ params }) => {
+    const h = getHostOr404(params.id)
+    if (h.kind !== 'endpoint') fail(404, 'not found')
+    h.status = 'decommissioned'
+    h.decommissioned_at = new Date().toISOString()
+    return withUpdate(h)
+  },
+  { role: 'admin' },
+)
+route(
+  'POST',
+  '/api/hosts/:id/recommission',
+  ({ params }) => {
+    const h = getHostOr404(params.id)
+    if (h.status === 'decommissioned') h.status = 'offline'
+    h.decommissioned_at = undefined
+    return withUpdate(h)
+  },
+  { role: 'admin' },
+)
+route(
+  'POST',
+  '/api/hosts/:id/update-now',
+  ({ params }) => {
+    const h = getHostOr404(params.id)
+    h.update_now_at = new Date().toISOString()
+    return withUpdate(h)
+  },
+  { role: 'admin' },
+)
 
 route('GET', '/api/hosts/:id', ({ params }) => {
   advanceCommands()
   recomputeOpenAlerts()
-  return getHostOr404(params.id)
+  return withUpdate(getHostOr404(params.id))
 })
 
 route(

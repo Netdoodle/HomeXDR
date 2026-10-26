@@ -113,8 +113,10 @@ type Agent struct {
 	// Self-update (nil updater when the local config does not allow it).
 	updater   *selfupdate.Updater
 	updating  atomic.Bool
-	offered   string // last offered version that was logged
-	confirmed bool   // a pending update was checked after the first heartbeat
+	updateErr atomic.Pointer[string] // last failed update attempt, reported in heartbeats
+	offered   string                 // last offered version that was logged
+	lastRenew time.Time              // last certificate renewal attempt
+	confirmed bool                   // a pending update was checked after the first heartbeat
 	stop      context.CancelCauseFunc
 }
 
@@ -306,8 +308,13 @@ func (a *Agent) afterHeartbeat(ctx context.Context, offer *api.AgentUpdate) {
 			if a.offered != offer.Version || !errors.Is(err, selfupdate.ErrNotNewer) {
 				a.log.Warn("agent update not installed", "offered", offer.Version, "err", err)
 			}
+			if !errors.Is(err, selfupdate.ErrNotNewer) {
+				msg := fmt.Sprintf("%s: %v", offer.Version, err)
+				a.updateErr.Store(&msg)
+			}
 			a.offered = offer.Version
 		case rel != nil:
+			a.updateErr.Store(nil)
 			a.log.Info("installed agent update; restarting", "version", rel.Version, "previous_version", version.Version)
 			a.stop(ErrRestart)
 		}
@@ -544,12 +551,69 @@ func (a *Agent) status() api.AgentStatus {
 		Isolated:       isolated,
 		Sensors:        a.sup.Statuses(),
 		AllowedActions: slices.Clone(a.local.AllowedActions),
+		AutoUpdate:     a.updater != nil,
+		UpdateError:    a.lastUpdateError(),
 	}
+}
+
+func (a *Agent) lastUpdateError() string {
+	if p := a.updateErr.Load(); p != nil {
+		return *p
+	}
+	return ""
+}
+
+// renewWhenLeft is the share of the certificate lifetime left at which the agent renews
+// (about four months for a one-year certificate).
+const renewWhenLeft = 3
+
+// maybeRenew renews the client certificate when a third of its lifetime is left or it
+// has expired, retrying hourly (every five minutes once expired).
+func (a *Agent) maybeRenew(ctx context.Context) {
+	cert := a.id.Certificate()
+	left := time.Until(cert.NotAfter)
+	if left > cert.NotAfter.Sub(cert.NotBefore)/renewWhenLeft {
+		return
+	}
+	retry := time.Hour
+	if left <= 0 {
+		retry = 5 * time.Minute
+	}
+	if time.Since(a.lastRenew) < retry {
+		return
+	}
+	a.lastRenew = time.Now()
+	key, err := identity.NewKey()
+	if err != nil {
+		a.log.Error("certificate renewal: new key", "err", err)
+		return
+	}
+	csr, err := identity.CSR(key, a.id.AgentID) // the server ignores the subject
+	if err != nil {
+		a.log.Error("certificate renewal: CSR", "err", err)
+		return
+	}
+	certPEM, err := a.client.Renew(ctx, csr)
+	if err != nil {
+		level := slog.LevelWarn
+		if left <= 0 || transport.IsStatus(err, 403) {
+			level = slog.LevelError
+		}
+		a.log.Log(ctx, level, "certificate renewal failed", "expires", cert.NotAfter, "err", err)
+		return
+	}
+	if err := a.id.Renew(a.dataDir, key, certPEM); err != nil {
+		a.log.Error("certificate renewal: save", "err", err)
+		return
+	}
+	a.client.Close() // new connections present the renewed certificate
+	a.log.Info("renewed client certificate", "previous_expiry", cert.NotAfter, "expires", a.id.Certificate().NotAfter)
 }
 
 func (a *Agent) heartbeatLoop(ctx context.Context) {
 	var bo backoff.Backoff
 	for ctx.Err() == nil {
+		a.maybeRenew(ctx)
 		hb := api.Heartbeat{Host: a.hostInfo(ctx), Status: a.status()}
 		resp, err := a.client.Heartbeat(ctx, hb)
 		a.hbMu.Lock()

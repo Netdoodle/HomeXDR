@@ -82,11 +82,6 @@ CREATE TABLE IF NOT EXISTS alert_triage (
 CREATE INDEX IF NOT EXISTS alert_triage_status ON alert_triage(status, created_at);
 `
 
-// triageMigrations add columns to databases created by older versions.
-var triageMigrations = []struct{ column, ddl string }{
-	{"engine", `ALTER TABLE alert_triage ADD COLUMN engine TEXT NOT NULL DEFAULT 'api'`},
-}
-
 const triageCols = `alert_id, status, trigger, engine, requested_by, provider, model, verdict, confidence,
 	report, transcript, error, tool_calls, usage, created_at, started_at, finished_at`
 

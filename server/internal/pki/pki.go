@@ -87,14 +87,48 @@ func (p *PKI) TLSConfig() *tls.Config {
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS12,
 		Certificates: []tls.Certificate{p.serverCert},
-		ClientAuth:   tls.VerifyClientCertIfGiven,
-		ClientCAs:    pool,
+		// Client certificates are requested but checked by VerifyAgentCert, not by the
+		// handshake, so that an agent whose certificate expired can still renew it. The
+		// handshake still proves the client holds the certificate's private key.
+		ClientAuth: tls.RequestClientCert,
+		ClientCAs:  pool,
 	}
+}
+
+// VerifyAgentCert checks that the client certificate chain from a TLS handshake was
+// issued by the CA for client authentication. allowExpired accepts a certificate past
+// its NotAfter (for renewal); everything else about it must still be valid.
+func (p *PKI) VerifyAgentCert(chain []*x509.Certificate, allowExpired bool) (*x509.Certificate, error) {
+	if len(chain) == 0 {
+		return nil, errors.New("client certificate required")
+	}
+	leaf := chain[0]
+	roots := x509.NewCertPool()
+	roots.AddCert(p.CACert)
+	inter := x509.NewCertPool()
+	for _, c := range chain[1:] {
+		inter.AddCert(c)
+	}
+	opts := x509.VerifyOptions{Roots: roots, Intermediates: inter, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
+	if allowExpired && time.Now().After(leaf.NotAfter) {
+		opts.CurrentTime = leaf.NotAfter.Add(-time.Second)
+	}
+	if _, err := leaf.Verify(opts); err != nil {
+		return nil, err
+	}
+	return leaf, nil
 }
 
 // SignAgentCSR verifies a PEM CSR and issues a client certificate with CN=agentID.
 // It returns the certificate PEM and its serial number (hex).
 func (p *PKI) SignAgentCSR(csrPEM []byte, agentID string) ([]byte, string, error) {
+	now := time.Now()
+	return p.SignAgentCSRValidity(csrPEM, agentID, now.Add(-5*time.Minute), now.Add(AgentCertValidity))
+}
+
+// SignAgentCSRValidity is SignAgentCSR with an explicit validity period (tests use it
+// to issue already-expired certificates).
+func (p *PKI) SignAgentCSRValidity(csrPEM []byte, agentID string, notBefore, notAfter time.Time) ([]byte, string, error) {
 	block, _ := pem.Decode(csrPEM)
 	if block == nil || block.Type != "CERTIFICATE REQUEST" {
 		return nil, "", errors.New("csr: not a PEM CERTIFICATE REQUEST")
@@ -119,12 +153,11 @@ func (p *PKI) SignAgentCSR(csrPEM []byte, agentID string) ([]byte, string, error
 	if err != nil {
 		return nil, "", err
 	}
-	now := time.Now()
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: agentID, Organization: []string{"HomeXDR agent"}},
-		NotBefore:    now.Add(-5 * time.Minute),
-		NotAfter:     now.Add(AgentCertValidity),
+		NotBefore:    notBefore,
+		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}

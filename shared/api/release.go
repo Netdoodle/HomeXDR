@@ -51,7 +51,15 @@ type ReleaseFile struct {
 type AgentUpdate struct {
 	Version    string `json:"version"`
 	CommitTime int64  `json:"commit_time"`
+	// Path is the directory the release's manifest, signature and binaries are served
+	// from (PathReleases + version + "/"). Empty means the bundled release at
+	// PathAgentRelease and /v1/download/ (servers before release archives).
+	Path string `json:"path,omitempty"`
 }
+
+// PathReleases serves archived releases: <PathReleases><version>/agent-release.json,
+// agent-release.json.sig and the binaries, without a client certificate.
+const PathReleases = "/v1/releases/"
 
 // AgentBinaryName returns the download name of the agent for an OS and architecture,
 // e.g. homexdr-agent-linux-amd64 or homexdr-agent-windows-amd64.exe.

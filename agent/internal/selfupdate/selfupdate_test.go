@@ -183,3 +183,47 @@ func TestInstallNothingToDo(t *testing.T) {
 		t.Fatalf("same version: %+v %v", rel, err)
 	}
 }
+
+// archived publishes a signed release under an archive path, as servers with release
+// archives serve older versions.
+func (f *fixture) archived(version string, commitTime int64, body []byte) string {
+	dir := api.PathReleases + version + "/"
+	sum := sha256.Sum256(body)
+	m, _ := json.Marshal(api.AgentRelease{Version: version, CommitTime: commitTime,
+		Files: map[string]api.ReleaseFile{binName: {SHA256: hex.EncodeToString(sum[:]), Size: int64(len(body))}}})
+	f.srv[dir+api.AgentReleaseName] = m
+	f.srv[dir+api.AgentReleaseName+".sig"] = api.SignRelease(f.priv, m)
+	f.srv[dir+binName] = body
+	return dir
+}
+
+func TestInstallFromArchivePath(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.release("v9", 900, []byte("latest binary")) // the bundled release must not be used
+	path := f.archived("v2", 200, []byte("archived binary"))
+	rel, err := f.updater.Install(ctx, api.AgentUpdate{Version: "v2", CommitTime: 200, Path: path})
+	if err != nil || rel == nil || rel.Version != "v2" {
+		t.Fatalf("install from archive: %v %v", rel, err)
+	}
+	if got := read(t, f.exe); got != "archived binary" {
+		t.Fatalf("installed %q", got)
+	}
+}
+
+func TestInstallRejectsBadArchivePaths(t *testing.T) {
+	ctx := context.Background()
+	for _, p := range []string{"/v1/download/", "/v1/releases/../x/", "/v1/releases/a/b/", "/v1/releases/v2", "https://evil.example/v1/releases/v2/"} {
+		f := newFixture(t)
+		f.archived("v2", 200, []byte("archived binary"))
+		if _, err := f.updater.Install(ctx, api.AgentUpdate{Version: "v2", Path: p}); err == nil {
+			t.Errorf("path %q accepted", p)
+		}
+	}
+	// A path that serves a different release than offered is refused.
+	f := newFixture(t)
+	path := f.archived("v3", 300, []byte("other"))
+	if _, err := f.updater.Install(ctx, api.AgentUpdate{Version: "v2", Path: path}); err == nil {
+		t.Error("mismatched release accepted")
+	}
+}

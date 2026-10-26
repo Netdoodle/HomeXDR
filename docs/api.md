@@ -54,10 +54,13 @@ type Severity = "critical" | "high" | "medium" | "low" | "informational"
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/hosts?q=&status=&label=&platform=` | `{"hosts": Host[], "total": n}`; `q` matches hostname/IP |
+| GET | `/api/hosts?q=&status=&label=&platform=&include_decommissioned=` | `{"hosts": Host[], "total": n}`; `q` matches hostname/IP. Decommissioned agents are left out unless `status=decommissioned` or `include_decommissioned=true` |
 | GET | `/api/hosts/{id}` | `Host` |
 | PATCH | `/api/hosts/{id}` | `{"labels": string[]}` → `Host` (analyst+) |
 | DELETE | `/api/hosts/{id}` | revokes the agent certificate (admin) → `204` |
+| POST | `/api/hosts/{id}/decommission` | → `Host` (admin, audited): hides an endpoint agent until it reconnects |
+| POST | `/api/hosts/{id}/recommission` | → `Host` (admin, audited): restores it now |
+| POST | `/api/hosts/{id}/update-now` | → `Host` (admin, audited): offer the agent its target release at the next heartbeat, ignoring the maintenance window and staged rollout |
 | POST | `/api/hosts/{id}/actions` | `{"type": CommandType, "params": {...}}` → `CommandRecord` (analyst+) |
 | GET | `/api/hosts/{id}/commands` | `{"commands": CommandRecord[]}` newest first |
 | GET | `/api/hosts/{id}/timeline?from=&to=&category=&limit=` | `{"events": Event[]}` newest first |
@@ -70,15 +73,29 @@ type Host = {
   os: { platform: "windows" | "linux" | "darwin" | "network"; family?: string; name?: string; version?: string; kernel?: string };
   arch?: string; ips: string[]; macs?: string[];
   agent_version?: string;
-  status: "online" | "offline" | "isolated" | "revoked";   // online = heartbeat within 3 intervals
+  status: "online" | "offline" | "isolated" | "revoked" | "decommissioned";   // online = heartbeat within 3 intervals
   isolated: boolean;
   last_seen?: string; enrolled_at: string;
+  cert_expires?: string;           // the agent's client certificate (renewed automatically)
+  decommissioned_at?: string;
+  update_now_at?: string;          // "Update now" requested and not yet fulfilled
+  update_offered?: string; update_offered_at?: string;   // last release offered
+  update_error?: string;           // "<version>: <error>" from the agent's last failed install
+  update?: HostUpdate;             // endpoint agents only (below)
   labels: string[];
   sensors?: { name: string; impl: string; state: "running" | "degraded" | "failed" | "disabled"; error?: string; events: number }[];
   queue_events?: number;
   allowed_actions?: string[];
   open_alerts: number;
   boot_time?: string; cpus?: number; memory_bytes?: number;
+}
+type UpdateRule = { mode: "latest" | "n-1" | "pinned" | "off"; version?: string };  // version: pinned only
+type HostUpdate = {
+  rule: UpdateRule;
+  source: string;                  // "default" or the label whose rule applies
+  target?: string;                 // release version the policy picks
+  state: "current" | "pending" | "updating" | "failed" | "ahead" | "off" | "none";
+  reason?: string;                 // e.g. "waiting for the maintenance window (02:00-05:00 UTC)"
 }
 ```
 
@@ -329,6 +346,8 @@ that enroll or come online before it expires.
 | DELETE | `/api/enrollment-tokens/{id}` | `204` |
 | GET | `/api/agent-config` | `AgentConfig` (default config, `shared/api.AgentConfig` shape) |
 | PUT | `/api/agent-config` | `AgentConfig` → `AgentConfig` (admin; bumps `version`) |
+| GET | `/api/settings/agent-lifecycle` | `AgentLifecycleView` (admin) |
+| PUT | `/api/settings/agent-lifecycle` | `AgentLifecycle` → `AgentLifecycleView` (admin, audited); `400` with the problem when invalid |
 | GET | `/api/users` | `{"users": User[]}` (admin) |
 | POST | `/api/users` | `{"username","password","role"}` → `User` (admin) |
 | PATCH | `/api/users/{id}` | `{"role"?, "password"?}` → `User` (admin, or self for password) |
@@ -351,7 +370,25 @@ type EnrollmentToken = {
   id: string; name: string; token?: string; created_at: string; created_by: string;
   expires_at?: string; max_uses?: number; uses: number; labels: string[];
 }
+type AgentLifecycle = {
+  decommission_after_days: number; // 0 = never; endpoint agents offline this long are decommissioned
+  updates: {
+    default: UpdateRule;
+    labels: { label: string; rule: UpdateRule }[];             // first match wins
+    staged: { enabled: boolean; canary_label: string; delay_hours: number };
+    window: { enabled: boolean; start: string; end: string; timezone: string };  // "HH:MM", IANA zone
+  };
+}
+type AgentLifecycleView = {
+  settings: AgentLifecycle;
+  releases: { version: string; commit?: string; commit_time: number; archived_at: string;
+              bundled: boolean; files: string[]; agents: number }[];   // newest first
+  release_status: ServerSettings["agent_release"];
+  canary_agents: number; decommissioned_agents: number;
+}
 ```
+
+See [protocol.md](protocol.md#agent-updates) for how the policy picks and offers releases.
 
 The settings page shows ready-to-copy install commands built from `agent_url`, `ca_pin`
 and a token:

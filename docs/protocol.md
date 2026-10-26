@@ -26,7 +26,8 @@ agent                                         server
 - Labels from the request are added to the enrollment token's labels.
 - `401` bad or expired token, `409` token used up, `400` malformed CSR.
 - The agent's stored identity survives restarts and upgrades. Re-enrolling creates a new host.
-- Certificates are renewed by re-enrolling for now (renewal endpoint is future work).
+- The certificate renews itself before it expires (see [Certificate renewal](#certificate-renewal)),
+  so an enrolled agent never needs re-enrolling unless it is revoked.
 
 ## Steady state
 
@@ -43,6 +44,41 @@ The agent runs three loops, each with jittered exponential backoff (1s → 5min)
    means drop the batch (logged); `5xx`/network errors mean retry later.
 3. **Commands** — `GET /v1/commands?wait=30` long-poll. `200` returns `[]SignedCommand`;
    `204` means nothing pending. The server marks returned commands `delivered`.
+
+## Certificate renewal
+
+Agent certificates are valid for a year. Before each heartbeat the agent checks its own:
+once a third of the lifetime is left (about four months), it generates a new key and CSR and
+calls `POST /v1/renew {csr_pem}` → `200 {cert_pem}`, retrying hourly on failure.
+
+- **Authentication.** The request is authenticated with the current client certificate,
+  which may have expired: the server checks that it chains to the CA and names a known,
+  unrevoked agent, but not its dates. An agent that was offline past its expiry renews the
+  moment it is back (retrying every five minutes) instead of being locked out. Revoked agents
+  get `403`. Every other endpoint answers an expired certificate with
+  `401 "certificate expired: renew it at /v1/renew"`.
+- **Switch-over.** The server signs the CSR with `CN=<agent_id>` (the CSR's subject is
+  ignored) and records the new serial as pending. It accepts both the current and the pending
+  certificate until the agent first uses the new one, then makes it current; older
+  certificates are refused with `403 "certificate superseded"`. Each renewal is audited as
+  `agent.cert.renew`.
+- **Crash safety.** The agent writes the new key and certificate to `agent.renew` in its
+  data dir first, then replaces `agent.key` and `agent.crt`. If it stops in between, the next
+  start finishes the swap from `agent.renew` (after checking the certificate against the
+  stored CA and agent ID). New TLS connections pick up the renewed certificate without a
+  restart.
+- `homexdr-agent status` shows the expiry and when renewal starts; the console shows the
+  expiry on the host page.
+
+## Decommissioning
+
+Endpoint agents that have not checked in for the configured number of days (Settings →
+Agent updates → Inactive agents; off by default) are decommissioned by an hourly sweep, or
+manually from the host page. A decommissioned agent keeps its identity and history but is
+hidden from host lists, counts and dashboards (`GET /api/hosts?status=decommissioned` or
+`include_decommissioned=true` still lists it). Nothing changes on the agent's side: the next
+request it makes with its certificate, renewal included, restores it, and the audit log
+records `agent.recommission`. Network sources (syslog) are never decommissioned.
 
 ## Commands
 
@@ -75,6 +111,7 @@ The agent listener also serves, without a client certificate:
 - `GET /v1/download/homexdr-agent-<os>-<arch>[.exe]` agent binaries bundled in the image
 - `GET /v1/download/agent-release.json` and `agent-release.json.sig`, the signed release
   manifest (see below)
+- `GET /v1/releases/<version>/<name>` the same files for an archived release (see below)
 - `GET /v1/install/linux.sh` an install script that fetches `/v1/ca.crt`, checks it against
   `--ca-pin`, then downloads the binary and `SHA256SUMS` over TLS verified by that CA, checks
   the checksum, and runs `homexdr-agent install`. Fetching the script itself (`curl -k`) is the
@@ -96,9 +133,35 @@ release key did not sign.
   -rawin`) and writes `agent-release.<sha256 of manifest>.sig` (base64) and
   `update-key.pub` (`ed25519:<base64>`) into a folder mounted read-only into the server
   (`HOMEXDR_SIGNATURES_DIR`). The private key stays on the host.
-- **Offer.** The server offers a release only when its signature verifies with
-  `update-key.pub`. The heartbeat reply then carries `update: {version, commit_time}` for
-  agents reporting a different version.
+- **Release archive.** When the bundled release's signature verifies with `update-key.pub`,
+  the server copies the manifest, signature and binaries (checking each SHA-256) into
+  `<data dir>/releases/<version>/` (`HOMEXDR_RELEASES_DIR`). Each archived release is
+  re-verified on every load. The newest five are kept (`HOMEXDR_RELEASES_KEEP`, at least 2),
+  plus the bundled release and any version a policy pins, so the server can offer the release
+  before the newest (N-1) or a pinned one after it has been redeployed.
+- **Offer.** The update policy (below) picks a target from the archive. When an agent may
+  update now, the heartbeat reply carries `update: {version, commit_time, path}`, where
+  `path` is `/v1/releases/<version>/` and holds that release's manifest, signature and
+  binaries. Agents from before the archive ignore `path` and fetch the bundled release from
+  `/v1/download/`. The agent checks that `path` is exactly `/v1/releases/<one segment>/` and
+  that the manifest's version matches the offer.
+- **Update policy** (Settings → Agent updates, admin only):
+  - The first *label rule* matching one of the agent's labels applies, else the *default*
+    rule. A rule is `latest`, `n-1` (the archived release before the newest), `pinned` (one
+    archived version) or `off`.
+  - Agents never downgrade, so an agent already running a build newer than its target is
+    left alone (shown as "ahead"). To move a group back, pin the version it runs now.
+  - *Maintenance window*: offers are made only between a start and end time (`HH:MM`, may
+    wrap past midnight) in an IANA time zone. Agents that check in outside it wait.
+  - *Staged rollout*: agents with the canary label get a new release first. Everyone else
+    waits until the release has been archived for the delay (default 24 hours), at least
+    one canary runs it, and no canary reported an install error for it. With no canary
+    agents, only the delay applies.
+  - *Update now* on a host page offers that agent its target at the next heartbeat,
+    regardless of window and staging (and the latest release if its rule is `off`).
+  - The agent reports the last failed install as `status.update_error`
+    (`<version>: <error>`); the host then shows "failed" for that version, and canaries with
+    one hold back the rollout.
 - **Local policy.** The agent acts on the offer only with `"auto_update": true` and an
   `update_key` in its local config (set with `--update-key` at enrollment). Otherwise it
   logs the offer once and keeps running.

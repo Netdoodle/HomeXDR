@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { api, isApiError, queryKeys, type Host, type TimelineFilter } from '../api'
 import { useCan } from '../components/Auth'
-import { AlertCount, AlertStatusBadge, OsLabel, SeverityBadge, StatusDot, Tags } from '../components/Badges'
+import { AlertCount, AlertStatusBadge, OsLabel, SeverityBadge, StatusDot, Tags, UpdateBadge } from '../components/Badges'
 import { EventTable } from '../components/EventTable'
 import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
@@ -12,6 +12,7 @@ import { ConfirmDialog } from '../components/Modal'
 import { EmptyState, ErrorState, Loading, QueryView, Spinner } from '../components/States'
 import { TimeRangePicker } from '../components/TimeRangePicker'
 import { useToast } from '../components/Toast'
+import { canUpdateNow, certState, ruleLabel, shortVersion, UPDATE_STATE_LABEL } from '../lib/agents'
 import { formatBytes, formatNumber } from '../lib/format'
 import { useDocumentTitle, useUrlState } from '../lib/hooks'
 import { HOST_STATUS_LABEL } from '../lib/severity'
@@ -112,6 +113,7 @@ function Overview({ host: h }: { host: Host }) {
   return (
     <div className="grid grid-2" style={{ alignItems: 'start' }}>
       <div className="stack">
+        {h.kind === 'endpoint' ? <AgentPanel host={h} isAdmin={isAdmin} /> : null}
         <section className="panel">
           <div className="panel-header">
             <h2>Host information</h2>
@@ -205,7 +207,15 @@ function Overview({ host: h }: { host: Host }) {
             <div className="panel-header">
               <h2>Danger zone</h2>
             </div>
-            <div className="panel-body row" style={{ justifyContent: 'space-between' }}>
+            {h.kind === 'endpoint' && h.status !== 'decommissioned' ? (
+              <div className="panel-body row" style={{ gap: 12 }}>
+                <span className="small muted grow">
+                  Decommission: hide this agent from host lists and counts now. It is restored automatically when it reconnects.
+                </span>
+                <DecommissionButton host={h} />
+              </div>
+            ) : null}
+            <div className="panel-body row" style={{ gap: 12 }}>
               <span className="small muted grow">Revoke the agent certificate. The agent can no longer send events or receive commands and must re-enroll.</span>
               <button type="button" className="btn danger" onClick={() => setRevokeOpen(true)}>
                 <Icon name="trash" size={14} /> Revoke agent
@@ -362,5 +372,109 @@ function HostAlerts({ host: h }: { host: Host }) {
         )}
       </QueryView>
     </section>
+  )
+}
+
+/** Agent version, update policy status and certificate, with the lifecycle actions. */
+function AgentPanel({ host: h, isAdmin }: { host: Host; isAdmin: boolean }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const u = h.update
+  const cert = certState(h.cert_expires)
+  const done = (updated: Host, msg: string) => {
+    qc.setQueryData(queryKeys.host(h.id), updated)
+    qc.invalidateQueries({ queryKey: queryKeys.hosts() })
+    toast.success(msg)
+  }
+  const updateNow = useMutation({
+    mutationFn: () => api.updateHostNow(h.id),
+    onSuccess: (x) => done(x, 'The agent updates when it next checks in'),
+    onError: (e) => toast.error(e),
+  })
+  const restore = useMutation({
+    mutationFn: () => api.recommissionHost(h.id),
+    onSuccess: (x) => done(x, `${h.hostname} restored`),
+    onError: (e) => toast.error(e),
+  })
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <h2>Agent</h2>
+        {u ? <UpdateBadge update={u} /> : null}
+      </div>
+      <div className="panel-body stack" style={{ gap: 10 }}>
+        {h.decommissioned_at ? (
+          <div className="callout warn">
+            <Icon name="info" size={14} />
+            <div className="grow">
+              Decommissioned <RelTime iso={h.decommissioned_at} />. It is hidden from host lists and is restored automatically when the agent
+              reconnects.
+            </div>
+            {isAdmin ? (
+              <button type="button" className="btn sm" disabled={restore.isPending} onClick={() => restore.mutate()}>
+                Restore now
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        <KV
+          items={[
+            ['Version', h.agent_version ? <span key="v" className="mono small" title={h.agent_version}>{shortVersion(h.agent_version)}</span> : undefined],
+            [
+              'Update policy',
+              u ? (
+                <span key="p">
+                  {ruleLabel(u.rule)}
+                  <span className="muted">{u.source === 'default' ? ' (default)' : ` (label ${u.source})`}</span>
+                </span>
+              ) : undefined,
+            ],
+            ['Target', u?.target && u.target !== h.agent_version ? <span key="t" className="mono small" title={u.target}>{shortVersion(u.target)}</span> : undefined],
+            ['Status', u ? <span key="s">{UPDATE_STATE_LABEL[u.state]}{u.reason ? <span className="muted"> · {u.reason}</span> : null}</span> : undefined],
+            ['Last update error', h.update_error ? <span key="e" className="error small">{h.update_error}</span> : undefined],
+            [
+              'Certificate',
+              cert ? (
+                <span key="c" className={cert.level === 'ok' ? undefined : cert.level === 'warn' ? 'warn-text' : 'error'}>
+                  {cert.text}
+                </span>
+              ) : undefined,
+            ],
+          ]}
+        />
+        {isAdmin && canUpdateNow(u) && !h.update_now_at ? (
+          <div className="row" style={{ gap: 8 }}>
+            <button type="button" className="btn sm" disabled={updateNow.isPending} onClick={() => updateNow.mutate()}>
+              <Icon name="refresh" size={12} /> Update now
+            </button>
+            <span className="xsmall muted">Installs {u?.target ? shortVersion(u.target) : 'the target'} at the next check-in, outside the window and staging.</span>
+          </div>
+        ) : null}
+        {h.update_now_at && u?.state !== 'current' ? (
+          <span className="small muted">
+            Update requested <RelTime iso={h.update_now_at} />.
+          </span>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function DecommissionButton({ host: h }: { host: Host }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const m = useMutation({
+    mutationFn: () => api.decommissionHost(h.id),
+    onSuccess: (x) => {
+      qc.setQueryData(queryKeys.host(h.id), x)
+      qc.invalidateQueries({ queryKey: queryKeys.hosts() })
+      toast.success(`${h.hostname} decommissioned`)
+    },
+    onError: (e) => toast.error(e),
+  })
+  return (
+    <button type="button" className="btn" disabled={m.isPending} onClick={() => m.mutate()}>
+      Decommission
+    </button>
   )
 }

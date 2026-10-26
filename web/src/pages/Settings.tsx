@@ -15,12 +15,14 @@ import { agentUrlOptions, buildInstallCommands } from '../lib/install'
 import { ROLE_HELP, ROLE_LABEL } from '../lib/roles'
 import { formatDateTime, formatTimestamp } from '../lib/time'
 import { AgentConfigEditor } from './AgentConfigEditor'
+import { AgentLifecycleTab } from './AgentLifecycle'
 import { AIAnalystTab } from './AISettings'
 
 const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'tokens', label: 'Enrollment', icon: 'key', admin: true },
   { id: 'users', label: 'Users', icon: 'user', admin: true },
   { id: 'agent-config', label: 'Agent config', icon: 'settings' },
+  { id: 'agents', label: 'Agent updates', icon: 'refresh', admin: true },
   { id: 'integrations', label: 'Integrations', icon: 'network' },
   { id: 'ai', label: 'AI analyst', icon: 'sparkle', admin: true },
   { id: 'audit', label: 'Audit log', icon: 'clock', admin: true },
@@ -40,6 +42,7 @@ export function SettingsPage() {
       {tab === 'tokens' ? <TokensTab /> : null}
       {tab === 'users' ? <UsersTab /> : null}
       {tab === 'agent-config' ? <AgentConfigEditor /> : null}
+      {tab === 'agents' ? <AgentLifecycleTab /> : null}
       {tab === 'integrations' ? <IntegrationsTab /> : null}
       {tab === 'ai' ? <AIAnalystTab /> : null}
       {tab === 'audit' ? <AuditTab /> : null}
