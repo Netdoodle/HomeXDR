@@ -93,28 +93,56 @@ func DirFingerprint(dir string) string {
 // LoadDir parses every .yml/.yaml file under dir. Files that fail are reported, not
 // fatal. Rules with duplicate IDs keep the first one found (in path order).
 func LoadDir(dir string) ([]*Rule, []LoadError) {
-	paths := ruleFiles(dir)
-	var rules []*Rule
+	files, errs := LoadTree(dir, nil)
+	rules := make([]*Rule, len(files))
+	for i, f := range files {
+		rules[i] = f.Rule
+	}
+	for i := range errs {
+		errs[i].Path = filepath.Join(dir, filepath.FromSlash(errs[i].Path))
+	}
+	return rules, errs
+}
+
+// FileRule is a rule and the file it came from.
+type FileRule struct {
+	Rule *Rule
+	Path string // slash-separated, relative to the loaded folder
+}
+
+// LoadTree is LoadDir for the files whose path relative to dir (slash-separated) passes
+// include, or all files when include is nil. Paths in the result and in errors are
+// relative to dir.
+func LoadTree(dir string, include func(rel string) bool) ([]FileRule, []LoadError) {
+	var rules []FileRule
 	var errs []LoadError
 	seen := map[string]bool{}
-	for _, p := range paths {
+	for _, p := range ruleFiles(dir) {
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		if include != nil && !include(rel) {
+			continue
+		}
 		b, err := os.ReadFile(p)
 		if err != nil {
-			errs = append(errs, LoadError{Path: p, Err: err.Error()})
+			errs = append(errs, LoadError{Path: rel, Err: err.Error()})
 			continue
 		}
 		rs, err := ParseRules(b)
 		if err != nil {
-			errs = append(errs, LoadError{Path: p, Err: err.Error()})
+			errs = append(errs, LoadError{Path: rel, Err: err.Error()})
 			continue
 		}
 		for _, r := range rs {
 			if seen[r.ID] {
-				errs = append(errs, LoadError{Path: p, Err: fmt.Sprintf("duplicate rule id %s", r.ID)})
+				errs = append(errs, LoadError{Path: rel, Err: fmt.Sprintf("duplicate rule id %s", r.ID)})
 				continue
 			}
 			seen[r.ID] = true
-			rules = append(rules, r)
+			rules = append(rules, FileRule{Rule: r, Path: rel})
 		}
 	}
 	return rules, errs

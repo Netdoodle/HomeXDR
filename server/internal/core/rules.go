@@ -2,20 +2,25 @@ package core
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Netdoodle/homexdr/server/internal/detect"
+	"github.com/Netdoodle/homexdr/server/internal/rulerepo"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 )
 
-// Rule sources.
+// Rule sources. When two sources hold a rule with the same ID, the rules folder wins over
+// custom rules, custom rules over rule repositories, and an earlier repository over a
+// later one.
 const (
 	SourceBuiltin = "builtin"
 	SourceCustom  = "custom"
+	SourceRepo    = "repo"
 )
 
 // RuleInfo is a rule in API shape.
@@ -35,6 +40,16 @@ type RuleInfo struct {
 	Hits24h     int              `json:"hits_24h"`
 	UpdatedAt   time.Time        `json:"updated_at"`
 	YAML        string           `json:"yaml,omitempty"`
+	// Repo is set for rules from a rule repository.
+	Repo *RuleRepoRef `json:"repo,omitempty"`
+}
+
+// RuleRepoRef says which rule repository a rule came from.
+type RuleRepoRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Path string `json:"path"`          // file in the repository
+	URL  string `json:"url,omitempty"` // the file upstream, for git repositories
 }
 
 type ruleEntry struct {
@@ -42,20 +57,43 @@ type ruleEntry struct {
 	source    string
 	enabled   bool
 	updatedAt time.Time
+	repo      *RuleRepoRef
 }
 
-// RuleSet manages built-in and custom rules and keeps the engine in sync.
+// RepoRuleStats counts what a rule repository contributed at the last load.
+type RepoRuleStats struct {
+	Rules        int `json:"rules"`         // loaded
+	RulesEnabled int `json:"rules_enabled"` // loaded and enabled
+	Filtered     int `json:"filtered"`      // skipped by the level or status filter
+	Duplicates   int `json:"duplicates"`    // skipped because another source has the ID
+	Errors       int `json:"load_errors"`   // files that failed to load
+}
+
+// repoLoad caches a repository's parsed rules; parsing SigmaHQ takes about a second and
+// Reload runs on every rule change.
+type repoLoad struct {
+	key   string // version and folders the rules were read with
+	rules []detect.FileRule
+	errs  []detect.LoadError
+}
+
+// RuleSet manages built-in, custom and repository rules and keeps the engine in sync.
 type RuleSet struct {
-	c          *Core
+	c *Core
+	// loadMu serializes Reload, so an older load never replaces a newer one, and lets the
+	// repository updater swap folders without a load reading them halfway.
+	loadMu     sync.Mutex
 	mu         sync.RWMutex
 	entries    map[string]*ruleEntry
 	loadErrors []detect.LoadError
-	dirPrint   string // detect.DirFingerprint of the rules folder at the last load
+	repoStats  map[string]RepoRuleStats
+	repoCache  map[string]*repoLoad // by repository ID; guarded by loadMu
+	dirPrint   string               // detect.DirFingerprint of the rules folder at the last load
 }
 
 // NewRuleSet returns an empty rule set.
 func NewRuleSet(c *Core) *RuleSet {
-	return &RuleSet{c: c, entries: map[string]*ruleEntry{}}
+	return &RuleSet{c: c, entries: map[string]*ruleEntry{}, repoStats: map[string]RepoRuleStats{}, repoCache: map[string]*repoLoad{}}
 }
 
 // ReloadIfChanged reloads when files in the rules folder were added, removed or modified
@@ -80,8 +118,11 @@ func (rs *RuleSet) Stats() (total, enabled int) {
 	return total, len(rs.c.Engine.Rules())
 }
 
-// Reload reads built-in rules from disk and custom rules and overrides from the database.
+// Reload reads built-in rules from disk, custom rules and overrides from the database,
+// and rules from installed rule repositories.
 func (rs *RuleSet) Reload(ctx context.Context) error {
+	rs.loadMu.Lock()
+	defer rs.loadMu.Unlock()
 	fp := detect.DirFingerprint(rs.c.Cfg.RulesDir)
 	builtin, errs := detect.LoadDir(rs.c.Cfg.RulesDir)
 	// Large community rule sets contain rules this engine cannot run (aggregations,
@@ -100,38 +141,147 @@ func (rs *RuleSet) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	repos, err := rs.c.State.ListRuleRepos(ctx)
+	if err != nil {
+		return err
+	}
 	entries := map[string]*ruleEntry{}
 	for _, r := range builtin {
 		entries[r.ID] = &ruleEntry{rule: r, source: SourceBuiltin, enabled: true}
 	}
 	for _, row := range rows {
-		switch row.Source {
-		case SourceBuiltin:
-			if e, ok := entries[row.ID]; ok {
-				e.enabled = row.Enabled
-				e.updatedAt = row.UpdatedAt
+		if row.Source != SourceCustom {
+			continue
+		}
+		r, err := detect.ParseRule([]byte(row.YAML))
+		if err != nil {
+			errs = append(errs, detect.LoadError{Path: "custom:" + row.ID, Err: err.Error()})
+			rs.c.Log.Warn("custom rule failed to load", "id", row.ID, "err", err)
+			continue
+		}
+		if _, clash := entries[r.ID]; clash {
+			continue
+		}
+		entries[r.ID] = &ruleEntry{rule: r, source: SourceCustom, enabled: row.Enabled, updatedAt: row.UpdatedAt}
+	}
+	stats := map[string]RepoRuleStats{}
+	live := map[string]bool{}
+	for _, repo := range repos {
+		live[repo.ID] = true
+		var st RepoRuleStats
+		if repo.Enabled && repo.Version != "" {
+			ld := rs.loadRepo(repo)
+			st.Errors = len(ld.errs)
+			for _, e := range ld.errs {
+				errs = append(errs, detect.LoadError{Path: repo.Name + ": " + e.Path, Err: e.Err})
 			}
-		case SourceCustom:
-			r, err := detect.ParseRule([]byte(row.YAML))
-			if err != nil {
-				errs = append(errs, detect.LoadError{Path: "custom:" + row.ID, Err: err.Error()})
-				rs.c.Log.Warn("custom rule failed to load", "id", row.ID, "err", err)
-				continue
+			src, _ := rulerepo.Parse(repo.URL)
+			var installed time.Time
+			if repo.InstalledAt != nil {
+				installed = *repo.InstalledAt
 			}
-			if _, clash := entries[r.ID]; clash {
-				continue
+			for _, fr := range ld.rules {
+				r := fr.Rule
+				if !levelAtLeast(r.Level, repo.MinLevel) || !statusAllowed(r.Status, repo.Statuses) {
+					st.Filtered++
+					continue
+				}
+				if _, clash := entries[r.ID]; clash {
+					st.Duplicates++
+					continue
+				}
+				entries[r.ID] = &ruleEntry{rule: r, source: SourceRepo, enabled: repo.EnableRules, updatedAt: installed,
+					repo: &RuleRepoRef{ID: repo.ID, Name: repo.Name, Path: fr.Path, URL: src.FileURL(repo.Version, fr.Path)}}
+				st.Rules++
 			}
-			entries[r.ID] = &ruleEntry{rule: r, source: SourceCustom, enabled: row.Enabled, updatedAt: row.UpdatedAt}
+		}
+		stats[repo.ID] = st
+	}
+	for id := range rs.repoCache {
+		if !live[id] {
+			delete(rs.repoCache, id)
+		}
+	}
+	// Enabled/disabled choices for rules from the rules folder and from repositories are
+	// stored by rule ID, so they survive reloads, updates and rules moving between sources.
+	for _, row := range rows {
+		if row.Source == SourceCustom {
+			continue
+		}
+		if e, ok := entries[row.ID]; ok && e.source != SourceCustom {
+			e.enabled = row.Enabled
+			e.updatedAt = row.UpdatedAt
+		}
+	}
+	for _, e := range entries {
+		if e.repo != nil && e.enabled {
+			st := stats[e.repo.ID]
+			st.RulesEnabled++
+			stats[e.repo.ID] = st
 		}
 	}
 	rs.mu.Lock()
 	rs.entries = entries
 	rs.loadErrors = errs
+	rs.repoStats = stats
 	rs.dirPrint = fp
 	rs.mu.Unlock()
 	rs.sync()
 	rs.c.Log.Info("rules loaded", "total", len(entries), "enabled", len(rs.c.Engine.Rules()), "errors", len(errs))
 	return nil
+}
+
+// loadRepo returns a repository's parsed rules, from the cache while the installed
+// version and folders are unchanged. Callers hold loadMu.
+func (rs *RuleSet) loadRepo(repo *store.RuleRepo) *repoLoad {
+	key := repo.Version + "\x00" + strings.Join(repo.Paths, "\x00")
+	if ld := rs.repoCache[repo.ID]; ld != nil && ld.key == key {
+		return ld
+	}
+	paths := repo.Paths
+	rules, errs := detect.LoadTree(rs.c.RepoDir(repo.ID), func(rel string) bool { return rulerepo.InFolders(rel, paths) })
+	ld := &repoLoad{key: key, rules: rules, errs: errs}
+	rs.repoCache[repo.ID] = ld
+	return ld
+}
+
+var levelRank = map[string]int{"informational": 1, "low": 2, "medium": 3, "high": 4, "critical": 5}
+
+func levelAtLeast(level, min string) bool {
+	return min == "" || levelRank[level] >= levelRank[min]
+}
+
+// statusAllowed applies a repository's status filter. With no filter, deprecated and
+// unsupported rules are left out. Rules without a status always pass.
+func statusAllowed(status string, allowed []string) bool {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		return true
+	}
+	if len(allowed) == 0 {
+		return status != "deprecated" && status != "unsupported"
+	}
+	return slices.Contains(allowed, status)
+}
+
+// RepoStats returns what each rule repository contributed at the last load.
+func (rs *RuleSet) RepoStats(id string) RepoRuleStats {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	return rs.repoStats[id]
+}
+
+// repoRuleIDs returns the IDs of the loaded rules from one repository.
+func (rs *RuleSet) repoRuleIDs(repoID string) map[string]bool {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	out := map[string]bool{}
+	for id, e := range rs.entries {
+		if e.repo != nil && e.repo.ID == repoID {
+			out[id] = true
+		}
+	}
+	return out
 }
 
 func (rs *RuleSet) sync() {
@@ -160,6 +310,7 @@ func (rs *RuleSet) info(e *ruleEntry, hits map[string]int, withYAML bool) RuleIn
 		ID: r.ID, Title: r.Title, Description: r.Description, Status: r.Status, Level: r.Level,
 		Enabled: e.enabled, Source: e.source, Tags: r.Tags, Author: r.Author, References: r.References,
 		LogSource: r.LogSource, Mitre: detect.MitreFromTags(r.Tags), Hits24h: hits[r.ID], UpdatedAt: e.updatedAt,
+		Repo: e.repo,
 	}
 	if ri.Tags == nil {
 		ri.Tags = []string{}
@@ -176,6 +327,7 @@ type RuleFilter struct {
 	Enabled *bool
 	Level   string
 	Source  string
+	Repo    string // rule repository ID
 }
 
 // List returns rules sorted by title.
@@ -196,6 +348,9 @@ func (rs *RuleSet) List(ctx context.Context, f RuleFilter) ([]RuleInfo, error) {
 			continue
 		}
 		if f.Source != "" && e.source != f.Source {
+			continue
+		}
+		if f.Repo != "" && (e.repo == nil || e.repo.ID != f.Repo) {
 			continue
 		}
 		if q != "" && !strings.Contains(strings.ToLower(e.rule.Title+" "+e.rule.Description+" "+strings.Join(e.rule.Tags, " ")), q) {
@@ -249,16 +404,18 @@ func (rs *RuleSet) SaveCustom(ctx context.Context, id, yamlSrc string) (*RuleInf
 	}
 	rs.mu.RUnlock()
 	switch {
+	case id == "" && exists && existing.repo != nil:
+		return nil, invalid("id %s belongs to a rule from %s; give the copy a new id", r.ID, existing.repo.Name)
 	case id == "" && exists:
 		return nil, invalid("a rule with id %s already exists", r.ID)
 	case id != "" && target == nil:
 		return nil, store.ErrNotFound
 	case id != "" && target.source != SourceCustom:
-		return nil, invalid("built-in rules cannot be edited; copy it into a new custom rule")
+		return nil, invalid("%s rules cannot be edited; copy it into a new custom rule", sourceLabel(target))
 	case id != "" && r.ID != id:
 		return nil, invalid("the rule id cannot change (was %s)", id)
 	case exists && existing.source != SourceCustom:
-		return nil, invalid("id %s belongs to a built-in rule", r.ID)
+		return nil, invalid("id %s belongs to a %s rule", r.ID, sourceLabel(existing))
 	}
 	enabled := true
 	if target != nil {
@@ -303,10 +460,17 @@ func (rs *RuleSet) DeleteCustom(ctx context.Context, id string) error {
 		return store.ErrNotFound
 	}
 	if e.source != SourceCustom {
-		return errors.New("built-in rules cannot be deleted; disable them instead")
+		return fmt.Errorf("%s rules cannot be deleted; disable them instead", sourceLabel(e))
 	}
 	if err := rs.c.State.DeleteRuleRow(ctx, id); err != nil {
 		return err
 	}
 	return rs.Reload(ctx)
+}
+
+func sourceLabel(e *ruleEntry) string {
+	if e.repo != nil {
+		return "repository"
+	}
+	return "built-in"
 }

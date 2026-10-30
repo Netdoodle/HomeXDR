@@ -5,6 +5,9 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
 - **Endpoint detection and response without a kernel driver.** Windows telemetry from ETW
   and the Event Log; Linux telemetry from eBPF with netlink/procfs fallbacks. macOS is planned.
 - **Sigma detections.** Built-in rules plus any SigmaHQ rule, mapped onto an ECS-style schema.
+  Import a rule repository such as SigmaHQ from the console (a git repository or a release
+  archive) and choose per repository whether new versions install automatically or wait
+  for you to click Update ([rules/README.md](rules/README.md)).
 - **Process trees, timelines and search** across every host. Search is Splunk-style:
   `field=value` filters piped into `stats`, `timechart`, `top`, `table`, `eval`, `where`,
   `rex` and more, with a histogram, statistics and charts ([docs/search.md](docs/search.md)).

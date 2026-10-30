@@ -565,6 +565,8 @@ export interface AlertPatch {
 // ---------------------------------------------------------------------------------------
 // Rules
 
+export type RuleSource = 'builtin' | 'custom' | 'repo'
+
 export interface Rule {
   id: string
   title: string
@@ -572,7 +574,7 @@ export interface Rule {
   status?: string
   level: Severity
   enabled: boolean
-  source: 'builtin' | 'custom'
+  source: RuleSource
   tags: string[]
   author?: string
   references?: string[]
@@ -581,6 +583,17 @@ export interface Rule {
   hits_24h: number
   updated_at: string
   yaml?: string
+  /** Set for rules from a rule repository. */
+  repo?: RuleRepoRef
+}
+
+export interface RuleRepoRef {
+  id: string
+  name: string
+  /** File in the repository. */
+  path: string
+  /** The file upstream (git repositories only). */
+  url?: string
 }
 
 /** A rule file (or stored custom rule) that failed to compile; returned by GET /api/rules. */
@@ -594,6 +607,58 @@ export interface RuleFilter {
   enabled?: string
   level?: string
   source?: string
+  /** rule repository ID */
+  repo?: string
+}
+
+export type SigmaStatus = 'stable' | 'test' | 'experimental' | 'deprecated' | 'unsupported'
+
+/** What an admin chooses for a rule repository (docs/api.md, "Rule repositories"). */
+export interface RuleRepoSettings {
+  name: string
+  /** Git repository (GitHub, GitLab, Gitea/Forgejo, Bitbucket) or .zip / .tar.gz URL. */
+  url: string
+  /** Branch, tag or commit; empty = the default branch. Ignored for archives. */
+  ref: string
+  /** Folders to load; empty = the whole repository. */
+  paths: string[]
+  /** Rules below this level are skipped; empty = all levels. */
+  min_level: Severity | ''
+  /** Statuses to load; empty = all but deprecated and unsupported. */
+  statuses: SigmaStatus[]
+  /** Whether rules from the repository start enabled. */
+  enable_rules: boolean
+  /** Install new versions as they are found; otherwise only report them. */
+  auto_update: boolean
+  interval_hours: number
+  enabled: boolean
+}
+
+export interface RuleRepo extends RuleRepoSettings {
+  id: string
+  kind: 'git' | 'archive'
+  /** Installed commit, or sha256:<hex> of an archive. */
+  version?: string
+  latest_version?: string
+  update_available: boolean
+  syncing: boolean
+  checked_at?: string
+  installed_at?: string
+  next_check_at?: string
+  error?: string
+  files: number
+  folders: { path: string; files: number }[]
+  /** Rule IDs the last installed update added and removed. */
+  added: number
+  removed: number
+  rules: number
+  rules_enabled: number
+  filtered: number
+  duplicates: number
+  load_errors: number
+  browse_url?: string
+  created_at: string
+  created_by: string
 }
 
 export interface RuleValidateResponse {

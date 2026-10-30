@@ -9,11 +9,11 @@ import (
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
-// RuleRow is the stored state of a rule: an enabled override for built-in rules, or the
-// full YAML for custom rules.
+// RuleRow is the stored state of a rule: an enabled override for built-in and repository
+// rules, or the full YAML for custom rules.
 type RuleRow struct {
 	ID        string
-	Source    string // builtin | custom
+	Source    string // builtin | repo | custom
 	YAML      string
 	Enabled   bool
 	UpdatedAt time.Time

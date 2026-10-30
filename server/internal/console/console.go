@@ -77,6 +77,14 @@ func New(c *core.Core) *Handler {
 	h.route("POST /api/rules/reload", admin, h.reloadRules)
 	h.route("POST /api/rules/test", analyst, h.testRule)
 
+	h.route("GET /api/rule-repos", viewer, h.listRuleRepos)
+	h.route("POST /api/rule-repos", admin, h.addRuleRepo)
+	h.route("GET /api/rule-repos/{id}", viewer, h.getRuleRepo)
+	h.route("PATCH /api/rule-repos/{id}", admin, h.patchRuleRepo)
+	h.route("DELETE /api/rule-repos/{id}", admin, h.deleteRuleRepo)
+	h.route("POST /api/rule-repos/{id}/check", admin, h.checkRuleRepo)
+	h.route("POST /api/rule-repos/{id}/update", admin, h.updateRuleRepo)
+
 	h.route("GET /api/artifacts", viewer, h.listArtifacts)
 	h.route("GET /api/hunts", viewer, h.listHunts)
 	h.route("POST /api/hunts", analyst, h.createHunt)
@@ -169,7 +177,7 @@ func (h *Handler) fail(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusNotFound, "not found")
 	case errors.Is(err, store.ErrConflict):
 		writeErr(w, http.StatusConflict, "already exists")
-	case errors.Is(err, core.ErrNotAllowed):
+	case errors.Is(err, core.ErrNotAllowed), errors.Is(err, core.ErrRepoBusy):
 		writeErr(w, http.StatusConflict, err.Error())
 	case errors.As(err, &ve), events.IsQueryError(err), errors.Is(err, store.ErrWeakPassword):
 		writeErr(w, http.StatusBadRequest, err.Error())

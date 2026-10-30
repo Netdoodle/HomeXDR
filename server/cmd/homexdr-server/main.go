@@ -178,6 +178,7 @@ func serve() error {
 		run("syslog", func() error { return lis.Run(ctx, cfg.SyslogAddr) })
 	}
 	go c.RunMaintenance(ctx)
+	go c.RuleRepos.Run(ctx)
 	go c.Triage.Run(ctx)
 
 	if n, _ := st.CountUsers(ctx); n == 0 {

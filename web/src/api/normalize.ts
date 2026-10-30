@@ -1,7 +1,7 @@
 // Defensive normalization of server responses where the wire format has been seen to
 // drift from docs/api.md. Keep these small and covered by tests.
 
-import type { Rule, RuleValidateResponse } from './types'
+import type { Rule, RuleRepo, RuleValidateResponse } from './types'
 
 /**
  * Rule.logsource keys are documented as lowercase (product/category/service). Accept any
@@ -29,4 +29,9 @@ export function normalizeRule<T extends Rule | undefined>(r: T): T {
 
 export function normalizeValidate(v: RuleValidateResponse): RuleValidateResponse {
   return v.rule ? { ...v, rule: normalizeRule(v.rule) } : v
+}
+
+/** Go encodes empty lists as null; the UI expects arrays. */
+export function normalizeRuleRepo(r: RuleRepo): RuleRepo {
+  return { ...r, paths: r.paths ?? [], statuses: r.statuses ?? [], folders: r.folders ?? [] }
 }

@@ -290,11 +290,11 @@ type MCPToken = { id: string; name: string; token?: string; created_at: string; 
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/rules?q=&enabled=&level=&source=` | `{"rules": Rule[], "total": n, "load_errors": {path, error}[]}`; `load_errors` lists rule files that could not be loaded |
+| GET | `/api/rules?q=&enabled=&level=&source=&repo=` | `{"rules": Rule[], "total": n, "load_errors": {path, error}[]}`; `load_errors` lists rule files that could not be loaded; `source` is `builtin`, `custom` or `repo`, `repo` a rule repository ID |
 | GET | `/api/rules/{id}` | `Rule` including `yaml` |
 | POST | `/api/rules` | `{"yaml"}` → `Rule` (admin); validates and compiles first |
 | PUT | `/api/rules/{id}` | `{"yaml"}` → `Rule` (admin, custom rules only) |
-| PATCH | `/api/rules/{id}` | `{"enabled": bool}` → `Rule` (admin, any rule) |
+| PATCH | `/api/rules/{id}` | `{"enabled": bool}` → `Rule` (admin, any rule; kept by rule ID across reloads and repository updates) |
 | DELETE | `/api/rules/{id}` | custom only → `204` |
 | POST | `/api/rules/reload` | admin; re-reads the rules folder now → `{"total", "enabled", "load_errors"}` (the folder is also checked every minute) |
 | POST | `/api/rules/validate` | `{"yaml"}` → `{"ok": bool, "error"?: string, "rule"?: Rule}` |
@@ -303,12 +303,68 @@ type MCPToken = { id: string; name: string; token?: string; created_at: string; 
 ```ts
 type Rule = {
   id: string; title: string; description?: string; status?: string; level: Severity;
-  enabled: boolean; source: "builtin" | "custom";
+  enabled: boolean; source: "builtin" | "custom" | "repo";
   tags: string[]; author?: string; references?: string[];
   logsource: { product?: string; category?: string; service?: string };
   mitre: { tactic?: string; technique_id?: string; technique?: string }[];
   hits_24h: number; updated_at: string;
   yaml?: string;
+  repo?: { id: string; name: string; path: string; url?: string };  // source "repo": file, and link upstream
+}
+```
+
+## Rule repositories
+
+Sigma rule collections the server downloads and keeps updated: a public git repository
+(GitHub, GitLab, Gitea/Forgejo, Bitbucket) or a `.zip` / `.tar.gz` URL. See
+[rules/README.md](../rules/README.md#importing-a-rule-repository).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/rule-repos` | `{"repos": RuleRepo[]}` in precedence order |
+| POST | `/api/rule-repos` | `RuleRepoSettings` (only `url` required) → `201 RuleRepo` (admin, audited); starts the first download, `syncing` is true until it finishes |
+| GET | `/api/rule-repos/{id}` | `RuleRepo` |
+| PATCH | `/api/rule-repos/{id}` | any `RuleRepoSettings` fields → `RuleRepo` (admin, audited). A new `url` or `ref` downloads again; other changes reload the files already downloaded |
+| DELETE | `/api/rule-repos/{id}` | `204` (admin); removes its files and rules, keeps enabled/disabled choices |
+| POST | `/api/rule-repos/{id}/check` | → `RuleRepo` (admin): looks for a new version without installing it (`update_available`, `latest_version`) |
+| POST | `/api/rule-repos/{id}/update` | → `202 RuleRepo` (admin): downloads and installs the newest version in the background |
+
+Check, update and delete answer `409` while the repository is being updated. Download and
+network failures are not request errors: they are recorded in `error` and retried within an
+hour.
+
+```ts
+type RuleRepoSettings = {
+  url: string;                 // repository or archive URL; "owner/repo" means GitHub.
+                               // A folder link (…/tree/<branch>/<folder>) fills ref and paths.
+  name?: string;               // default: from the URL
+  ref?: string;                // branch, tag or commit; "" = default branch (ignored for archives)
+  paths?: string[];            // folders to load; [] = whole repository
+  min_level?: Severity | "";   // skip rules below this level
+  statuses?: ("stable" | "test" | "experimental" | "deprecated" | "unsupported")[];
+                               // [] = all but deprecated and unsupported
+  enable_rules?: boolean;      // rules start enabled (default true)
+  auto_update?: boolean;       // install new versions when found (default true);
+                               // false = only report them
+  interval_hours?: number;     // 1–720, default 24
+  enabled?: boolean;           // default true
+}
+type RuleRepo = Required<RuleRepoSettings> & {
+  id: string; kind: "git" | "archive";
+  version?: string;            // installed commit, or "sha256:<hex>" of an archive
+  latest_version?: string;     // newest version found by the last check
+  update_available: boolean; syncing: boolean;
+  checked_at?: string; installed_at?: string; next_check_at?: string;
+  error?: string;              // last failure
+  files: number;               // .yml/.yaml files downloaded
+  folders: { path: string; files: number }[];  // up to 3 levels, for choosing paths
+  added: number; removed: number;              // rule IDs the last update added and removed
+  rules: number; rules_enabled: number;        // loaded from this repository
+  filtered: number;            // skipped by min_level or statuses
+  duplicates: number;          // skipped because another source has the rule ID
+  load_errors: number;         // files that failed to load (listed in GET /api/rules)
+  browse_url?: string;         // installed version upstream (git)
+  created_at: string; created_by: string;
 }
 ```
 

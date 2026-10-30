@@ -27,8 +27,10 @@ type Core struct {
 	PKI    *pki.PKI
 	Engine *detect.Engine
 	Rules  *RuleSet
-	Broker *Broker
-	Syslog *SyslogStats
+	// RuleRepos downloads and updates rule repositories (rulerepos.go).
+	RuleRepos *RuleRepos
+	Broker    *Broker
+	Syslog    *SyslogStats
 	// Release is the signed agent release offered to agents (release.go).
 	Release *Release
 	// Triage is the AI analyst; new alerts are handed to it (it decides whether to run).
@@ -49,6 +51,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 	}
 	c.Triage = triage.New(st, ev, log)
 	c.Rules = NewRuleSet(c)
+	c.RuleRepos = NewRuleRepos(c)
 	if err := c.Rules.Reload(ctx); err != nil {
 		return nil, err
 	}

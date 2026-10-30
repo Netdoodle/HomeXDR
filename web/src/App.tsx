@@ -20,6 +20,7 @@ import { NotFoundPage } from './pages/NotFound'
 import { ProcessTreePage } from './pages/ProcessTree'
 import { RuleDetailPage } from './pages/RuleDetail'
 import { RuleEditorPage } from './pages/RuleEditor'
+import { RuleReposPage } from './pages/RuleRepos'
 import { RulesPage } from './pages/Rules'
 import { SearchPage } from './pages/Search'
 import { SettingsPage } from './pages/Settings'
@@ -79,6 +80,7 @@ export function App() {
                 <Route path="search" element={<SearchPage />} />
                 <Route path="rules" element={<RulesPage />} />
                 <Route path="rules/new" element={<RuleEditorPage />} />
+                <Route path="rules/repositories" element={<RuleReposPage />} />
                 <Route path="rules/:id" element={<RuleDetailPage />} />
                 <Route path="rules/:id/edit" element={<RuleEditorPage />} />
                 <Route path="hunts" element={<HuntsPage />} />

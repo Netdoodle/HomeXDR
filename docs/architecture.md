@@ -50,7 +50,10 @@ directive, so modules build independently without a `go.work` file.
    `network.community_id` if the agent did not.
 5. **Detection** evaluates every event against enabled Sigma rules (field names mapped from
    Sigma/Sysmon conventions to HomeXDR's ECS-style fields). Matches become **alerts**,
-   de-duplicated per (rule, host, process entity) within a window.
+   de-duplicated per (rule, host, process entity) within a window. Rules come from the
+   rules folder, from custom rules in the state store, and from rule repositories the
+   server downloads into `<data>/rule-repos` and checks for updates on a schedule
+   (`internal/rulerepo`, `core/rulerepos.go`; see [rules/README.md](../rules/README.md)).
 6. Events go to the **event store** (ClickHouse by default; SQLite for tiny installs and
    tests). Alerts, hosts, rules, commands and users live in the SQLite **state store**.
    Retention is by age (`HOMEXDR_RETENTION_DAYS`, 0 = no limit), by size

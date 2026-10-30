@@ -22,6 +22,7 @@ export const queryKeys = {
   alertTriage: (id: string) => ['alert', id, 'triage'] as const,
   rules: (f?: RuleFilter) => (f ? (['rules', f] as const) : (['rules'] as const)),
   rule: (id: string) => ['rule', id] as const,
+  ruleRepos: ['rule-repos'] as const,
   artifacts: ['artifacts'] as const,
   hunts: ['hunts'] as const,
   hunt: (id: string) => ['hunt', id] as const,

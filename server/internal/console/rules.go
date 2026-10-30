@@ -14,7 +14,7 @@ import (
 
 func (h *Handler) listRules(w http.ResponseWriter, r *http.Request, _ *store.User) {
 	q := r.URL.Query()
-	f := core.RuleFilter{Q: q.Get("q"), Level: q.Get("level"), Source: q.Get("source")}
+	f := core.RuleFilter{Q: q.Get("q"), Level: q.Get("level"), Source: q.Get("source"), Repo: q.Get("repo")}
 	if v := q.Get("enabled"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			f.Enabled = &b

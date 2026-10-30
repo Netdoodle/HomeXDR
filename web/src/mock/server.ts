@@ -23,7 +23,10 @@ import type {
   ProcessNode,
   Role,
   Rule,
+  RuleRepo,
+  RuleRepoSettings,
   Severity,
+  SigmaStatus,
   User,
 } from '../api/types'
 import { COMMAND_TYPES, SEVERITIES } from '../api/types'
@@ -51,6 +54,7 @@ import {
 import { HOUR, hostById, hosts } from './hosts'
 import { makeId } from './rng'
 import { detectionNeedles, parseRuleYaml, ruleById, rules } from './rules'
+import { isArchiveUrl } from '../lib/ruleRepos'
 
 // --- session ----------------------------------------------------------------------------
 
@@ -929,12 +933,14 @@ route('GET', '/api/rules', ({ query }) => {
   const enabled = query.get('enabled')
   const level = list(query, 'level')
   const source = query.get('source')
+  const repo = query.get('repo')
   const out = rules.filter(
     (r) =>
       (!q || [r.title, r.description, ...r.tags, ...r.mitre.map((m) => m.technique_id)].join(' ').toLowerCase().includes(q)) &&
       (!enabled || String(r.enabled) === enabled) &&
       (!level.length || level.includes(r.level)) &&
-      (!source || r.source === source),
+      (!source || r.source === source) &&
+      (!repo || r.repo?.id === repo),
   )
   return { rules: out.map((r) => ({ ...r, yaml: undefined })), total: out.length }
 })
@@ -962,7 +968,7 @@ route(
   '/api/rules/:id',
   ({ params, body, user }) => {
     const r = getRuleOr404(params.id)
-    if (r.source !== 'custom') fail(409, 'built-in rules cannot be edited; disable it and create a custom rule instead')
+    if (r.source !== 'custom') fail(400, `${r.repo ? 'repository' : 'built-in'} rules cannot be edited; copy it into a new custom rule`)
     const res = parseRuleYaml(String(obj(body).yaml ?? ''))
     if (!res.ok) fail(400, res.error)
     const next = (res as { rule: Rule }).rule
@@ -993,7 +999,7 @@ route(
   '/api/rules/:id',
   ({ params, user }) => {
     const r = getRuleOr404(params.id)
-    if (r.source !== 'custom') fail(409, 'built-in rules cannot be deleted')
+    if (r.source !== 'custom') fail(400, `${r.repo ? 'repository' : 'built-in'} rules cannot be deleted; disable them instead`)
     rules.splice(rules.indexOf(r), 1)
     logAudit(user, 'rule.delete', r.title, null)
     return NO_CONTENT
@@ -1034,6 +1040,296 @@ route('POST', '/api/rules/test', ({ body }) => {
     : []
   return { matches: matches.slice(0, 200), scanned: scanned.length }
 })
+
+// --- rule repositories ------------------------------------------------------------------------
+// Downloads are simulated: a sync takes a couple of seconds and installs a handful of
+// generated rules. Check finds a new version about half the time.
+
+const REPO_RULE_TEMPLATES: { title: string; level: Severity; status: SigmaStatus; product: string; category: string; path: string }[] = [
+  { title: 'Suspicious Encoded PowerShell Command Line', level: 'high', status: 'test', product: 'windows', category: 'process_creation', path: 'rules/windows/process_creation/proc_creation_win_powershell_base64_encoded_cmd.yml' },
+  { title: 'Rundll32 Execution Without Parameters', level: 'high', status: 'test', product: 'windows', category: 'process_creation', path: 'rules/windows/process_creation/proc_creation_win_rundll32_without_parameters.yml' },
+  { title: 'Scheduled Task Creation Via Schtasks.EXE', level: 'low', status: 'test', product: 'windows', category: 'process_creation', path: 'rules/windows/process_creation/proc_creation_win_schtasks_creation.yml' },
+  { title: 'Certutil Download From Internet', level: 'medium', status: 'test', product: 'windows', category: 'process_creation', path: 'rules/windows/process_creation/proc_creation_win_certutil_download.yml' },
+  { title: 'Shadow Copies Deletion Using Operating Systems Utilities', level: 'high', status: 'stable', product: 'windows', category: 'process_creation', path: 'rules/windows/process_creation/proc_creation_win_susp_shadow_copies_deletion.yml' },
+  { title: 'Linux Reverse Shell Indicator', level: 'critical', status: 'test', product: 'linux', category: 'network_connection', path: 'rules/linux/network_connection/net_connection_lnx_back_connect_shell_dev.yml' },
+  { title: 'Crontab Enumeration', level: 'low', status: 'experimental', product: 'linux', category: 'process_creation', path: 'rules/linux/process_creation/proc_creation_lnx_crontab_enumeration.yml' },
+  { title: 'Base64 Encoded Shebang In CLI', level: 'medium', status: 'test', product: 'linux', category: 'process_creation', path: 'rules/linux/process_creation/proc_creation_lnx_base64_shebang_cli.yml' },
+]
+
+type MockRepo = RuleRepo & { _hasNewVersion?: boolean }
+const LEVEL_RANK: Record<Severity, number> = { informational: 1, low: 2, medium: 3, high: 4, critical: 5 }
+const hex = () => Array.from({ length: 40 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('')
+
+function repoKind(url: string): RuleRepo['kind'] {
+  return isArchiveUrl(url) ? 'archive' : 'git'
+}
+
+function repoNameFromUrl(url: string): string {
+  const segs = url.replace(/^[a-z]+:\/\//i, '').split(/[?#]/)[0].split('/').filter(Boolean)
+  if (isArchiveUrl(url)) return (segs.at(-1) ?? 'archive').replace(/\.(zip|tgz|tar\.gz)$/i, '')
+  return segs.length >= 3 ? `${segs.at(-2)}/${segs.at(-1)!.replace(/\.git$/, '')}` : url
+}
+
+const ruleRepos: MockRepo[] = []
+
+/** Rebuilds the rules a repository contributes from its settings (as a reload would). */
+function loadRepoRules(r: MockRepo) {
+  const before = new Set(rules.filter((x) => x.repo?.id === r.id).map((x) => x.id))
+  for (let i = rules.length - 1; i >= 0; i--) if (rules[i].repo?.id === r.id) rules.splice(i, 1)
+  r.rules = r.rules_enabled = r.filtered = 0
+  if (!r.enabled || !r.version) return { added: 0, removed: before.size }
+  REPO_RULE_TEMPLATES.forEach((t, i) => {
+    if (r.paths.length && !r.paths.some((p) => t.path === p || t.path.startsWith(p + '/'))) return
+    if ((r.min_level && LEVEL_RANK[t.level] < LEVEL_RANK[r.min_level]) || (r.statuses.length && !r.statuses.includes(t.status))) {
+      r.filtered++
+      return
+    }
+    const id = `${r.id.slice(0, 8)}-0000-4000-8000-${String(i).padStart(12, '0')}`
+    const yaml = `title: ${t.title}\nid: ${id}\nstatus: ${t.status}\nlevel: ${t.level}\nlogsource:\n  product: ${t.product}\n  category: ${t.category}\ndetection:\n  selection:\n    CommandLine|contains: 'example'\n  condition: selection\n`
+    rules.push({
+      id,
+      title: t.title,
+      status: t.status,
+      level: t.level,
+      enabled: r.enable_rules,
+      source: 'repo',
+      tags: [],
+      author: 'SigmaHQ community',
+      logsource: { product: t.product, category: t.category },
+      mitre: [],
+      hits_24h: 0,
+      updated_at: r.installed_at ?? new Date().toISOString(),
+      yaml,
+      repo: {
+        id: r.id,
+        name: r.name,
+        path: t.path,
+        url: r.kind === 'git' ? `${r.url}/blob/${r.version}/${t.path}` : undefined,
+      },
+    })
+    r.rules++
+    if (r.enable_rules) r.rules_enabled++
+  })
+  const after = new Set(rules.filter((x) => x.repo?.id === r.id).map((x) => x.id))
+  return { added: [...after].filter((id) => !before.has(id)).length, removed: [...before].filter((id) => !after.has(id)).length }
+}
+
+function nextCheck(r: MockRepo): string | undefined {
+  if (!r.enabled) return undefined
+  if (!r.checked_at) return new Date().toISOString()
+  return new Date(Date.parse(r.checked_at) + r.interval_hours * HOUR).toISOString()
+}
+
+function repoView(r: MockRepo): RuleRepo {
+  const { _hasNewVersion, ...v } = r
+  void _hasNewVersion
+  return { ...v, update_available: !!r.version && !!r.latest_version && r.latest_version !== r.version, next_check_at: nextCheck(r), browse_url: r.kind === 'git' && r.version ? `${r.url}/tree/${r.version}` : undefined }
+}
+
+function startRepoSync(r: MockRepo, user: User | undefined) {
+  if (r.syncing) fail(409, 'this repository is being updated; try again when it finishes')
+  r.syncing = true
+  setTimeout(() => {
+    r.syncing = false
+    r.checked_at = new Date().toISOString()
+    if (r.url.includes('fail')) {
+      r.error = `download of ${r.url} failed: HTTP 404`
+      return
+    }
+    r.error = undefined
+    if (r.version && !r._hasNewVersion && r.latest_version === r.version) return
+    const v = r.kind === 'git' ? hex() : `sha256:${hex()}${hex().slice(0, 24)}`
+    r.version = r.latest_version = v
+    r.installed_at = r.checked_at
+    r._hasNewVersion = false
+    r.files = 4540
+    r.folders = [
+      { path: 'rules', files: 3161 },
+      { path: 'rules/linux', files: 211 },
+      { path: 'rules/linux/process_creation', files: 120 },
+      { path: 'rules/linux/network_connection', files: 8 },
+      { path: 'rules/windows', files: 2422 },
+      { path: 'rules/windows/process_creation', files: 1205 },
+      { path: 'rules-emerging-threats', files: 474 },
+      { path: 'rules-threat-hunting', files: 141 },
+    ]
+    const res = loadRepoRules(r)
+    r.added = res.added
+    r.removed = res.removed
+    logAudit(user, 'rule_repo.install', r.id, `${r.name}: installed ${v.replace('sha256:', '').slice(0, 12)}, ${r.rules} rules`)
+  }, 2200)
+}
+
+function repoSettingsFrom(b: Record<string, unknown>, base: RuleRepoSettings): RuleRepoSettings {
+  const out = { ...base }
+  if (typeof b.url === 'string') out.url = b.url.trim()
+  if (typeof b.name === 'string') out.name = b.name.trim()
+  if (typeof b.ref === 'string') out.ref = b.ref.trim()
+  if (Array.isArray(b.paths)) out.paths = (b.paths as unknown[]).map(String).map((p) => p.trim().replace(/^\/+|\/+$/g, '')).filter(Boolean)
+  if (typeof b.min_level === 'string') out.min_level = b.min_level as Severity | ''
+  if (Array.isArray(b.statuses)) out.statuses = b.statuses as SigmaStatus[]
+  for (const k of ['enable_rules', 'auto_update', 'enabled'] as const) if (typeof b[k] === 'boolean') out[k] = b[k] as boolean
+  if (typeof b.interval_hours === 'number') out.interval_hours = b.interval_hours
+  if (!/^https?:\/\/[^/]+\/.+/.test(out.url) && !/^[\w.-]+\/[\w.-]+$/.test(out.url)) fail(400, 'expected a repository URL such as https://github.com/SigmaHQ/sigma')
+  if (/^[\w.-]+\/[\w.-]+$/.test(out.url)) out.url = `https://github.com/${out.url}`
+  const tree = /^(https:\/\/github\.com\/[^/]+\/[^/]+)\/tree\/([^/]+)\/?(.*)$/.exec(out.url)
+  if (tree) {
+    out.url = tree[1]
+    if (!out.ref) out.ref = tree[2]
+    if (!out.paths.length && tree[3]) out.paths = [tree[3].replace(/\/+$/, '')]
+  }
+  if (isArchiveUrl(out.url)) out.ref = ''
+  if (!out.name) out.name = repoNameFromUrl(out.url)
+  if (out.interval_hours < 1 || out.interval_hours > 720) fail(400, 'check for updates between every hour and every 30 days')
+  return out
+}
+
+function getRepoOr404(id: string): MockRepo {
+  return ruleRepos.find((r) => r.id === id) ?? fail(404, 'not found')
+}
+
+{
+  // One installed repository in manual mode with an update waiting, to show every state.
+  const seeded: MockRepo = {
+    id: makeId(Date.now() - 9 * 24 * HOUR),
+    name: 'SigmaHQ Core',
+    url: 'https://github.com/SigmaHQ/sigma/releases/latest/download/sigma_core.zip',
+    ref: '',
+    paths: ['rules/windows', 'rules/linux'],
+    min_level: '',
+    statuses: ['stable', 'test', 'experimental'],
+    enable_rules: true,
+    auto_update: false,
+    interval_hours: 24,
+    enabled: true,
+    kind: 'archive',
+    version: 'sha256:45ccbd62cbf0b1d6a3a4c1e7f0f5a0c9a1c3b2e8',
+    latest_version: 'sha256:9b1e2d0a7c33f1b0e5d4c3a2b1f0e9d8c7b6a5f4',
+    update_available: true,
+    syncing: false,
+    checked_at: new Date(Date.now() - 2 * HOUR).toISOString(),
+    installed_at: new Date(Date.now() - 9 * 24 * HOUR).toISOString(),
+    files: 1377,
+    folders: [
+      { path: 'rules', files: 1377 },
+      { path: 'rules/cloud', files: 64 },
+      { path: 'rules/linux', files: 64 },
+      { path: 'rules/windows', files: 1138 },
+      { path: 'rules/windows/process_creation', files: 640 },
+    ],
+    added: 0,
+    removed: 0,
+    rules: 0,
+    rules_enabled: 0,
+    filtered: 0,
+    duplicates: 0,
+    load_errors: 0,
+    created_at: new Date(Date.now() - 9 * 24 * HOUR).toISOString(),
+    created_by: 'admin',
+    _hasNewVersion: true,
+  }
+  ruleRepos.push(seeded)
+  seeded.added = loadRepoRules(seeded).added
+}
+
+route('GET', '/api/rule-repos', () => ({ repos: ruleRepos.map(repoView) }))
+route('GET', '/api/rule-repos/:id', ({ params }) => repoView(getRepoOr404(params.id)))
+
+route(
+  'POST',
+  '/api/rule-repos',
+  ({ body, user }) => {
+    const set = repoSettingsFrom(obj(body), { name: '', url: '', ref: '', paths: [], min_level: '', statuses: [], enable_rules: true, auto_update: true, interval_hours: 24, enabled: true })
+    if (ruleRepos.some((r) => r.url.toLowerCase() === set.url.toLowerCase() && r.ref === set.ref)) fail(400, `${set.url} is already added; edit its folders instead`)
+    const r: MockRepo = {
+      ...set,
+      id: makeId(Date.now()),
+      kind: repoKind(set.url),
+      update_available: false,
+      syncing: false,
+      files: 0,
+      folders: [],
+      added: 0,
+      removed: 0,
+      rules: 0,
+      rules_enabled: 0,
+      filtered: 0,
+      duplicates: 0,
+      load_errors: 0,
+      created_at: new Date().toISOString(),
+      created_by: user!.username,
+    }
+    ruleRepos.push(r)
+    logAudit(user, 'rule_repo.add', r.id, `${r.name} ${r.url}`)
+    startRepoSync(r, user)
+    return new Response(JSON.stringify(repoView(r)), { status: 201, headers: { 'Content-Type': 'application/json' } })
+  },
+  { role: 'admin' },
+)
+
+route(
+  'PATCH',
+  '/api/rule-repos/:id',
+  ({ params, body, user }) => {
+    const r = getRepoOr404(params.id)
+    const set = repoSettingsFrom(obj(body), r)
+    const moved = set.url !== r.url || set.ref !== r.ref
+    Object.assign(r, set, { kind: repoKind(set.url) })
+    loadRepoRules(r)
+    logAudit(user, 'rule_repo.update', r.id, r.name)
+    if (moved && r.enabled) {
+      r._hasNewVersion = true
+      startRepoSync(r, user)
+    }
+    return repoView(r)
+  },
+  { role: 'admin' },
+)
+
+route(
+  'DELETE',
+  '/api/rule-repos/:id',
+  ({ params, user }) => {
+    const r = getRepoOr404(params.id)
+    if (r.syncing) fail(409, 'this repository is being updated; try again when it finishes')
+    r.enabled = false
+    loadRepoRules(r)
+    ruleRepos.splice(ruleRepos.indexOf(r), 1)
+    logAudit(user, 'rule_repo.delete', r.id, r.name)
+    return NO_CONTENT
+  },
+  { role: 'admin' },
+)
+
+route(
+  'POST',
+  '/api/rule-repos/:id/check',
+  ({ params }) => {
+    const r = getRepoOr404(params.id)
+    if (r.syncing) fail(409, 'this repository is being updated; try again when it finishes')
+    r.checked_at = new Date().toISOString()
+    if (r.url.includes('fail')) {
+      r.error = `${r.url} was not found or is not public (HTTP 404)`
+      return repoView(r)
+    }
+    r.error = undefined
+    if (!r._hasNewVersion && Math.random() < 0.5) r._hasNewVersion = true
+    if (r._hasNewVersion && r.latest_version === r.version) r.latest_version = r.kind === 'git' ? hex() : `sha256:${hex()}`
+    return repoView(r)
+  },
+  { role: 'admin' },
+)
+
+route(
+  'POST',
+  '/api/rule-repos/:id/update',
+  ({ params, user }) => {
+    const r = getRepoOr404(params.id)
+    startRepoSync(r, user)
+    return new Response(JSON.stringify(repoView(r)), { status: 202, headers: { 'Content-Type': 'application/json' } })
+  },
+  { role: 'admin' },
+)
 
 // --- artifacts and hunts -----------------------------------------------------------------------
 

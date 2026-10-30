@@ -54,7 +54,7 @@ export function RuleDetailPage() {
         }
         subtitle={
           <span className="row" style={{ gap: 14 }}>
-            <span>{r.source === 'custom' ? 'Custom rule' : 'Built-in rule'}</span>
+            <span>{r.source === 'custom' ? 'Custom rule' : r.repo ? `From ${r.repo.name}` : 'Built-in rule'}</span>
             <span>{r.enabled ? 'Enabled' : 'Disabled'}</span>
             <span>{formatNumber(r.hits_24h)} hits in 24h</span>
             <span>
@@ -81,8 +81,17 @@ export function RuleDetailPage() {
                 </button>
               </>
             ) : null}
-            {isAdmin && r.source === 'builtin' ? (
-              <Link className="btn" to={`/rules/new?from=${encodeURIComponent(r.id)}`} title="Built-in rules are read-only; copy it into a custom rule to change it">
+            {r.repo?.url ? (
+              <a className="btn" href={r.repo.url} target="_blank" rel="noreferrer noopener" title="This rule's file in its repository">
+                <Icon name="external" size={14} /> Upstream
+              </a>
+            ) : null}
+            {isAdmin && r.source !== 'custom' ? (
+              <Link
+                className="btn"
+                to={`/rules/new?from=${encodeURIComponent(r.id)}`}
+                title={`${r.repo ? 'Repository' : 'Built-in'} rules are read-only; copy it into a custom rule to change it`}
+              >
                 <Icon name="copy" size={14} /> Copy as custom
               </Link>
             ) : null}
@@ -108,6 +117,17 @@ export function RuleDetailPage() {
               {r.description ? <p style={{ margin: 0 }}>{r.description}</p> : null}
               <KV
                 items={[
+                  [
+                    'Repository',
+                    r.repo ? (
+                      <span key="repo" className="stack" style={{ gap: 2 }}>
+                        <Link to="/rules/repositories">{r.repo.name}</Link>
+                        <span className="mono xsmall" style={{ overflowWrap: 'anywhere' }}>
+                          {r.repo.path}
+                        </span>
+                      </span>
+                    ) : undefined,
+                  ],
                   ['Status', r.status],
                   ['Author', r.author],
                   ['Product', r.logsource.product],

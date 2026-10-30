@@ -188,7 +188,7 @@ CREATE TABLE IF NOT EXISTS kv (
 `
 
 func (s *Store) migrate(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, schema+triageSchema+mcpTokenSchema); err != nil {
+	if _, err := s.db.ExecContext(ctx, schema+triageSchema+mcpTokenSchema+ruleRepoSchema); err != nil {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
 	for _, m := range columnMigrations {

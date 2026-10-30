@@ -46,9 +46,11 @@ export function RulesPage() {
     q: sp.get('q') || undefined,
     level: sp.get('level') || undefined,
     source: sp.get('source') || undefined,
+    repo: sp.get('repo') || undefined,
     enabled: sp.get('enabled') || undefined,
   }
   const q = useQuery({ queryKey: queryKeys.rules(filter), queryFn: () => api.listRules(filter), placeholderData: keepPreviousData })
+  const repos = useQuery({ queryKey: queryKeys.ruleRepos, queryFn: api.listRuleRepos })
   const toggle = useToggleRule()
   const qc = useQueryClient()
   const toast = useToast()
@@ -81,11 +83,18 @@ export function RulesPage() {
                 >
                   <Icon name="refresh" size={14} /> Reload rules folder
                 </button>
+                <Link className="btn" to="/rules/repositories?add=1" title="Import a repository of Sigma rules, such as SigmaHQ, and keep it updated">
+                  <Icon name="download" size={14} /> Import rules
+                </Link>
                 <Link className="btn primary" to="/rules/new">
                   <Icon name="plus" size={14} /> New custom rule
                 </Link>
               </>
             ) : null}
+            <Link className="btn" to="/rules/repositories">
+              <Icon name="artifact" size={14} /> Repositories
+              {repos.data?.some((r) => r.update_available) ? <span className="badge count">update</span> : null}
+            </Link>
           </>
         }
       />
@@ -99,10 +108,25 @@ export function RulesPage() {
             </option>
           ))}
         </select>
-        <select className="select" value={filter.source ?? ''} onChange={(e) => patch({ source: e.target.value })} aria-label="Source">
-          <option value="">Built-in and custom</option>
+        <select
+          className="select"
+          value={filter.repo ? `repo:${filter.repo}` : (filter.source ?? '')}
+          onChange={(e) => {
+            const v = e.target.value
+            patch(v.startsWith('repo:') ? { source: 'repo', repo: v.slice(5) } : { source: v, repo: '' })
+          }}
+          aria-label="Source"
+        >
+          <option value="">All sources</option>
           <option value="builtin">Built-in</option>
           <option value="custom">Custom</option>
+          {repos.data?.length ? <option value="repo">All repositories</option> : null}
+          {repos.data?.map((r) => (
+            <option key={r.id} value={`repo:${r.id}`}>
+              {r.name}
+            </option>
+          ))}
+          {filter.repo && repos.data && !repos.data.some((r) => r.id === filter.repo) ? <option value={`repo:${filter.repo}`}>Removed repository</option> : null}
         </select>
         <select className="select" value={filter.enabled ?? ''} onChange={(e) => patch({ enabled: e.target.value })} aria-label="Enabled">
           <option value="">Enabled and disabled</option>
@@ -137,8 +161,8 @@ export function RulesPage() {
                 <col style={{ width: 64 }} />
                 <col />
                 <col style={{ width: 96 }} />
-                <col style={{ width: 84 }} />
-                <col style={{ width: '22%' }} />
+                <col style={{ width: 110 }} />
+                <col style={{ width: '20%' }} />
                 <col style={{ width: 150 }} />
                 <col style={{ width: 76 }} />
                 <col style={{ width: 90 }} />
@@ -175,7 +199,17 @@ export function RulesPage() {
                     <td>
                       <SeverityBadge severity={r.level} />
                     </td>
-                    <td>{r.source === 'custom' ? <span className="tag">custom</span> : <span className="muted small">built-in</span>}</td>
+                    <td className="truncate">
+                      {r.source === 'custom' ? (
+                        <span className="tag">custom</span>
+                      ) : r.repo ? (
+                        <span className="small" title={`${r.repo.name}: ${r.repo.path}`}>
+                          {r.repo.name}
+                        </span>
+                      ) : (
+                        <span className="muted small">built-in</span>
+                      )}
+                    </td>
                     <td className="truncate">
                       <span className="row nowrap" style={{ gap: 4 }}>
                         {r.mitre.length ? r.mitre.slice(0, 2).map((m, i) => <MitreTag key={i} m={m} />) : <span className="empty-cell">—</span>}

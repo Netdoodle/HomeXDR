@@ -1,7 +1,7 @@
 // Typed wrappers for every endpoint in docs/api.md.
 
 import { http, rawRequest } from './client'
-import { normalizeRule, normalizeValidate } from './normalize'
+import { normalizeRule, normalizeRuleRepo, normalizeValidate } from './normalize'
 import type {
   AgentLifecycle,
   AgentLifecycleView,
@@ -36,6 +36,8 @@ import type {
   Rule,
   RuleFilter,
   RuleLoadError,
+  RuleRepo,
+  RuleRepoSettings,
   RuleTestResponse,
   RuleValidateResponse,
   SearchRequest,
@@ -149,6 +151,24 @@ export const reloadRules = async () => {
   const res = await http.post<{ total: number; enabled: number; load_errors?: RuleLoadError[] | null }>('/api/rules/reload', {})
   return { ...res, load_errors: res.load_errors ?? [] }
 }
+
+// Rule repositories ----------------------------------------------------------------------
+
+export const listRuleRepos = async () => {
+  const res = await http.get<{ repos: RuleRepo[] | null }>('/api/rule-repos')
+  return (res.repos ?? []).map(normalizeRuleRepo)
+}
+export const getRuleRepo = async (id: string) => normalizeRuleRepo(await http.get<RuleRepo>(`/api/rule-repos/${enc(id)}`))
+/** Adds a repository and starts the first download (`syncing` until it finishes). */
+export const addRuleRepo = async (s: Partial<RuleRepoSettings> & { url: string }) =>
+  normalizeRuleRepo(await http.post<RuleRepo>('/api/rule-repos', s))
+export const patchRuleRepo = async (id: string, s: Partial<RuleRepoSettings>) =>
+  normalizeRuleRepo(await http.patch<RuleRepo>(`/api/rule-repos/${enc(id)}`, s))
+export const deleteRuleRepo = (id: string) => http.del(`/api/rule-repos/${enc(id)}`)
+/** Looks for a new version without installing it. */
+export const checkRuleRepo = async (id: string) => normalizeRuleRepo(await http.post<RuleRepo>(`/api/rule-repos/${enc(id)}/check`, {}))
+/** Downloads and installs the newest version in the background. */
+export const updateRuleRepo = async (id: string) => normalizeRuleRepo(await http.post<RuleRepo>(`/api/rule-repos/${enc(id)}/update`, {}))
 
 // Artifacts and hunts --------------------------------------------------------------------
 

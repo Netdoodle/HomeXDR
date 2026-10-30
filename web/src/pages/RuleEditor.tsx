@@ -123,7 +123,7 @@ export function RuleEditorPage() {
   if (editing && src.data && src.data.source !== 'custom') {
     return (
       <div className="panel">
-        <EmptyState title="Built-in rules are read-only" action={<Link to={`/rules/new?from=${encodeURIComponent(src.data.id)}`}>Copy it into a custom rule</Link>} />
+        <EmptyState title={src.data.repo ? `Rules from ${src.data.repo.name} are read-only` : 'Built-in rules are read-only'} action={<Link to={`/rules/new?from=${encodeURIComponent(src.data.id)}`}>Copy it into a custom rule</Link>} />
       </div>
     )
   }
