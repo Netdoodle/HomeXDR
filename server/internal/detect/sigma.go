@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"regexp"
 	"strconv"
@@ -80,37 +81,86 @@ func ParseRule(src []byte) (*Rule, error) {
 }
 
 // ParseRules parses a file that may hold several YAML documents. Documents that are not
-// rules (no detection) are skipped.
+// rules are skipped; the first rule that fails is returned as the error.
 func ParseRules(src []byte) ([]*Rule, error) {
-	dec := yaml.NewDecoder(bytes.NewReader(src))
+	docs, err := ParseDocuments(src)
 	var out []*Rule
+	for _, d := range docs {
+		if d.Err != nil {
+			return out, d.Err
+		}
+		out = append(out, d.Rule)
+	}
+	return out, err
+}
+
+// Document is one Sigma rule document in a file: the metadata read from it, and the
+// compiled rule or why it cannot run.
+type Document struct {
+	ID        string
+	Title     string
+	Status    string // lower case; "" when the rule has none
+	Level     string // lower case; "medium" when the rule has none
+	LogSource LogSource
+	Rule      *Rule // nil when Err is set
+	Err       error
+}
+
+// ParseDocuments parses every rule document in a file and reports each one's result, so
+// one rule the engine cannot run does not hide the others in the file. Documents that are
+// not Sigma rules (no detection or correlation) are skipped. The error is for YAML the
+// decoder cannot read; documents before it are returned.
+func ParseDocuments(src []byte) ([]Document, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(src))
+	var out []Document
 	for {
 		var node yaml.Node
-		err := dec.Decode(&node)
-		if err != nil {
-			if err.Error() == "EOF" {
-				break
+		if err := dec.Decode(&node); err != nil {
+			if errors.Is(err, io.EOF) {
+				return out, nil
 			}
-			return out, err
+			return out, fmt.Errorf("yaml: %w", err)
 		}
 		b, err := yaml.Marshal(&node)
 		if err != nil {
 			return out, err
 		}
 		var probe struct {
-			Detection any `yaml:"detection"`
+			ID          any       `yaml:"id"`
+			Title       any       `yaml:"title"`
+			Status      any       `yaml:"status"`
+			Level       any       `yaml:"level"`
+			LogSource   LogSource `yaml:"logsource"`
+			Detection   any       `yaml:"detection"`
+			Correlation any       `yaml:"correlation"`
 		}
 		_ = yaml.Unmarshal(b, &probe)
-		if probe.Detection == nil {
+		if probe.Detection == nil && probe.Correlation == nil {
 			continue
 		}
-		r, err := ParseRule(b)
-		if err != nil {
-			return out, err
+		d := Document{
+			ID: scalar(probe.ID), Title: scalar(probe.Title), LogSource: probe.LogSource,
+			Status: strings.ToLower(scalar(probe.Status)), Level: strings.ToLower(scalar(probe.Level)),
 		}
-		out = append(out, r)
+		if d.Level == "" {
+			d.Level = "medium"
+		}
+		if probe.Correlation != nil {
+			d.Err = errors.New("correlation rules are not supported")
+		} else {
+			d.Rule, d.Err = ParseRule(b)
+		}
+		out = append(out, d)
 	}
-	return out, nil
+}
+
+// scalar renders a YAML scalar decoded into an any ("" for anything else).
+func scalar(v any) string {
+	switch v.(type) {
+	case string, int, float64, bool:
+		return strings.TrimSpace(fmt.Sprint(v))
+	}
+	return ""
 }
 
 // Match evaluates the rule against a document.

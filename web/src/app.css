@@ -2341,3 +2341,58 @@ dialog.modal::backdrop {
 .warn-text {
   color: var(--warn);
 }
+
+/* ------------------------------------------------------------------ rule repository folder tree */
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  cursor: pointer;
+}
+.link-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.link-button:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+.tree {
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding-right: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.tree-row:last-child {
+  border-bottom: 0;
+}
+.tree-row:hover {
+  background: var(--surface-hover);
+}
+.tree-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+}
+.tree-spacer {
+  display: inline-block;
+  width: 28px;
+  flex: none;
+}
+.tree-note {
+  width: 84px;
+  flex: none;
+  text-align: right;
+}

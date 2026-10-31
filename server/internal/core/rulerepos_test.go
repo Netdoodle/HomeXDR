@@ -316,3 +316,74 @@ func TestRuleRepositories(t *testing.T) {
 		t.Errorf("Get after delete: %v", err)
 	}
 }
+
+func TestRuleRepoCatalogSkipsAndBulkEnable(t *testing.T) {
+	ctx := context.Background()
+	c := newRepoTestCore(t)
+	host := newFakeGitHost(t)
+	const c1 = "4444444444444444444444444444444444444444"
+	host.push(c1, map[string]string{
+		"rules/windows/a.yml": sigmaRule("00000000-0000-4000-8000-0000000000a1", "One", "high", "stable"),
+		"rules/windows/b.yml": sigmaRule("00000000-0000-4000-8000-0000000000a2", "Two", "medium", "test"),
+		// A file with a rule, a correlation and a broken rule: the first still loads.
+		"rules/windows/multi.yml": sigmaRule("00000000-0000-4000-8000-0000000000a3", "Three", "high", "test") +
+			"---\ntitle: Many logons\nid: 00000000-0000-4000-8000-0000000000a4\ncorrelation: {type: event_count, rules: [x]}\n" +
+			"---\ntitle: Broken\nid: 00000000-0000-4000-8000-0000000000a5\ndetection: {condition: nope}\n",
+		"rules/windows/dupe.yml": sigmaRule("00000000-0000-4000-8000-00000000000b", "Builtin twin", "high", "test"),
+		"rules/linux/l.yml":      sigmaRule("00000000-0000-4000-8000-0000000000a6", "Penguin", "low", "experimental"),
+	})
+	v, err := c.RuleRepos.Add(ctx, store.RuleRepoSettings{URL: host.URL + "/team/rules", Paths: []string{"rules/windows"}, EnableRules: true, Enabled: true}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v = waitIdle(t, c, v.ID)
+	if got := repoRuleTitles(t, c, v.ID); len(got) != 3 || !got["Three"] {
+		t.Fatalf("rules = %v (the rule beside a broken one in the same file must load)", got)
+	}
+
+	// The catalog lists the whole download, with metadata, whichever folders are chosen.
+	files, skipped := c.Rules.RepoFiles(v.RuleRepo)
+	byPath := map[string][]RepoFile{}
+	for _, f := range files {
+		byPath[f.Path] = append(byPath[f.Path], f)
+	}
+	if len(files) != 7 || len(byPath["rules/windows/multi.yml"]) != 3 || byPath["rules/linux/l.yml"][0].Status != "experimental" ||
+		byPath["rules/linux/l.yml"][0].Level != "low" || byPath["rules/windows/a.yml"][0].Product != "windows" {
+		t.Fatalf("catalog = %+v", files)
+	}
+	if m := byPath["rules/windows/multi.yml"]; m[0].Error != "" || !strings.Contains(m[1].Error, "correlation") || m[2].Error == "" {
+		t.Fatalf("multi-rule file = %+v", m)
+	}
+	// Skipped: the correlation, the broken rule (each named), and the duplicate id.
+	reasons := map[string]bool{}
+	for _, s := range skipped {
+		reasons[s.Error] = true
+	}
+	if len(skipped) != 3 || !reasons["Many logons: correlation rules are not supported"] || !reasons["same id as a rule in the rules folder"] {
+		t.Fatalf("skipped = %+v", skipped)
+	}
+
+	// Every rule of the repository at once; the choice survives a reload and an update.
+	if n, err := c.Rules.SetRepoEnabled(ctx, v.ID, false); err != nil || n != 3 {
+		t.Fatalf("disable all = %d %v", n, err)
+	}
+	if n, _ := c.Rules.SetRepoEnabled(ctx, v.ID, false); n != 0 {
+		t.Fatalf("disabling again changed %d rules", n)
+	}
+	const c2 = "5555555555555555555555555555555555555555"
+	files2 := map[string]string{}
+	for k, b := range host.commits[c1] {
+		files2[k] = b
+	}
+	files2["rules/windows/new.yml"] = sigmaRule("00000000-0000-4000-8000-0000000000a7", "Brand new", "high", "stable")
+	host.push(c2, files2)
+	c.RuleRepos.Start(v.ID, true, "admin")
+	v = waitIdle(t, c, v.ID)
+	got := repoRuleTitles(t, c, v.ID)
+	if v.Version != c2 || got["One"] || got["Two"] || got["Three"] || !got["Brand new"] {
+		t.Fatalf("after update: %v %v", v.Version, got)
+	}
+	if files, _ := c.Rules.RepoFiles(v.RuleRepo); len(files) != 8 {
+		t.Fatalf("catalog not refreshed for the new version: %d files", len(files))
+	}
+}

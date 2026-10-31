@@ -87,13 +87,23 @@ type RuleSet struct {
 	entries    map[string]*ruleEntry
 	loadErrors []detect.LoadError
 	repoStats  map[string]RepoRuleStats
-	repoCache  map[string]*repoLoad // by repository ID; guarded by loadMu
-	dirPrint   string               // detect.DirFingerprint of the rules folder at the last load
+	repoSkips  map[string][]RepoSkip   // rules a repository's folders hold that are not loaded
+	repoCache  map[string]*repoLoad    // by repository ID; guarded by loadMu
+	repoDocs   map[string]*repoCatalog // by repository ID; guarded by loadMu
+	dirPrint   string                  // detect.DirFingerprint of the rules folder at the last load
+}
+
+// RepoSkip is a rule in a repository's chosen folders that is not loaded, and why.
+type RepoSkip struct {
+	Path  string `json:"path"`
+	Title string `json:"title,omitempty"`
+	Error string `json:"error"`
 }
 
 // NewRuleSet returns an empty rule set.
 func NewRuleSet(c *Core) *RuleSet {
-	return &RuleSet{c: c, entries: map[string]*ruleEntry{}, repoStats: map[string]RepoRuleStats{}, repoCache: map[string]*repoLoad{}}
+	return &RuleSet{c: c, entries: map[string]*ruleEntry{}, repoStats: map[string]RepoRuleStats{},
+		repoSkips: map[string][]RepoSkip{}, repoCache: map[string]*repoLoad{}, repoDocs: map[string]*repoCatalog{}}
 }
 
 // ReloadIfChanged reloads when files in the rules folder were added, removed or modified
@@ -165,6 +175,7 @@ func (rs *RuleSet) Reload(ctx context.Context) error {
 		entries[r.ID] = &ruleEntry{rule: r, source: SourceCustom, enabled: row.Enabled, updatedAt: row.UpdatedAt}
 	}
 	stats := map[string]RepoRuleStats{}
+	skips := map[string][]RepoSkip{}
 	live := map[string]bool{}
 	for _, repo := range repos {
 		live[repo.ID] = true
@@ -174,6 +185,7 @@ func (rs *RuleSet) Reload(ctx context.Context) error {
 			st.Errors = len(ld.errs)
 			for _, e := range ld.errs {
 				errs = append(errs, detect.LoadError{Path: repo.Name + ": " + e.Path, Err: e.Err})
+				skips[repo.ID] = append(skips[repo.ID], RepoSkip{Path: e.Path, Error: e.Err})
 			}
 			src, _ := rulerepo.Parse(repo.URL)
 			var installed time.Time
@@ -186,8 +198,9 @@ func (rs *RuleSet) Reload(ctx context.Context) error {
 					st.Filtered++
 					continue
 				}
-				if _, clash := entries[r.ID]; clash {
+				if other, clash := entries[r.ID]; clash {
 					st.Duplicates++
+					skips[repo.ID] = append(skips[repo.ID], RepoSkip{Path: fr.Path, Title: r.Title, Error: "same id as " + other.describe()})
 					continue
 				}
 				entries[r.ID] = &ruleEntry{rule: r, source: SourceRepo, enabled: repo.EnableRules, updatedAt: installed,
@@ -200,6 +213,11 @@ func (rs *RuleSet) Reload(ctx context.Context) error {
 	for id := range rs.repoCache {
 		if !live[id] {
 			delete(rs.repoCache, id)
+		}
+	}
+	for id := range rs.repoDocs {
+		if !live[id] {
+			delete(rs.repoDocs, id)
 		}
 	}
 	// Enabled/disabled choices for rules from the rules folder and from repositories are
@@ -224,6 +242,7 @@ func (rs *RuleSet) Reload(ctx context.Context) error {
 	rs.entries = entries
 	rs.loadErrors = errs
 	rs.repoStats = stats
+	rs.repoSkips = skips
 	rs.dirPrint = fp
 	rs.mu.Unlock()
 	rs.sync()
@@ -269,6 +288,80 @@ func (rs *RuleSet) RepoStats(id string) RepoRuleStats {
 	rs.mu.RLock()
 	defer rs.mu.RUnlock()
 	return rs.repoStats[id]
+}
+
+// describe names where a rule comes from, for duplicate-id messages.
+func (e *ruleEntry) describe() string {
+	switch {
+	case e.repo != nil:
+		return "a rule from " + e.repo.Name + " (" + e.repo.Path + ")"
+	case e.source == SourceCustom:
+		return "a custom rule"
+	}
+	return "a rule in the rules folder"
+}
+
+// repoCatalog is every rule document in a repository's installed version, for choosing
+// folders: parsed once per version.
+type repoCatalog struct {
+	version string
+	files   []RepoFile
+}
+
+// RepoFile describes one rule document in a downloaded repository.
+type RepoFile struct {
+	Path    string `json:"path"`
+	Status  string `json:"status,omitempty"`
+	Level   string `json:"level"`
+	Product string `json:"product,omitempty"`
+	Error   string `json:"error,omitempty"` // why the engine cannot run it
+}
+
+// RepoFiles lists every rule document in a repository's installed version, whichever
+// folders are chosen, and the rules in its chosen folders that are not loaded.
+func (rs *RuleSet) RepoFiles(repo *store.RuleRepo) ([]RepoFile, []RepoSkip) {
+	files := []RepoFile{}
+	if repo.Version != "" {
+		rs.loadMu.Lock()
+		cat := rs.repoDocs[repo.ID]
+		if cat == nil || cat.version != repo.Version {
+			cat = &repoCatalog{version: repo.Version, files: []RepoFile{}}
+			for _, d := range detect.LoadDocuments(rs.c.RepoDir(repo.ID)) {
+				f := RepoFile{Path: d.Path, Status: d.Status, Level: d.Level, Product: strings.ToLower(d.LogSource.Product)}
+				if d.Err != nil {
+					f.Error = d.Err.Error()
+				}
+				cat.files = append(cat.files, f)
+			}
+			rs.repoDocs[repo.ID] = cat
+		}
+		rs.loadMu.Unlock()
+		files = cat.files
+	}
+	rs.mu.RLock()
+	skipped := append([]RepoSkip{}, rs.repoSkips[repo.ID]...)
+	rs.mu.RUnlock()
+	return files, skipped
+}
+
+// SetRepoEnabled enables or disables every loaded rule of a repository, returning how
+// many changed. The choice is stored per rule, like enabling one by hand.
+func (rs *RuleSet) SetRepoEnabled(ctx context.Context, repoID string, enabled bool) (int, error) {
+	rs.mu.RLock()
+	var rows []store.RuleRow
+	for id, e := range rs.entries {
+		if e.repo != nil && e.repo.ID == repoID && e.enabled != enabled {
+			rows = append(rows, store.RuleRow{ID: id, Source: SourceRepo, Enabled: enabled})
+		}
+	}
+	rs.mu.RUnlock()
+	if len(rows) == 0 {
+		return 0, nil
+	}
+	if err := rs.c.State.PutRuleRows(ctx, rows); err != nil {
+		return 0, err
+	}
+	return len(rows), rs.Reload(ctx)
 }
 
 // repoRuleIDs returns the IDs of the loaded rules from one repository.

@@ -61,6 +61,21 @@ func TestRuleRepoAPI(t *testing.T) {
 	} else if repo := list["rules"].([]any)[0].(map[string]any)["repo"].(map[string]any); repo["path"] != "rules/windows/whoami_repo.yml" {
 		t.Fatalf("rule repo ref = %v", repo)
 	}
+	// The catalog of the download, for choosing folders.
+	if code, cat := viewer.do("GET", "/api/rule-repos/"+id+"/files", nil, false); code != 200 ||
+		len(cat["files"].([]any)) != 1 || cat["files"].([]any)[0].(map[string]any)["level"] != "low" || len(cat["skipped"].([]any)) != 0 {
+		t.Fatalf("files = %d %v", code, cat)
+	}
+	// Every rule of the repository at once.
+	if code, _ := viewer.do("POST", "/api/rule-repos/"+id+"/rules/enabled", map[string]any{"enabled": false}, true); code != http.StatusForbidden {
+		t.Fatalf("viewer bulk disable = %d", code)
+	}
+	if code, res := admin.do("POST", "/api/rule-repos/"+id+"/rules/enabled", map[string]any{"enabled": false}, true); code != 200 || res["changed"].(float64) != 1 {
+		t.Fatalf("bulk disable = %d %v", code, res)
+	}
+	if _, list := viewer.do("GET", "/api/rules?repo="+id, nil, false); list["rules"].([]any)[0].(map[string]any)["enabled"] != false {
+		t.Fatalf("rule still enabled: %v", list)
+	}
 	if code, body = admin.do("PATCH", "/api/rule-repos/"+id, map[string]any{"min_level": "high", "interval_hours": 6}, true); code != 200 ||
 		body["rules"].(float64) != 0 || body["filtered"].(float64) != 1 || body["auto_update"] != false || body["interval_hours"].(float64) != 6 {
 		t.Fatalf("patch = %d %v", code, body)

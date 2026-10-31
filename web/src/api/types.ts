@@ -661,6 +661,23 @@ export interface RuleRepo extends RuleRepoSettings {
   created_by: string
 }
 
+/** One rule in a repository's download, for choosing folders (GET /api/rule-repos/{id}/files). */
+export interface RuleRepoFile {
+  path: string
+  status?: string
+  level: string
+  product?: string
+  /** Why the engine cannot run it. */
+  error?: string
+}
+
+/** A rule in a repository's chosen folders that is not loaded, and why. */
+export interface RuleRepoSkip {
+  path: string
+  title?: string
+  error: string
+}
+
 export interface RuleValidateResponse {
   ok: boolean
   error?: string

@@ -37,7 +37,9 @@ import type {
   RuleFilter,
   RuleLoadError,
   RuleRepo,
+  RuleRepoFile,
   RuleRepoSettings,
+  RuleRepoSkip,
   RuleTestResponse,
   RuleValidateResponse,
   SearchRequest,
@@ -165,6 +167,14 @@ export const addRuleRepo = async (s: Partial<RuleRepoSettings> & { url: string }
 export const patchRuleRepo = async (id: string, s: Partial<RuleRepoSettings>) =>
   normalizeRuleRepo(await http.patch<RuleRepo>(`/api/rule-repos/${enc(id)}`, s))
 export const deleteRuleRepo = (id: string) => http.del(`/api/rule-repos/${enc(id)}`)
+/** Every rule in the installed download (for choosing folders), and the chosen ones that are not loaded. */
+export const ruleRepoFiles = async (id: string) => {
+  const res = await http.get<{ files: RuleRepoFile[] | null; skipped: RuleRepoSkip[] | null }>(`/api/rule-repos/${enc(id)}/files`)
+  return { files: res.files ?? [], skipped: res.skipped ?? [] }
+}
+/** Enables or disables every loaded rule of a repository. */
+export const setRuleRepoRulesEnabled = (id: string, enabled: boolean) =>
+  http.post<{ changed: number }>(`/api/rule-repos/${enc(id)}/rules/enabled`, { enabled })
 /** Looks for a new version without installing it. */
 export const checkRuleRepo = async (id: string) => normalizeRuleRepo(await http.post<RuleRepo>(`/api/rule-repos/${enc(id)}/check`, {}))
 /** Downloads and installs the newest version in the background. */

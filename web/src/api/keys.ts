@@ -23,6 +23,7 @@ export const queryKeys = {
   rules: (f?: RuleFilter) => (f ? (['rules', f] as const) : (['rules'] as const)),
   rule: (id: string) => ['rule', id] as const,
   ruleRepos: ['rule-repos'] as const,
+  ruleRepoFiles: (id: string) => ['rule-repos', id, 'files'] as const,
   artifacts: ['artifacts'] as const,
   hunts: ['hunts'] as const,
   hunt: (id: string) => ['hunt', id] as const,

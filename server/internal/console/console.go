@@ -84,6 +84,8 @@ func New(c *core.Core) *Handler {
 	h.route("DELETE /api/rule-repos/{id}", admin, h.deleteRuleRepo)
 	h.route("POST /api/rule-repos/{id}/check", admin, h.checkRuleRepo)
 	h.route("POST /api/rule-repos/{id}/update", admin, h.updateRuleRepo)
+	h.route("GET /api/rule-repos/{id}/files", viewer, h.ruleRepoFiles)
+	h.route("POST /api/rule-repos/{id}/rules/enabled", admin, h.setRuleRepoRulesEnabled)
 
 	h.route("GET /api/artifacts", viewer, h.listArtifacts)
 	h.route("GET /api/hunts", viewer, h.listHunts)

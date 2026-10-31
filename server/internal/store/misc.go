@@ -69,6 +69,30 @@ func (s *Store) PutRuleRow(ctx context.Context, r RuleRow) error {
 	return err
 }
 
+// PutRuleRows inserts or replaces rule rows in one transaction.
+func (s *Store) PutRuleRows(ctx context.Context, rows []RuleRow) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	stmt, err := tx.PrepareContext(ctx,
+		`INSERT INTO rules(id, source, yaml, enabled, updated_at) VALUES(?,?,?,?,?)
+		 ON CONFLICT(id) DO UPDATE SET source = excluded.source, yaml = excluded.yaml,
+		   enabled = excluded.enabled, updated_at = excluded.updated_at`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	now := ts(time.Now())
+	for _, r := range rows {
+		if _, err := stmt.ExecContext(ctx, r.ID, r.Source, r.YAML, boolInt(r.Enabled), now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // DeleteRuleRow removes a rule row.
 func (s *Store) DeleteRuleRow(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM rules WHERE id = ?`, id)

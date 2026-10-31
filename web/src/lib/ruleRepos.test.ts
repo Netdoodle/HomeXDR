@@ -1,7 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import type { RuleRepo } from '../api/types'
+import type { RuleRepo, RuleRepoFile } from '../api/types'
 import { normalizeRuleRepo } from '../api/normalize'
-import { DEFAULT_REPO_SETTINGS, isArchiveUrl, parseFolders, REPO_PRESETS, repoRulesSummary, repoState, shortRepoVersion } from './ruleRepos'
+import {
+  buildTree,
+  DEFAULT_REPO_SETTINGS,
+  folderCounts,
+  folderState,
+  isArchiveUrl,
+  levelAtLeast,
+  parseFolders,
+  pathsFromSelection,
+  REPO_PRESETS,
+  repoRulesSummary,
+  repoState,
+  selectionFromPaths,
+  selectionSummary,
+  shortRepoVersion,
+  statusAllowed,
+  toggleFolder,
+} from './ruleRepos'
 
 const repo = (over: Partial<RuleRepo> = {}): RuleRepo => ({
   ...DEFAULT_REPO_SETTINGS,
@@ -67,5 +84,67 @@ describe('rule repositories', () => {
   it('fills lists Go sent as null', () => {
     const r = normalizeRuleRepo({ ...repo(), paths: null, statuses: null, folders: null } as unknown as RuleRepo)
     expect([r.paths, r.statuses, r.folders]).toEqual([[], [], []])
+  })
+})
+
+describe('choosing folders from a tree', () => {
+  const files: RuleRepoFile[] = [
+    { path: 'rules/linux/a.yml', status: 'stable', level: 'high', product: 'linux' },
+    { path: 'rules/linux/b.yml', status: 'experimental', level: 'medium', product: 'linux' },
+    { path: 'rules/linux/auditd/c.yml', status: 'test', level: 'low', product: 'linux' },
+    { path: 'rules/windows/w.yml', status: 'stable', level: 'critical', product: 'windows', error: 'unsupported' },
+    { path: 'rules/top.yml', level: 'informational' },
+    { path: 'deprecated/old.yml', status: 'deprecated', level: 'high' },
+  ]
+
+  it('applies the server filters', () => {
+    expect(statusAllowed('deprecated', [])).toBe(false)
+    expect(statusAllowed('experimental', [])).toBe(true)
+    expect(statusAllowed(undefined, ['stable'])).toBe(true)
+    expect(statusAllowed('test', ['stable'])).toBe(false)
+    expect(levelAtLeast('low', '')).toBe(true)
+    expect(levelAtLeast('low', 'medium')).toBe(false)
+  })
+
+  it('maps paths to a selection and back', () => {
+    expect(selectionFromPaths([])).toEqual([''])
+    expect(pathsFromSelection([''])).toEqual([])
+    expect(pathsFromSelection(['rules/linux'])).toEqual(['rules/linux'])
+    expect(pathsFromSelection([])).toBeNull()
+  })
+
+  it('counts folders under the filters', () => {
+    const counts = folderCounts(files, { statuses: ['stable', 'test'], min_level: 'low' })
+    expect(counts.get('rules')).toEqual({ total: 5, matching: 3, unsupported: 1 })
+    expect(counts.get('')!.total).toBe(6)
+    const { root, byPath } = buildTree(files)
+    expect(root.children.map((c) => c.name)).toEqual(['deprecated', 'rules'])
+    expect(byPath.get('rules')!.files.map((f) => f.path)).toEqual(['rules/top.yml'])
+  })
+
+  it('splits a selection when a subfolder is cleared', () => {
+    const { byPath } = buildTree(files)
+    let sel = toggleFolder([''], 'deprecated', byPath)
+    expect(sel).toEqual(['rules'])
+    sel = toggleFolder(sel, 'rules/linux/auditd', byPath)
+    expect(sel).toEqual(['rules/linux/a.yml', 'rules/linux/b.yml', 'rules/top.yml', 'rules/windows'])
+    expect(folderState(sel, 'rules')).toBe('partial')
+    expect(folderState(sel, '')).toBe('partial')
+    sel = toggleFolder(sel, 'rules', byPath)
+    expect(sel).toEqual(['rules'])
+    expect(toggleFolder(sel, '', byPath)).toEqual([''])
+  })
+
+  it('summarizes what loads', () => {
+    expect(selectionSummary(files, ['rules'], { statuses: [], min_level: '' })).toEqual({
+      selected: 5,
+      runnable: 4,
+      unsupported: 1,
+      products: [
+        ['linux', 3],
+        ['windows', 1],
+        ['other', 1],
+      ],
+    })
   })
 })

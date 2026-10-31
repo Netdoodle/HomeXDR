@@ -131,19 +131,63 @@ func LoadTree(dir string, include func(rel string) bool) ([]FileRule, []LoadErro
 			errs = append(errs, LoadError{Path: rel, Err: err.Error()})
 			continue
 		}
-		rs, err := ParseRules(b)
+		docs, err := ParseDocuments(b)
 		if err != nil {
 			errs = append(errs, LoadError{Path: rel, Err: err.Error()})
-			continue
 		}
-		for _, r := range rs {
-			if seen[r.ID] {
-				errs = append(errs, LoadError{Path: rel, Err: fmt.Sprintf("duplicate rule id %s", r.ID)})
-				continue
+		// Each rule in a file stands alone: one the engine cannot run is reported, and the
+		// others still load.
+		for _, d := range docs {
+			switch {
+			case d.Err != nil:
+				errs = append(errs, LoadError{Path: rel, Err: docError(d, len(docs))})
+			case seen[d.Rule.ID]:
+				errs = append(errs, LoadError{Path: rel, Err: fmt.Sprintf("duplicate rule id %s", d.Rule.ID)})
+			default:
+				seen[d.Rule.ID] = true
+				rules = append(rules, FileRule{Rule: d.Rule, Path: rel})
 			}
-			seen[r.ID] = true
-			rules = append(rules, FileRule{Rule: r, Path: rel})
 		}
 	}
 	return rules, errs
+}
+
+// docError describes a rule that failed, naming it when its file holds several.
+func docError(d Document, inFile int) string {
+	if inFile > 1 && d.Title != "" {
+		return d.Title + ": " + d.Err.Error()
+	}
+	return d.Err.Error()
+}
+
+// FileDocument is a rule document and the file it came from.
+type FileDocument struct {
+	Path string // slash-separated, relative to the loaded folder
+	Document
+}
+
+// LoadDocuments reads every rule document under dir with its metadata and result,
+// including those that cannot run, for listing what a folder holds. Files the YAML decoder
+// cannot read are returned as documents with only Err set.
+func LoadDocuments(dir string) []FileDocument {
+	var out []FileDocument
+	for _, p := range ruleFiles(dir) {
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		b, err := os.ReadFile(p)
+		if err == nil {
+			var docs []Document
+			docs, err = ParseDocuments(b)
+			for _, d := range docs {
+				out = append(out, FileDocument{Path: rel, Document: d})
+			}
+		}
+		if err != nil {
+			out = append(out, FileDocument{Path: rel, Document: Document{Level: "medium", Err: err}})
+		}
+	}
+	return out
 }

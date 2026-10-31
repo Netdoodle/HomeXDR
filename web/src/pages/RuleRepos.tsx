@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { api, queryKeys, SEVERITIES, type RuleRepo, type RuleRepoSettings, type Severity, type SigmaStatus } from '../api'
+import { api, queryKeys, SEVERITIES, type RuleRepo, type RuleRepoFile, type RuleRepoSettings, type Severity, type SigmaStatus } from '../api'
 import { errorMessage } from '../api/client'
 import { useCan } from '../components/Auth'
 import { ChoiceCards } from '../components/ChoiceCards'
@@ -16,17 +16,26 @@ import { useToast } from '../components/Toast'
 import { formatNumber, plural } from '../lib/format'
 import { useDocumentTitle, useUrlState } from '../lib/hooks'
 import {
+  buildTree,
   DEFAULT_REPO_SETTINGS,
+  folderCounts,
+  folderState,
   INTERVAL_CHOICES,
   intervalLabel,
   isArchiveUrl,
   parseFolders,
+  pathsFromSelection,
   REPO_PRESETS,
   repoRulesSummary,
   repoState,
+  selectionFromPaths,
+  selectionSummary,
   shortRepoVersion,
   SIGMA_STATUSES,
+  toggleFolder,
   UPDATE_CHOICES,
+  type FolderCounts,
+  type FolderNode,
 } from '../lib/ruleRepos'
 import { SEVERITY_LABEL } from '../lib/severity'
 
@@ -40,8 +49,14 @@ export function RuleReposPage() {
     // Poll while a download runs; it reports back through the repository's state.
     refetchInterval: (query) => (query.state.data?.some((r) => r.syncing) ? 1500 : false),
   })
-  useSyncResults(q.data)
   const [editing, setEditing] = useState<RuleRepo | null>(null)
+  // A repository added without folders: choose them from the tree once it is downloaded.
+  const [pickFolders, setPickFolders] = useState<string | null>(null)
+  useSyncResults(q.data, (r) => {
+    if (r.id !== pickFolders) return
+    setPickFolders(null)
+    if (r.version && !r.error) setEditing(r)
+  })
   const [removing, setRemoving] = useState<RuleRepo | null>(null)
   const adding = sp.get('add') === '1'
   const qc = useQueryClient()
@@ -92,7 +107,7 @@ export function RuleReposPage() {
           ))}
         </div>
       )}
-      {adding ? <RepoFormDialog onClose={() => patch({ add: '' })} /> : null}
+      {adding ? <RepoFormDialog onClose={() => patch({ add: '' })} onAdded={(r) => (r.paths.length === 0 ? setPickFolders(r.id) : undefined)} /> : null}
       {editing ? <RepoFormDialog repo={editing} onClose={() => setEditing(null)} /> : null}
       <ConfirmDialog
         open={!!removing}
@@ -120,7 +135,9 @@ export function RuleReposPage() {
 }
 
 /** Reports the outcome of downloads when they finish, and refreshes the rule list. */
-function useSyncResults(repos: RuleRepo[] | undefined) {
+function useSyncResults(repos: RuleRepo[] | undefined, onFinished?: (r: RuleRepo) => void) {
+  const finished = useRef(onFinished)
+  finished.current = onFinished
   const prev = useRef(new Map<string, RuleRepo>())
   const qc = useQueryClient()
   const toast = useToast()
@@ -134,6 +151,8 @@ function useSyncResults(repos: RuleRepo[] | undefined) {
         else if (r.version !== before.version)
           toast.success(`${r.name}: installed ${shortRepoVersion(r.version)}, ${plural(r.rules, 'rule')} loaded (${r.added} new, ${r.removed} removed)`)
         else toast.success(`${r.name} is up to date`)
+        qc.invalidateQueries({ queryKey: queryKeys.ruleRepoFiles(r.id) })
+        finished.current?.(r)
       }
     }
     prev.current = new Map(repos.map((r) => [r.id, r]))
@@ -171,6 +190,8 @@ function RepoCard({ repo: r, isAdmin, onEdit, onRemove }: { repo: RuleRepo; isAd
     onError: (e) => toast.error(e),
   })
   const busy = r.syncing || check.isPending || update.isPending
+  const [showSkipped, setShowSkipped] = useState(false)
+  const [bulk, setBulk] = useState<boolean | null>(null)
 
   return (
     <section className="panel">
@@ -208,6 +229,28 @@ function RepoCard({ repo: r, isAdmin, onEdit, onRemove }: { repo: RuleRepo; isAd
       </div>
       <div className="panel-body stack" style={{ gap: 12 }}>
         <RepoStatus repo={r} />
+        {showSkipped ? <SkippedDialog repo={r} onClose={() => setShowSkipped(false)} /> : null}
+        <ConfirmDialog
+          open={bulk !== null}
+          onClose={() => setBulk(null)}
+          title={`${bulk ? 'Enable' : 'Disable'} every rule from ${r.name}?`}
+          confirmLabel={bulk ? `Enable ${plural(r.rules - r.rules_enabled, 'rule')}` : `Disable ${plural(r.rules_enabled, 'rule')}`}
+          danger={bulk === false}
+          onConfirm={async () => {
+            const res = await api.setRuleRepoRulesEnabled(r.id, !!bulk)
+            qc.invalidateQueries({ queryKey: queryKeys.ruleRepos })
+            qc.invalidateQueries({ queryKey: queryKeys.rules() })
+            toast.success(`${bulk ? 'Enabled' : 'Disabled'} ${plural(res.changed, 'rule')} from ${r.name}`)
+          }}
+        >
+          <ul className="effect-list">
+            <li>
+              {bulk ? 'Every loaded rule from this repository starts checking new events now.' : 'No rule from this repository checks new events until you enable it again.'}
+            </li>
+            <li>This replaces any rule you enabled or disabled by hand; the choice is kept through updates.</li>
+            <li>Rules that appear in later updates still start {r.enable_rules ? 'enabled' : 'disabled'}, as set for the repository.</li>
+          </ul>
+        </ConfirmDialog>
         <KV
           items={[
             [
@@ -263,11 +306,26 @@ function RepoCard({ repo: r, isAdmin, onEdit, onRemove }: { repo: RuleRepo; isAd
             [
               'Rules',
               r.version ? (
-                <span key="r" className="stack" style={{ gap: 2 }}>
+                <span key="r" className="stack" style={{ gap: 4 }}>
                   <span>{repoRulesSummary(r, formatNumber).join(' · ')}</span>
-                  <Link to={`/rules?source=repo&repo=${encodeURIComponent(r.id)}`} className="small">
-                    View rules
-                  </Link>
+                  <span className="row small" style={{ gap: 12, flexWrap: 'wrap' }}>
+                    <Link to={`/rules?source=repo&repo=${encodeURIComponent(r.id)}`}>View rules</Link>
+                    {r.duplicates || r.load_errors ? (
+                      <button type="button" className="link-button" onClick={() => setShowSkipped(true)}>
+                        Why {plural(r.duplicates + r.load_errors, 'rule is', 'rules are')} not loaded
+                      </button>
+                    ) : null}
+                    {isAdmin && r.rules ? (
+                      <>
+                        <button type="button" className="link-button" disabled={r.rules_enabled === r.rules} onClick={() => setBulk(true)}>
+                          Enable all
+                        </button>
+                        <button type="button" className="link-button" disabled={r.rules_enabled === 0} onClick={() => setBulk(false)}>
+                          Disable all
+                        </button>
+                      </>
+                    ) : null}
+                  </span>
                 </span>
               ) : undefined,
             ],
@@ -325,12 +383,16 @@ function RepoStatus({ repo: r }: { repo: RuleRepo }) {
 }
 
 /** Add (no repo) or edit a repository. */
-function RepoFormDialog({ repo, onClose }: { repo?: RuleRepo; onClose: () => void }) {
+function RepoFormDialog({ repo, onClose, onAdded }: { repo?: RuleRepo; onClose: () => void; onAdded?: (r: RuleRepo) => void }) {
   const qc = useQueryClient()
   const toast = useToast()
   const [preset, setPreset] = useState(repo ? 'custom' : REPO_PRESETS[0].id)
   const [form, setForm] = useState<RuleRepoSettings>(() => (repo ? pickSettings(repo) : { ...DEFAULT_REPO_SETTINGS, ...REPO_PRESETS[0].settings }))
   const [folderText, setFolderText] = useState(form.paths.join('\n'))
+  // Once downloaded, folders are chosen from a tree of the download with rule counts.
+  const files = useQuery({ queryKey: queryKeys.ruleRepoFiles(repo?.id ?? ''), queryFn: () => api.ruleRepoFiles(repo!.id), enabled: !!repo?.version })
+  const tree = files.data && files.data.files.length > 0 ? files.data.files : null
+  const [sel, setSel] = useState(() => selectionFromPaths(form.paths))
   const set = (p: Partial<RuleRepoSettings>) => setForm((f) => ({ ...f, ...p }))
   const archive = isArchiveUrl(form.url)
 
@@ -347,13 +409,15 @@ function RepoFormDialog({ repo, onClose }: { repo?: RuleRepo; onClose: () => voi
     onSuccess: (next) => {
       qc.invalidateQueries({ queryKey: queryKeys.ruleRepos })
       qc.invalidateQueries({ queryKey: queryKeys.rules() })
-      toast.success(repo ? `${next.name} saved` : `Importing ${next.name}…`)
+      toast.success(repo ? `${next.name} saved` : next.paths.length ? `Importing ${next.name}…` : `Downloading ${next.name}; choose its folders when it finishes`)
+      if (!repo) onAdded?.(next)
       onClose()
     },
   })
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    save.mutate({ ...form, paths: parseFolders(folderText) })
+    const paths = tree ? pathsFromSelection(sel) : parseFolders(folderText)
+    if (paths) save.mutate({ ...form, paths })
   }
   const toggleStatus = (s: SigmaStatus, on: boolean) => set({ statuses: on ? [...form.statuses, s] : form.statuses.filter((x) => x !== s) })
 
@@ -368,7 +432,7 @@ function RepoFormDialog({ repo, onClose }: { repo?: RuleRepo; onClose: () => voi
           <button type="button" className="btn" onClick={onClose} disabled={save.isPending}>
             Cancel
           </button>
-          <button type="submit" form="repo-form" className="btn primary" disabled={save.isPending || !form.url.trim()}>
+          <button type="submit" form="repo-form" className="btn primary" disabled={save.isPending || !form.url.trim() || (!!tree && !pathsFromSelection(sel))}>
             {save.isPending ? <Spinner small /> : null}
             {repo ? 'Save' : 'Import'}
           </button>
@@ -410,9 +474,27 @@ function RepoFormDialog({ repo, onClose }: { repo?: RuleRepo; onClose: () => voi
 
         <div className="field">
           <span className="label">Folders</span>
-          <span className="help">One per line. Only rules in these folders are loaded; leave empty for the whole repository. Every enabled rule runs on every event, so pick the platforms you collect.</span>
-          <textarea className="textarea code" rows={3} value={folderText} placeholder="rules/windows" onChange={(e) => setFolderText(e.target.value)} />
-          {repo?.folders.length ? <FolderPicker folders={repo.folders} text={folderText} onChange={setFolderText} /> : null}
+          {tree ? (
+            <>
+              <span className="help">
+                Only rules in the ticked folders are loaded. Every enabled rule runs on every event, so pick the platforms you collect. Counts follow the
+                level and status filters below.
+              </span>
+              <FolderTree files={tree} sel={sel} onChange={setSel} filters={form} />
+            </>
+          ) : repo?.version && files.isPending ? (
+            <Loading compact label="Reading the download…" />
+          ) : (
+            <>
+              <span className="help">
+                One per line. Only rules in these folders are loaded; leave empty for the whole repository
+                {repo ? '' : ' (after the first download you can pick folders from a tree with rule counts)'}. Every enabled rule runs on every event, so
+                pick the platforms you collect.
+              </span>
+              <textarea className="textarea code" rows={3} value={folderText} placeholder="rules/windows" onChange={(e) => setFolderText(e.target.value)} />
+              {repo?.folders.length ? <FolderPicker folders={repo.folders} text={folderText} onChange={setFolderText} /> : null}
+            </>
+          )}
         </div>
 
         <div className="form-grid">
@@ -510,5 +592,174 @@ function FolderPicker({ folders, text, onChange }: { folders: RuleRepo['folders'
         {shown.length === 0 ? <span className="muted small">No folders match.</span> : null}
       </div>
     </div>
+  )
+}
+
+function TriCheckbox({ state, onChange, label }: { state: 'on' | 'partial' | 'off'; onChange: () => void; label: string }) {
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = state === 'partial'
+  }, [state])
+  return <input ref={ref} type="checkbox" checked={state === 'on'} onChange={onChange} aria-label={label} aria-checked={state === 'partial' ? 'mixed' : state === 'on'} />
+}
+
+/** Folders of a download as a tree with tri-state boxes and rule counts, and what the selection loads. */
+function FolderTree({
+  files,
+  sel,
+  onChange,
+  filters,
+}: {
+  files: RuleRepoFile[]
+  sel: string[]
+  onChange: (sel: string[]) => void
+  filters: Pick<RuleRepoSettings, 'statuses' | 'min_level'>
+}) {
+  const { root, byPath } = useMemo(() => buildTree(files), [files])
+  const counts = useMemo(() => folderCounts(files, filters), [files, filters])
+  const summary = useMemo(() => selectionSummary(files, sel, filters), [files, sel, filters])
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['']))
+  const expand = (p: string) =>
+    setExpanded((s) => {
+      const n = new Set(s)
+      if (n.has(p)) n.delete(p)
+      else n.add(p)
+      return n
+    })
+  const toggle = (p: string) => onChange(toggleFolder(sel, p, byPath))
+  const all = counts.get('')
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <div className="tree" role="group" aria-label="Folders">
+        <div className="tree-row tree-head">
+          <span className="tree-spacer" />
+          <label className="row grow" style={{ gap: 8 }}>
+            <TriCheckbox state={folderState(sel, '')} onChange={() => toggle('')} label="The whole repository" />
+            <span className="small">Whole repository</span>
+          </label>
+          <span className="small num nowrap">{all ? formatNumber(all.matching) : 0}</span>
+          <span className="tree-note xsmall muted">rules</span>
+        </div>
+        {root.children
+          .filter((k) => counts.has(k.path))
+          .map((k) => (
+            <FolderRow key={k.path} node={k} depth={0} counts={counts} sel={sel} expanded={expanded} onExpand={expand} onToggle={toggle} />
+          ))}
+      </div>
+      <div className={`callout ${summary.selected ? 'info' : 'warn'}`}>
+        <Icon name="info" size={14} />
+        <div className="grow small">
+          {summary.selected ? (
+            <>
+              <strong>{plural(summary.runnable, 'rule')}</strong> will load
+              {summary.unsupported ? <>; {formatNumber(summary.unsupported)} use Sigma features HomeXDR does not support yet and are skipped</> : null}.
+              <div className="muted xsmall" style={{ marginTop: 2 }}>
+                {summary.products
+                  .slice(0, 8)
+                  .map(([p, n]) => `${p} ${formatNumber(n)}`)
+                  .join(' · ')}
+              </div>
+            </>
+          ) : sel.length ? (
+            'No rules in the ticked folders pass the level and status filters.'
+          ) : (
+            'Tick at least one folder.'
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FolderRow({
+  node,
+  depth,
+  counts,
+  sel,
+  expanded,
+  onExpand,
+  onToggle,
+}: {
+  node: FolderNode
+  depth: number
+  counts: Map<string, FolderCounts>
+  sel: string[]
+  expanded: Set<string>
+  onExpand: (path: string) => void
+  onToggle: (path: string) => void
+}) {
+  const c = counts.get(node.path)
+  if (!c) return null
+  const open = expanded.has(node.path)
+  const kids = node.children.filter((k) => counts.has(k.path))
+  return (
+    <>
+      <div className="tree-row" style={{ paddingLeft: 6 + depth * 18 }}>
+        {kids.length ? (
+          <button type="button" className="btn ghost icon sm" aria-label={open ? `Collapse ${node.path}` : `Expand ${node.path}`} aria-expanded={open} onClick={() => onExpand(node.path)}>
+            <Icon name={open ? 'chevronDown' : 'chevronRight'} size={12} />
+          </button>
+        ) : (
+          <span className="tree-spacer" />
+        )}
+        <label className="row grow" style={{ gap: 8, minWidth: 0 }}>
+          <TriCheckbox state={folderState(sel, node.path)} onChange={() => onToggle(node.path)} label={`Load ${node.path}`} />
+          <span className="mono small truncate-inline">{node.name}/</span>
+        </label>
+        <span className="small num nowrap" title={`${c.total} rules in this folder; ${c.matching} pass the level and status filters`}>
+          {formatNumber(c.matching)}
+          {c.matching !== c.total ? <span className="muted xsmall"> of {formatNumber(c.total)}</span> : null}
+        </span>
+        <span className="xsmall muted nowrap tree-note">{c.unsupported ? `${c.unsupported} can't run` : ''}</span>
+      </div>
+      {open ? kids.map((k) => <FolderRow key={k.path} node={k} depth={depth + 1} counts={counts} sel={sel} expanded={expanded} onExpand={onExpand} onToggle={onToggle} />) : null}
+    </>
+  )
+}
+
+/** Rules in a repository's chosen folders that are not loaded, and why. */
+function SkippedDialog({ repo, onClose }: { repo: RuleRepo; onClose: () => void }) {
+  const q = useQuery({ queryKey: queryKeys.ruleRepoFiles(repo.id), queryFn: () => api.ruleRepoFiles(repo.id) })
+  return (
+    <Modal open wide onClose={onClose} title={`Rules not loaded from ${repo.name}`}>
+      <p className="small muted" style={{ marginTop: 0 }}>
+        These rules are in the folders you chose but do not run: they use Sigma features HomeXDR does not support yet (correlations, aggregations,
+        placeholders, field references), or another source already has a rule with the same id. Rules skipped by the level and status filters are not
+        listed.
+      </p>
+      {q.isPending ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState error={q.error} onRetry={() => q.refetch()} />
+      ) : q.data.skipped.length === 0 ? (
+        <EmptyState title="Every rule in the chosen folders is loaded" compact />
+      ) : (
+        <div className="table-wrap" style={{ maxHeight: 420 }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Rule</th>
+                <th>Why it is not loaded</th>
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.skipped.map((s, i) => (
+                <tr key={i}>
+                  <td className="small">
+                    {s.title || <span className="muted">{s.path.split('/').pop()}</span>}
+                    <div className="mono xsmall muted" style={{ overflowWrap: 'anywhere' }}>
+                      {s.path}
+                    </div>
+                  </td>
+                  <td className="small" style={{ overflowWrap: 'anywhere' }}>
+                    {s.error}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Modal>
   )
 }

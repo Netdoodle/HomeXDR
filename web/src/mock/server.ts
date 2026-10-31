@@ -52,6 +52,7 @@ import {
   type MockHunt,
 } from './fixtures'
 import { HOUR, hostById, hosts } from './hosts'
+import { repoFiles, repoSkipped } from './repoFiles'
 import { makeId } from './rng'
 import { detectionNeedles, parseRuleYaml, ruleById, rules } from './rules'
 import { isArchiveUrl } from '../lib/ruleRepos'
@@ -1327,6 +1328,31 @@ route(
     const r = getRepoOr404(params.id)
     startRepoSync(r, user)
     return new Response(JSON.stringify(repoView(r)), { status: 202, headers: { 'Content-Type': 'application/json' } })
+  },
+  { role: 'admin' },
+)
+
+route('GET', '/api/rule-repos/:id/files', ({ params }) => {
+  const r = getRepoOr404(params.id)
+  return r.version ? { files: repoFiles(), skipped: repoSkipped(r) } : { files: [], skipped: [] }
+})
+
+route(
+  'POST',
+  '/api/rule-repos/:id/rules/enabled',
+  ({ params, body, user }) => {
+    const r = getRepoOr404(params.id)
+    const enabled = obj(body).enabled
+    if (typeof enabled !== 'boolean') fail(400, 'enabled is required')
+    let changed = 0
+    for (const x of rules) {
+      if (x.repo?.id !== r.id || x.enabled === enabled) continue
+      x.enabled = enabled as boolean
+      changed++
+    }
+    r.rules_enabled = enabled ? r.rules : 0
+    logAudit(user, 'rule_repo.rules_enabled', r.id, `${r.name}: ${enabled ? 'enabled' : 'disabled'} ${changed} rules`)
+    return { changed }
   },
   { role: 'admin' },
 )

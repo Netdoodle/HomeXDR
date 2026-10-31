@@ -328,6 +328,8 @@ Sigma rule collections the server downloads and keeps updated: a public git repo
 | DELETE | `/api/rule-repos/{id}` | `204` (admin); removes its files and rules, keeps enabled/disabled choices |
 | POST | `/api/rule-repos/{id}/check` | → `RuleRepo` (admin): looks for a new version without installing it (`update_available`, `latest_version`) |
 | POST | `/api/rule-repos/{id}/update` | → `202 RuleRepo` (admin): downloads and installs the newest version in the background |
+| GET | `/api/rule-repos/{id}/files` | `{"files": RuleRepoFile[], "skipped": {path, title?, error}[]}`: every rule in the installed download, whichever folders are chosen (for choosing them), and the rules in the chosen folders that are not loaded, with the reason |
+| POST | `/api/rule-repos/{id}/rules/enabled` | `{"enabled": bool}` → `{"changed": n}` (admin, audited): enables or disables every loaded rule of the repository, stored per rule like a manual choice |
 
 Check, update and delete answer `409` while the repository is being updated. Download and
 network failures are not request errors: they are recorded in `error` and retried within an
@@ -365,6 +367,11 @@ type RuleRepo = Required<RuleRepoSettings> & {
   load_errors: number;         // files that failed to load (listed in GET /api/rules)
   browse_url?: string;         // installed version upstream (git)
   created_at: string; created_by: string;
+}
+type RuleRepoFile = {
+  path: string;                // file in the repository (a file can hold several rules)
+  status?: string; level: string; product?: string;
+  error?: string;              // why the engine cannot run it
 }
 ```
 

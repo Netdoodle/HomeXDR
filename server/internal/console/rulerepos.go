@@ -2,6 +2,7 @@ package console
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/Netdoodle/homexdr/server/internal/core"
 	"github.com/Netdoodle/homexdr/server/internal/store"
@@ -139,4 +140,46 @@ func (h *Handler) updateRuleRepo(w http.ResponseWriter, r *http.Request, u *stor
 		return
 	}
 	writeJSON(w, http.StatusAccepted, v)
+}
+
+// ruleRepoFiles lists every rule document in a repository's installed version (to choose
+// folders with counts) and the rules in its chosen folders that are not loaded.
+func (h *Handler) ruleRepoFiles(w http.ResponseWriter, r *http.Request, _ *store.User) {
+	repo, err := h.c.State.GetRuleRepo(r.Context(), r.PathValue("id"))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	files, skipped := h.c.Rules.RepoFiles(repo)
+	writeJSON(w, http.StatusOK, map[string]any{"files": files, "skipped": skipped})
+}
+
+// setRuleRepoRulesEnabled enables or disables every loaded rule of a repository.
+func (h *Handler) setRuleRepoRulesEnabled(w http.ResponseWriter, r *http.Request, u *store.User) {
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if req.Enabled == nil {
+		writeErr(w, http.StatusBadRequest, "enabled is required")
+		return
+	}
+	repo, err := h.c.State.GetRuleRepo(r.Context(), r.PathValue("id"))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	n, err := h.c.Rules.SetRepoEnabled(r.Context(), repo.ID, *req.Enabled)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	verb := "disabled"
+	if *req.Enabled {
+		verb = "enabled"
+	}
+	h.c.Audit(r.Context(), u.Username, "rule_repo.rules_enabled", repo.ID, repo.Name+": "+verb+" "+strconv.Itoa(n)+" rules")
+	writeJSON(w, http.StatusOK, map[string]any{"changed": n})
 }
