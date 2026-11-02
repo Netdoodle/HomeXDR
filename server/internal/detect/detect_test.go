@@ -194,6 +194,65 @@ detection:
 	}
 }
 
+func TestFieldRef(t *testing.T) {
+	rule := func(sel string) *Rule {
+		return mustRule(t, "title: r\nid: r\nlogsource: {category: process_creation}\ndetection:\n  sel:\n    "+sel+"\n  condition: sel\n")
+	}
+	same := winProc(`C:\Windows\cmd.exe`, "cmd /c x", `c:\windows\CMD.EXE`)
+	other := winProc(`C:\Windows\cmd.exe`, "cmd /c x", `C:\Windows\explorer.exe`)
+
+	eq := rule("Image|fieldref: ParentImage")
+	if !eq.Match(NewDoc(same)) {
+		t.Error("fieldref should compare two fields, ignoring case")
+	}
+	if eq.Match(NewDoc(other)) {
+		t.Error("fieldref matched different values")
+	}
+	if rule("Image|fieldref|cased: ParentImage").Match(NewDoc(same)) {
+		t.Error("cased fieldref ignored case")
+	}
+
+	// An absent or empty field on either side never matches, so a "not" filter on it
+	// does not hide an event that lacks the field.
+	noParent := winProc(`C:\Windows\cmd.exe`, "cmd /c x", "")
+	if eq.Match(NewDoc(noParent)) || rule("ParentImage|fieldref: Image").Match(NewDoc(noParent)) {
+		t.Error("fieldref matched an empty field")
+	}
+	if rule("Image|fieldref|contains: ParentImage").Match(NewDoc(noParent)) {
+		t.Error("contains matched an empty reference")
+	}
+	if rule("Image|fieldref: NoSuchField").Match(NewDoc(same)) {
+		t.Error("fieldref matched a field that does not exist")
+	}
+
+	// Combined with string modifiers, the other field's value is the search string.
+	partial := winProc(`C:\Windows\cmd.exe`, `C:\Windows\cmd.exe /c x`, "")
+	if !rule("CommandLine|fieldref|contains: Image").Match(NewDoc(partial)) ||
+		!rule("CommandLine|fieldref|startswith: Image").Match(NewDoc(partial)) {
+		t.Error("fieldref with contains or startswith did not match")
+	}
+	if rule("CommandLine|fieldref|endswith: Image").Match(NewDoc(partial)) {
+		t.Error("fieldref with endswith matched a value that does not end with it")
+	}
+
+	// A list is any-of, or every one of them with all.
+	if !rule("Image|fieldref:\n      - CommandLine\n      - ParentImage").Match(NewDoc(same)) {
+		t.Error("a list of references should match any of them")
+	}
+	if rule("Image|fieldref|all:\n      - CommandLine\n      - ParentImage").Match(NewDoc(same)) {
+		t.Error("all should require every reference to match")
+	}
+
+	for _, src := range []string{
+		"a|fieldref|re: b", "a|fieldref|gt: b", "a|fieldref|exists: true", "a|fieldref|base64: b", "a|fieldref|windash: b",
+		"a|fieldref: b*", "a|fieldref: null", "a|fieldref: []",
+	} {
+		if _, err := ParseRule([]byte("title: x\nid: x\nlogsource: {}\ndetection:\n  sel: {" + src + "}\n  condition: sel\n")); err == nil {
+			t.Errorf("expected error for %s", src)
+		}
+	}
+}
+
 func TestKeywordsAndErrors(t *testing.T) {
 	kw := mustRule(t, `
 title: kw

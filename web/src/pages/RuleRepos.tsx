@@ -724,7 +724,7 @@ function SkippedDialog({ repo, onClose }: { repo: RuleRepo; onClose: () => void 
     <Modal open wide onClose={onClose} title={`Rules not loaded from ${repo.name}`}>
       <p className="small muted" style={{ marginTop: 0 }}>
         These rules are in the folders you chose but do not run: they use Sigma features HomeXDR does not support yet (correlations, aggregations,
-        placeholders, field references), or another source already has a rule with the same id. Rules skipped by the level and status filters are not
+        placeholders), or another source already has a rule with the same id. Rules skipped by the level and status filters are not
         listed.
       </p>
       {q.isPending ? (
