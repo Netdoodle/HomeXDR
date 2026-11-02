@@ -138,7 +138,7 @@ export function RulesPage() {
         <div className="callout danger" role="alert" style={{ marginBottom: 12 }}>
           <Icon name="warning" size={14} />
           <div className="stack" style={{ gap: 4 }}>
-            <strong>{q.data.load_errors.length === 1 ? '1 rule failed to load' : `${q.data.load_errors.length} rules failed to load`} and is not running</strong>
+            <strong>{q.data.load_errors.length === 1 ? '1 rule failed to load and is not running' : `${q.data.load_errors.length} rules failed to load and are not running`}</strong>
             {q.data.load_errors.slice(0, 10).map((e, i) => (
               <span key={i} className="mono xsmall" style={{ overflowWrap: 'anywhere' }}>
                 {e.path}: {e.error}

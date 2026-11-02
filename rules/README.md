@@ -55,7 +55,7 @@ the repository.
 
 Every enabled rule runs on every event, so load the platforms you collect rather than the
 whole repository. Rules that use features the engine does not support yet (aggregations,
-correlations, `|expand`, `|fieldref`) are skipped and listed on the **Rules** page with the
+correlations, `|expand`) are skipped and listed on the **Rules** page with the
 reason. In a file that holds several rules, each is loaded or skipped on its own. SigmaHQ rules are published under the Detection Rule License (DRL) 1.1, which
 requires attribution; HomeXDR shows each rule's author and links to its file upstream.
 

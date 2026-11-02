@@ -2,10 +2,10 @@
 //
 // Supported: field matching with the modifiers contains, startswith, endswith, all, re
 // (with i/m/s), cidr, base64, base64offset, utf16le/utf16be/utf16/wide, windash, exists,
-// cased, gt/gte/lt/lte, plain wildcards (* ?), null values, keyword lists, and conditions
-// with and/or/not, parentheses, "1 of X*", "all of X*", "any of", "of them".
+// cased, gt/gte/lt/lte, fieldref, plain wildcards (* ?), null values, keyword lists, and
+// conditions with and/or/not, parentheses, "1 of X*", "all of X*", "any of", "of them".
 // Not supported (rules using them fail to compile): aggregations ("| count()"),
-// correlation rules, placeholders ("%name%" with |expand) and field references (|fieldref).
+// correlation rules and placeholders ("%name%" with |expand).
 package detect
 
 import (
@@ -339,6 +339,65 @@ func (f *fieldMatcher) match(d *Doc) bool {
 	return false
 }
 
+// fieldRefMatcher compares a field with other fields of the same event (|fieldref). A
+// field that is absent or empty on either side does not match.
+type fieldRefMatcher struct {
+	field    string
+	refs     []string
+	op       string // eq | contains | startswith | endswith
+	cased    bool
+	matchAll bool // "all" modifier: every referenced field must match
+}
+
+func (f *fieldRefMatcher) match(d *Doc) bool {
+	values, present := d.Get(f.field)
+	if !present {
+		return false
+	}
+	if f.matchAll {
+		for _, ref := range f.refs {
+			if !f.matchesRef(d, values, ref) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, ref := range f.refs {
+		if f.matchesRef(d, values, ref) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *fieldRefMatcher) matchesRef(d *Doc, values []string, ref string) bool {
+	others, _ := d.Get(ref)
+	for _, o := range others {
+		if o != "" && anyValue(values, func(v string) bool { return f.compare(v, o) }) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *fieldRefMatcher) compare(v, other string) bool {
+	if v == "" {
+		return false
+	}
+	if !f.cased {
+		v, other = strings.ToLower(v), strings.ToLower(other)
+	}
+	switch f.op {
+	case "contains":
+		return strings.Contains(v, other)
+	case "startswith":
+		return strings.HasPrefix(v, other)
+	case "endswith":
+		return strings.HasSuffix(v, other)
+	}
+	return v == other
+}
+
 func anyValue(values []string, vm valueMatcher) bool {
 	for _, v := range values {
 		if vm(v) {
@@ -370,9 +429,12 @@ func compileField(key string, n *yaml.Node) (matcher, error) {
 		reFlags string
 		encode  []string // applied in order: utf16 variants, base64, base64offset
 		windash bool
+		isRef   bool
 	)
 	for _, m := range mods {
 		switch strings.ToLower(m) {
+		case "fieldref":
+			isRef = true
 		case "contains":
 			op = "contains"
 		case "startswith":
@@ -400,6 +462,28 @@ func compileField(key string, n *yaml.Node) (matcher, error) {
 		default:
 			return nil, fmt.Errorf("unsupported modifier %q", m)
 		}
+	}
+
+	if isRef {
+		switch op {
+		case "eq", "contains", "startswith", "endswith":
+		default:
+			return nil, fmt.Errorf("fieldref cannot be combined with %s", op)
+		}
+		if reFlags != "" || len(encode) > 0 || windash {
+			return nil, errors.New("fieldref only combines with contains, startswith, endswith, all and cased")
+		}
+		ref := &fieldRefMatcher{field: field, op: op, cased: cased, matchAll: fm.matchAll}
+		for _, rn := range raw {
+			if rn.Kind != yaml.ScalarNode || rn.Tag == "!!null" || rn.Value == "" || strings.ContainsAny(rn.Value, "*?") {
+				return nil, errors.New("fieldref takes field names")
+			}
+			ref.refs = append(ref.refs, rn.Value)
+		}
+		if len(ref.refs) == 0 {
+			return nil, errors.New("fieldref takes field names")
+		}
+		return ref, nil
 	}
 
 	if op == "exists" {
