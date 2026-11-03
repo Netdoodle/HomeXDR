@@ -5,7 +5,7 @@ import { api, queryKeys } from '../api'
 import { ROLE_LABEL } from '../lib/roles'
 import { useUser } from './Auth'
 import { Icon, type IconName } from './Icon'
-import { useTheme, type ThemeChoice } from './Theme'
+import { resolvedTheme, useTheme, type ThemeChoice } from './Theme'
 
 const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/', label: 'Dashboard', icon: 'dashboard', end: true },
@@ -52,6 +52,17 @@ function useOutsideClose(open: boolean, close: () => void) {
     }
   }, [open, close])
   return ref
+}
+
+/** One click between dark and light; the account menu also offers following the OS. */
+function ThemeToggle() {
+  const { choice, setChoice } = useTheme()
+  const next = resolvedTheme(choice) === 'dark' ? 'light' : 'dark'
+  return (
+    <button type="button" className="btn ghost icon" onClick={() => setChoice(next)} aria-label={`Switch to ${next} mode`} title={`Switch to ${next} mode`}>
+      <Icon name={next === 'light' ? 'sun' : 'moon'} size={14} />
+    </button>
+  )
 }
 
 function UserMenu() {
@@ -233,6 +244,7 @@ export function Layout() {
           <QuickSearch />
           <div className="spacer" />
           <HealthIndicator />
+          <ThemeToggle />
           <UserMenu />
         </header>
         <main className="content">

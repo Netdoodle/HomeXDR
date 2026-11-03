@@ -8,9 +8,9 @@ function readChoice(): ThemeChoice {
     const v = localStorage.getItem(KEY)
     if (v === 'dark' || v === 'light' || v === 'system') return v
   } catch {
-    // storage unavailable (private mode, blocked): use the OS setting
+    // storage unavailable (private mode, blocked): the default applies
   }
-  return 'system'
+  return 'dark'
 }
 
 function apply(choice: ThemeChoice) {
@@ -20,7 +20,7 @@ function apply(choice: ThemeChoice) {
 }
 
 const Ctx = createContext<{ choice: ThemeChoice; setChoice: (c: ThemeChoice) => void }>({
-  choice: 'system',
+  choice: 'dark',
   setChoice: () => undefined,
 })
 
@@ -39,3 +39,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 }
 
 export const useTheme = () => useContext(Ctx)
+
+/** What is on screen: the choice, or the OS setting when following the system. */
+export function resolvedTheme(choice: ThemeChoice): 'dark' | 'light' {
+  if (choice !== 'system') return choice
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
