@@ -1,6 +1,7 @@
 /*
- * HomeXDR design tokens. Dark is the default; light follows prefers-color-scheme unless
- * the user picked a theme (html[data-theme]). Components reference only these tokens.
+ * HomeXDR design tokens. Dark is the default (html[data-theme], set by Theme.tsx and the
+ * script in index.html); choosing "System theme" removes the attribute, and light then
+ * follows prefers-color-scheme. Components reference only these tokens.
  *
  * Severity colors are used for marks (dots, bars, borders, tints), never as text color;
  * every severity is also shown as a text label. The set was checked for adjacent-pair

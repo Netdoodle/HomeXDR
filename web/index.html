@@ -6,6 +6,15 @@
     <meta name="color-scheme" content="dark light" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>HomeXDR</title>
+    <script>
+      // Apply the theme before the first paint (src/components/Theme.tsx owns the setting).
+      try {
+        var t = localStorage.getItem('homexdr.theme')
+        if (t !== 'system') document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark'
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark'
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
