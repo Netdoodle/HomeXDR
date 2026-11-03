@@ -12,6 +12,7 @@ import (
 	"github.com/Netdoodle/homexdr/server/internal/config"
 	"github.com/Netdoodle/homexdr/server/internal/detect"
 	"github.com/Netdoodle/homexdr/server/internal/events"
+	"github.com/Netdoodle/homexdr/server/internal/intel"
 	"github.com/Netdoodle/homexdr/server/internal/pki"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/server/internal/triage"
@@ -35,6 +36,8 @@ type Core struct {
 	Release *Release
 	// Triage is the AI analyst; new alerts are handed to it (it decides whether to run).
 	Triage *triage.Service
+	// Intel looks up indicators of compromise in threat intelligence services.
+	Intel *intel.Service
 }
 
 // New builds a Core and loads rules.
@@ -50,6 +53,8 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 		c.Release.SetArchive(cfg.ReleasesDir, cfg.ReleasesKeep, c.pinnedVersions)
 	}
 	c.Triage = triage.New(st, ev, log)
+	c.Intel = intel.New(st, ev, log)
+	c.Triage.SetIndicatorLookup(c.Intel.ForAI)
 	c.Rules = NewRuleSet(c)
 	c.RuleRepos = NewRuleRepos(c)
 	if err := c.Rules.Reload(ctx); err != nil {

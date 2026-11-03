@@ -271,6 +271,8 @@ type Service struct {
 	wake chan struct{}
 	// newProvider builds the provider for settings (replaced in tests).
 	newProvider func(s Settings, key string) (provider, error)
+	// lookup asks threat intelligence services about an indicator (nil: no such tool).
+	lookup func(ctx context.Context, indicator string) (string, error)
 
 	mu      sync.Mutex
 	running string // alert being investigated
@@ -279,6 +281,12 @@ type Service struct {
 	mcpSessions map[string]*mcpSession // by MCP token ID
 	runnerName  string                 // last MCP runner that checked in
 	runnerSeen  time.Time
+}
+
+// SetIndicatorLookup offers the analyst a tool that looks up indicators in threat
+// intelligence services.
+func (s *Service) SetIndicatorLookup(fn func(ctx context.Context, indicator string) (string, error)) {
+	s.lookup = fn
 }
 
 // New returns a service. Call Run to start the worker.
@@ -576,7 +584,7 @@ func (s *Service) investigate(ctx context.Context, t *store.Triage) error {
 	if err != nil {
 		return fmt.Errorf("load alert events: %w", err)
 	}
-	box := &toolbox{st: s.st, ev: s.ev, alert: alert}
+	box := &toolbox{st: s.st, ev: s.ev, alert: alert, lookup: s.lookup}
 	inv := &investigation{
 		system: systemPrompt, initial: initialMessage(alert, evs), tools: box.tools(), box: box,
 		maxToolCalls: set.MaxToolCalls, byName: map[string]Tool{},

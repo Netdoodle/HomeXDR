@@ -313,6 +313,59 @@ type Rule = {
 }
 ```
 
+## Threat intelligence
+
+See [intel.md](intel.md). A lookup sends the indicator to outside services, so starting one needs
+the analyst role; reading results and searching your own events needs only viewer.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/intel/lookup` | `{"indicator", "refresh"?: bool}` → `IntelView` (analyst+, audited when a service is asked). Runs in the background: `running` is true until the sources have answered. Answers younger than the cache time are reused unless `refresh`. `400` if it is not an indicator |
+| GET | `/api/intel/lookup?indicator=` | `IntelView`; `404` if never looked up |
+| GET | `/api/intel/history?limit=` | `{"lookups": {indicator, kind, score?, verdict, first_at, updated_at, updated_by, lookups}[]}`, newest first (the last 2000 are kept) |
+| GET | `/api/intel/sightings?indicator=&days=` | `IntelSightings`: where it appears in stored events; `days` is 1-365, default 30. Nothing leaves the server |
+| GET | `/api/settings/intel` | `IntelSettings` (admin) |
+| PUT | `/api/settings/intel` | `{"providers"?: {<id>: {"enabled"?, "key"?, "clear_key"?}}, "cache_hours"?, "ai_access"?, "internal_domains"?}` → `IntelSettings` (admin, audited without keys). A key is kept unless replaced or cleared |
+
+```ts
+type IntelView = {
+  indicator: { value: string; kind: "ip" | "domain" | "url" | "hash"; hash_type?: "md5" | "sha1" | "sha256"; private: boolean };
+  running: boolean;
+  summary: {
+    score?: number;            // 0-100; absent without reputation data
+    verdict: "malicious" | "suspicious" | "low" | "clean" | "no_signal" | "unknown" | "internal";
+    basis: string;             // what the score rests on
+    brief: string[];           // short paragraphs
+    geo?: { lat: number; lon: number; city?: string; region?: string; country?: string; country_code?: string; asn?: string; org?: string; isp?: string; timezone?: string };
+    whois?: { registrant?: string; registrar?: string; net_name?: string; range?: string; created?: string; updated?: string; expires?: string; abuse?: string; name_servers?: string[] };
+    coverage: { checked: number; with_data: number; no_data: number; needs_key: number; failed: number; pending: number };
+  };
+  results: {                   // disabled services are left out
+    source: string; name: string;
+    state: "ok" | "no_data" | "needs_key" | "quota" | "error" | "pending";
+    message?: string; checked_at: string;
+    risk?: number;             // 0-100; absent for context-only sources
+    headline?: string; fields?: { label: string; value: string }[]; tags?: string[];
+    link?: string;             // the indicator on the service's own site
+    benign?: boolean;          // the service vouches for it
+  }[];
+  updated_at?: string; updated_by?: string; lookups?: number;
+}
+type IntelSightings = {
+  query: string;               // the search, for the Search page
+  days: number; events: number; first?: string; last?: string; note?: string;
+  hosts: { id?: string; name: string; count: number; last?: string }[];
+  processes: { name: string; count: number }[];
+  recent: Event[]; alerts: Alert[];
+  own_hosts: { id?: string; name: string }[];  // enrolled hosts with this address
+}
+type IntelSettings = {
+  providers: { id: string; name: string; about: string; key_mode: "none" | "optional" | "required";
+               key_url?: string; free?: string; kinds: string[]; enabled: boolean; key_set: boolean; key_hint?: string }[];
+  cache_hours: number; ai_access: boolean; internal_domains: string[];
+}
+```
+
 ## Rule repositories
 
 Sigma rule collections the server downloads and keeps updated: a public git repository

@@ -13,6 +13,7 @@ import (
 
 	"github.com/Netdoodle/homexdr/server/internal/core"
 	"github.com/Netdoodle/homexdr/server/internal/events"
+	"github.com/Netdoodle/homexdr/server/internal/intel"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 )
 
@@ -77,6 +78,12 @@ func New(c *core.Core) *Handler {
 	h.route("POST /api/rules/reload", admin, h.reloadRules)
 	h.route("POST /api/rules/test", analyst, h.testRule)
 
+	h.route("POST /api/intel/lookup", analyst, h.startIntelLookup)
+	h.route("GET /api/intel/lookup", viewer, h.getIntelLookup)
+	h.route("GET /api/intel/history", viewer, h.intelHistory)
+	h.route("GET /api/intel/sightings", viewer, h.intelSightings)
+	h.route("GET /api/settings/intel", admin, h.getIntelSettings)
+	h.route("PUT /api/settings/intel", admin, h.putIntelSettings)
 	h.route("GET /api/rule-repos", viewer, h.listRuleRepos)
 	h.route("POST /api/rule-repos", admin, h.addRuleRepo)
 	h.route("GET /api/rule-repos/{id}", viewer, h.getRuleRepo)
@@ -174,7 +181,10 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 // fail maps an error to a response.
 func (h *Handler) fail(w http.ResponseWriter, err error) {
 	var ve *core.ValidationError
+	var ie *intel.InputError
 	switch {
+	case errors.As(err, &ie):
+		writeErr(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, events.ErrNotFound):
 		writeErr(w, http.StatusNotFound, "not found")
 	case errors.Is(err, store.ErrConflict):

@@ -27,6 +27,11 @@ import type {
   Hunt,
   HuntCreate,
   HuntResultRow,
+  IntelLookupSummary,
+  IntelSettings,
+  IntelSettingsUpdate,
+  IntelSightings,
+  IntelView,
   Integrations,
   Overview,
   ProcessEventCategory,
@@ -167,6 +172,16 @@ export const addRuleRepo = async (s: Partial<RuleRepoSettings> & { url: string }
 export const patchRuleRepo = async (id: string, s: Partial<RuleRepoSettings>) =>
   normalizeRuleRepo(await http.patch<RuleRepo>(`/api/rule-repos/${enc(id)}`, s))
 export const deleteRuleRepo = (id: string) => http.del(`/api/rule-repos/${enc(id)}`)
+
+// Investigate: threat intelligence lookups.
+/** Asks the services about an indicator; `running` is true until they have answered. */
+export const startIntelLookup = (indicator: string, refresh = false) => http.post<IntelView>('/api/intel/lookup', { indicator, refresh })
+export const getIntelLookup = (indicator: string) => http.get<IntelView>('/api/intel/lookup', { indicator })
+export const intelHistory = async (limit = 20) => (await http.get<{ lookups: IntelLookupSummary[] | null }>('/api/intel/history', { limit })).lookups ?? []
+/** Where the indicator appears in stored events. Nothing leaves the server. */
+export const intelSightings = (indicator: string, days: number) => http.get<IntelSightings>('/api/intel/sightings', { indicator, days })
+export const getIntelSettings = () => http.get<IntelSettings>('/api/settings/intel')
+export const putIntelSettings = (u: IntelSettingsUpdate) => http.put<IntelSettings>('/api/settings/intel', u)
 /** Every rule in the installed download (for choosing folders), and the chosen ones that are not loaded. */
 export const ruleRepoFiles = async (id: string) => {
   const res = await http.get<{ files: RuleRepoFile[] | null; skipped: RuleRepoSkip[] | null }>(`/api/rule-repos/${enc(id)}/files`)

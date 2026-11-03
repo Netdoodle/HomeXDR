@@ -2,6 +2,8 @@
 // Leaf values can be clicked to add `field:value` to a search query.
 
 import { useState } from 'react'
+import { Link } from 'react-router'
+import { indicatorInField, investigateHref } from '../lib/intel'
 import { Icon } from './Icon'
 
 export interface FieldTreeProps {
@@ -103,6 +105,11 @@ function Branch({
           <Leaf path={path} value={leafValue} onFilter={onFilter} />
           {onFilter && leafValue !== null && typeof leafValue !== 'object' ? (
             <span className="factions">
+              {indicatorInField(path, leafValue) ? (
+                <Link to={investigateHref(indicatorInField(path, leafValue)!)} title="Investigate this indicator" aria-label={`Investigate ${String(leafValue)}`}>
+                  <Icon name="radar" size={12} />
+                </Link>
+              ) : null}
               <button type="button" onClick={() => onFilter(path, leafValue as string, false)} title="Filter for value">
                 +
               </button>
