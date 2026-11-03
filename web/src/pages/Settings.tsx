@@ -15,6 +15,7 @@ import { agentUrlOptions, buildInstallCommands } from '../lib/install'
 import { ROLE_HELP, ROLE_LABEL } from '../lib/roles'
 import { formatDateTime, formatTimestamp } from '../lib/time'
 import { AgentConfigEditor } from './AgentConfigEditor'
+import { ThreatIntelTab } from './ThreatIntelSettings'
 import { AgentLifecycleTab } from './AgentLifecycle'
 import { AIAnalystTab } from './AISettings'
 
@@ -25,6 +26,7 @@ const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'agents', label: 'Agent updates', icon: 'refresh', admin: true },
   { id: 'integrations', label: 'Integrations', icon: 'network' },
   { id: 'ai', label: 'AI analyst', icon: 'sparkle', admin: true },
+  { id: 'intel', label: 'Threat intel', icon: 'radar', admin: true },
   { id: 'audit', label: 'Audit log', icon: 'clock', admin: true },
   { id: 'account', label: 'My account', icon: 'user' },
 ]
@@ -45,6 +47,7 @@ export function SettingsPage() {
       {tab === 'agents' ? <AgentLifecycleTab /> : null}
       {tab === 'integrations' ? <IntegrationsTab /> : null}
       {tab === 'ai' ? <AIAnalystTab /> : null}
+      {tab === 'intel' ? <ThreatIntelTab /> : null}
       {tab === 'audit' ? <AuditTab /> : null}
       {tab === 'account' ? <AccountTab /> : null}
     </>

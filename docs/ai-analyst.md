@@ -25,6 +25,7 @@ The code is in `server/internal/triage`; the console settings are under
   | `get_host` | Host details, sensors and open alert count |
   | `list_alerts` | Recent alerts, optionally for one host, with earlier AI verdicts |
   | `get_network_flow` | Every event for one flow by Community ID: endpoint, OPNsense and Suricata |
+  | `lookup_indicator` | What threat intelligence services say about a public IP, domain, URL or hash, and where it appears in your events ([details](intel.md)); can be turned off in Settings → Threat intel |
   | `submit_triage` | Records the report and ends the investigation (strict JSON schema) |
 
 - **Untrusted data.** Command lines, file names, DNS names and log messages can be written

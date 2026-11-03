@@ -14,6 +14,7 @@ import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
 import { formatNumber } from '../lib/format'
 import { useDocumentTitle } from '../lib/hooks'
+import { eventIndicators, investigateHref } from '../lib/intel'
 import { hasRole } from '../lib/roles'
 import { ALERT_STATUS_LABEL } from '../lib/severity'
 import { formatDateTime } from '../lib/time'
@@ -230,6 +231,23 @@ function AlertView({ alert: a }: { alert: Alert }) {
         </div>
 
         <div className="stack">
+          {eventIndicators(a.event).length ? (
+            <section className="panel">
+              <div className="panel-header">
+                <h2>Indicators</h2>
+              </div>
+              <div className="panel-body stack" style={{ gap: 6 }}>
+                {eventIndicators(a.event).map((i) => (
+                  <div key={i.value} className="row small" style={{ justifyContent: 'space-between', gap: 10 }}>
+                    <span className="muted nowrap">{i.label}</span>
+                    <Link className="mono truncate-inline" to={investigateHref(i.value)} title={`Investigate ${i.value}`}>
+                      {i.value}
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <section className="panel">
             <div className="panel-header">
               <h2>Host</h2>

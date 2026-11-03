@@ -20,6 +20,7 @@ import { NotFoundPage } from './pages/NotFound'
 import { ProcessTreePage } from './pages/ProcessTree'
 import { RuleDetailPage } from './pages/RuleDetail'
 import { RuleEditorPage } from './pages/RuleEditor'
+import { InvestigatePage } from './pages/Investigate'
 import { RuleReposPage } from './pages/RuleRepos'
 import { RulesPage } from './pages/Rules'
 import { SearchPage } from './pages/Search'
@@ -78,6 +79,7 @@ export function App() {
                 <Route path="hosts/:id" element={<HostDetailPage />} />
                 <Route path="hosts/:id/process/:entityId" element={<ProcessTreePage />} />
                 <Route path="search" element={<SearchPage />} />
+                <Route path="investigate" element={<InvestigatePage />} />
                 <Route path="rules" element={<RulesPage />} />
                 <Route path="rules/new" element={<RuleEditorPage />} />
                 <Route path="rules/repositories" element={<RuleReposPage />} />

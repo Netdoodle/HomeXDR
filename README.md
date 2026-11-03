@@ -11,6 +11,9 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
 - **Process trees, timelines and search** across every host. Search is Splunk-style:
   `field=value` filters piped into `stats`, `timechart`, `top`, `table`, `eval`, `where`,
   `rex` and more, with a histogram, statistics and charts ([docs/search.md](docs/search.md)).
+- **IOC investigation.** Paste an IP, domain, URL or hash to get a score and brief from
+  VirusTotal, AbuseIPDB, abuse.ch, GreyNoise, Shodan and others, next to where it appears in
+  your own events ([docs/intel.md](docs/intel.md)).
 - **Response actions:** kill process trees, isolate hosts, quarantine and fetch files,
   run built-in collection artifacts and fleet-wide hunts.
 - **Network correlation.** Ingests OPNsense `filterlog` and Suricata EVE over syslog and

@@ -28,6 +28,7 @@ import type {
   Severity,
   SigmaStatus,
   User,
+  IntelSettingsUpdate,
 } from '../api/types'
 import { COMMAND_TYPES, SEVERITIES } from '../api/types'
 import { buckets, pickSpan, runPipeline } from '../lib/pipeline'
@@ -52,6 +53,7 @@ import {
   type MockHunt,
 } from './fixtures'
 import { HOUR, hostById, hosts } from './hosts'
+import { getIntelSettings, getLookup, lookupHistory, putIntelSettings, sightings, startLookup } from './intel'
 import { repoFiles, repoSkipped } from './repoFiles'
 import { makeId } from './rng'
 import { detectionNeedles, parseRuleYaml, ruleById, rules } from './rules'
@@ -1356,6 +1358,29 @@ route(
   },
   { role: 'admin' },
 )
+
+// --- threat intelligence -----------------------------------------------------------------------
+
+route(
+  'POST',
+  '/api/intel/lookup',
+  ({ body, user }) => {
+    const b = obj(body)
+    const res = startLookup(String(b.indicator ?? ''), b.refresh === true, user!.username)
+    if ('error' in res) fail(400, res.error)
+    return res
+  },
+  { role: 'analyst' },
+)
+route('GET', '/api/intel/lookup', ({ query }) => getLookup(query.get('indicator') ?? '') ?? fail(404, 'not found'))
+route('GET', '/api/intel/history', () => ({ lookups: lookupHistory() }))
+route(
+  'GET',
+  '/api/intel/sightings',
+  ({ query }) => sightings(query.get('indicator') ?? '', Number(query.get('days') ?? 30), events, alerts) ?? fail(400, 'enter an IP address, domain, URL or file hash'),
+)
+route('GET', '/api/settings/intel', () => getIntelSettings(), { role: 'admin' })
+route('PUT', '/api/settings/intel', ({ body }) => putIntelSettings(obj(body) as unknown as IntelSettingsUpdate), { role: 'admin' })
 
 // --- artifacts and hunts -----------------------------------------------------------------------
 

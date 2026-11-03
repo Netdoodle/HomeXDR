@@ -2396,3 +2396,210 @@ dialog.modal::backdrop {
   flex: none;
   text-align: right;
 }
+
+/* ------------------------------------------------------------------ investigate */
+
+.investigate-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 8px 8px 8px 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+}
+.investigate-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.investigate-search input {
+  min-width: 0;
+  padding: 6px 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font-size: var(--fs-md);
+}
+.intel-summary {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+.intel-verdict {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+.intel-brief {
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.verdict-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.verdict-dot.malicious {
+  background: var(--sev-critical);
+}
+.verdict-dot.suspicious {
+  background: var(--sev-high);
+}
+.verdict-dot.low {
+  background: var(--sev-medium);
+}
+.verdict-dot.clean {
+  background: var(--ok);
+}
+.score-ring {
+  flex: none;
+}
+.score-ring circle {
+  fill: none;
+  stroke-width: 7;
+}
+.score-ring .track {
+  stroke: var(--surface-3);
+}
+.score-ring .value {
+  stroke: var(--text-faint);
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.3s;
+}
+.score-ring.malicious .value {
+  stroke: var(--sev-critical);
+}
+.score-ring.suspicious .value {
+  stroke: var(--sev-high);
+}
+.score-ring.low .value {
+  stroke: var(--sev-medium);
+}
+.score-ring.clean .value {
+  stroke: var(--ok);
+}
+.score-ring .n {
+  fill: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+}
+.score-ring .of {
+  fill: var(--text-muted);
+  font-size: 9px;
+}
+.intel-sight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+.intel-sight-grid .label {
+  margin-bottom: 4px;
+}
+.world-map {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 6px;
+}
+.world-map .land {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 0.7;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+.world-map .pin {
+  fill: var(--accent);
+}
+.world-map .pulse {
+  fill: var(--accent);
+  opacity: 0.25;
+}
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+.source-chip.ok {
+  border-color: var(--ok);
+  color: var(--text);
+}
+.source-chip.needs_key {
+  border-style: dashed;
+}
+.source-chip.quota,
+.source-chip.error {
+  border-color: var(--warn);
+  color: var(--text);
+}
+.intel-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--gap);
+  align-items: start;
+}
+@media (max-width: 480px) {
+  .intel-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .intel-summary {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+.risk-pill {
+  min-width: 28px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.risk-pill.high {
+  box-shadow: inset 0 0 0 1.5px var(--sev-critical);
+}
+.risk-pill.mid {
+  box-shadow: inset 0 0 0 1.5px var(--sev-high);
+}
+.risk-pill.low {
+  box-shadow: inset 0 0 0 1.5px var(--sev-medium);
+}
+.risk-pill.none {
+  box-shadow: inset 0 0 0 1.5px var(--ok);
+}
+.intel-fields {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+.intel-fields > div {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.intel-fields > div:last-child {
+  border-bottom: 0;
+}
+.intel-fields dt {
+  flex: none;
+  color: var(--text-muted);
+}
+.intel-fields dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}

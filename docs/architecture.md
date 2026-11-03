@@ -101,6 +101,10 @@ directive, so modules build independently without a `go.work` file.
   release key pinned there (`update_key`). The key lives on the host that builds the server
   image, outside the server container, so taking over the server does not let anyone push
   binaries to agents. See [protocol.md](protocol.md#agent-updates).
+- **Indicator lookups go out only when asked.** Investigate sends an indicator to threat
+  intelligence services when an analyst or the AI analyst looks it up, and audits it. The
+  indicator itself is never contacted, and private addresses and internal names are never sent.
+  See [intel.md](intel.md).
 - **The agent is visible, not stealthy.** It installs as a normal named service
   (`HomeXDR Agent` / `homexdr-agent.service`), logs what it does, and uninstalls cleanly. It
   does not hide itself or resist removal by the machine's administrator.

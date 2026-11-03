@@ -563,6 +563,133 @@ export interface AlertPatch {
 }
 
 // ---------------------------------------------------------------------------------------
+// Threat intelligence (Investigate)
+
+export type IndicatorKind = 'ip' | 'domain' | 'url' | 'hash'
+export type IntelVerdict = 'malicious' | 'suspicious' | 'low' | 'clean' | 'no_signal' | 'unknown' | 'internal'
+export type IntelState = 'ok' | 'no_data' | 'needs_key' | 'quota' | 'error' | 'pending'
+
+export interface IntelGeo {
+  lat: number
+  lon: number
+  city?: string
+  region?: string
+  country?: string
+  country_code?: string
+  asn?: string
+  org?: string
+  isp?: string
+  timezone?: string
+}
+
+export interface IntelWhois {
+  registrant?: string
+  registrar?: string
+  net_name?: string
+  range?: string
+  created?: string
+  updated?: string
+  expires?: string
+  abuse?: string
+  name_servers?: string[]
+}
+
+export interface IntelResult {
+  source: string
+  name: string
+  state: IntelState
+  message?: string
+  checked_at: string
+  /** 0-100 for sources with a reputation signal; absent for context only. */
+  risk?: number
+  headline?: string
+  fields?: { label: string; value: string }[]
+  tags?: string[]
+  link?: string
+  benign?: boolean
+}
+
+export interface IntelCoverage {
+  checked: number
+  with_data: number
+  no_data: number
+  needs_key: number
+  failed: number
+  pending: number
+}
+
+export interface IntelView {
+  indicator: { value: string; kind: IndicatorKind; hash_type?: string; private: boolean }
+  running: boolean
+  summary: {
+    score?: number
+    verdict: IntelVerdict
+    basis: string
+    brief: string[]
+    geo?: IntelGeo
+    whois?: IntelWhois
+    coverage: IntelCoverage
+  }
+  results: IntelResult[]
+  updated_at?: string
+  updated_by?: string
+  lookups?: number
+}
+
+export interface IntelLookupSummary {
+  indicator: string
+  kind: IndicatorKind
+  score?: number
+  verdict: IntelVerdict
+  first_at: string
+  updated_at: string
+  updated_by: string
+  lookups: number
+}
+
+/** Where an indicator appears in this server's own events. */
+export interface IntelSightings {
+  query: string
+  days: number
+  events: number
+  first?: string
+  last?: string
+  hosts: { id?: string; name: string; count: number; last?: string }[]
+  processes: { name: string; count: number }[]
+  recent: Event[]
+  alerts: Alert[]
+  own_hosts: { id?: string; name: string; count: number }[]
+  note?: string
+}
+
+export interface IntelProvider {
+  id: string
+  name: string
+  about: string
+  key_mode: 'none' | 'optional' | 'required'
+  key_url?: string
+  free?: string
+  kinds: IndicatorKind[]
+  enabled: boolean
+  key_set: boolean
+  key_hint?: string
+}
+
+export interface IntelSettings {
+  providers: IntelProvider[]
+  cache_hours: number
+  ai_access: boolean
+  internal_domains: string[]
+}
+
+export interface IntelSettingsUpdate {
+  providers: Record<string, { enabled?: boolean; key?: string; clear_key?: boolean }>
+  cache_hours?: number
+  ai_access?: boolean
+  internal_domains?: string[]
+}
+
+// ---------------------------------------------------------------------------------------
 // Rules
 
 export type RuleSource = 'builtin' | 'custom' | 'repo'

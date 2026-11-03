@@ -38,10 +38,12 @@ type toolbox struct {
 	ev     events.Store
 	alert  *store.Alert
 	report *Report // set by submit_triage
+	// lookup asks threat intelligence services about an indicator (nil: not offered).
+	lookup func(ctx context.Context, indicator string) (string, error)
 }
 
 func (b *toolbox) tools() []Tool {
-	return []Tool{
+	tools := []Tool{
 		{
 			Name: "search_events",
 			Description: `Search stored telemetry (endpoint agents, OPNsense firewall logs, Suricata IDS alerts, syslog).
@@ -118,6 +120,30 @@ Cite event IDs you saw in tool results as evidence. Recommendations are for the 
 			Run:    b.submit,
 		},
 	}
+	if b.lookup != nil {
+		tools = append(tools, Tool{
+			Name: "lookup_indicator",
+			Description: `Ask threat intelligence services (VirusTotal, AbuseIPDB, abuse.ch, GreyNoise, OTX, Shodan and others) about a public IP address, domain, URL or file hash, and see where it appears in this environment's events over the last 30 days.
+Returns a 0-100 score, a verdict, what each source said and the hosts and processes that touched it. Use it on an indicator that matters to your verdict, not on every value you see. The indicator is sent to those services; private addresses and internal names are not. Answers are cached.
+"no_signal" and "unknown" mean no evidence either way, not that the indicator is safe.`,
+			Properties: map[string]any{
+				"indicator": map[string]any{"type": "string", "description": "An IP address, domain, URL, or MD5, SHA-1 or SHA-256 hash."},
+			},
+			Required: []string{"indicator"},
+			Run:      b.lookupIndicator,
+		})
+	}
+	return tools
+}
+
+func (b *toolbox) lookupIndicator(ctx context.Context, input json.RawMessage) (string, error) {
+	var in struct {
+		Indicator string `json:"indicator"`
+	}
+	if err := json.Unmarshal(input, &in); err != nil {
+		return "", err
+	}
+	return b.lookup(ctx, in.Indicator)
 }
 
 func obj(props map[string]any, required ...string) map[string]any {

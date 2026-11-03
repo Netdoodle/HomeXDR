@@ -81,7 +81,7 @@ func (s *Service) PendingMCP(ctx context.Context) int {
 
 // MCPTools lists the tools offered to MCP clients (Run is unset: use MCPCall).
 func (s *Service) MCPTools() []Tool {
-	box := &toolbox{st: s.st, ev: s.ev}
+	box := &toolbox{st: s.st, ev: s.ev, lookup: s.lookup}
 	var tools []Tool
 	tools = append(tools,
 		Tool{
@@ -137,7 +137,7 @@ func (s *Service) MCPCall(ctx context.Context, c MCPClient, name string, input j
 		if id != "" {
 			alert, _ = s.st.GetAlert(ctx, id)
 		}
-		box := &toolbox{st: s.st, ev: s.ev, alert: alert}
+		box := &toolbox{st: s.st, ev: s.ev, alert: alert, lookup: s.lookup}
 		found := false
 		for _, t := range box.tools() {
 			if t.Name == name && name != "submit_triage" {
