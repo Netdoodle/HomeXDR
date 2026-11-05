@@ -19,6 +19,7 @@ import { ThreatIntelTab } from './ThreatIntelSettings'
 import { AgentLifecycleTab } from './AgentLifecycle'
 import { AIAnalystTab } from './AISettings'
 import { NetFlowPanel } from './NetFlowPanel'
+import { NetworkSettingsTab } from './NetworkSettings'
 
 const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'tokens', label: 'Enrollment', icon: 'key', admin: true },
@@ -26,6 +27,7 @@ const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'agent-config', label: 'Agent config', icon: 'settings' },
   { id: 'agents', label: 'Agent updates', icon: 'refresh', admin: true },
   { id: 'integrations', label: 'Integrations', icon: 'network' },
+  { id: 'network', label: 'Network', icon: 'hosts', admin: true },
   { id: 'ai', label: 'AI analyst', icon: 'sparkle', admin: true },
   { id: 'intel', label: 'Threat intel', icon: 'radar', admin: true },
   { id: 'audit', label: 'Audit log', icon: 'clock', admin: true },
@@ -47,6 +49,7 @@ export function SettingsPage() {
       {tab === 'agent-config' ? <AgentConfigEditor /> : null}
       {tab === 'agents' ? <AgentLifecycleTab /> : null}
       {tab === 'integrations' ? <IntegrationsTab /> : null}
+      {tab === 'network' ? <NetworkSettingsTab /> : null}
       {tab === 'ai' ? <AIAnalystTab /> : null}
       {tab === 'intel' ? <ThreatIntelTab /> : null}
       {tab === 'audit' ? <AuditTab /> : null}

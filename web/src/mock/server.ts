@@ -54,6 +54,7 @@ import {
 } from './fixtures'
 import { HOUR, hostById, hosts } from './hosts'
 import { getIntelSettings, getLookup, lookupHistory, putIntelSettings, sightings, startLookup } from './intel'
+import { networkRoutes } from './network'
 import { repoFiles, repoSkipped } from './repoFiles'
 import { makeId } from './rng'
 import { detectionNeedles, parseRuleYaml, ruleById, rules } from './rules'
@@ -1381,6 +1382,8 @@ route(
 )
 route('GET', '/api/settings/intel', () => getIntelSettings(), { role: 'admin' })
 route('PUT', '/api/settings/intel', ({ body }) => putIntelSettings(obj(body) as unknown as IntelSettingsUpdate), { role: 'admin' })
+
+networkRoutes(route, fail)
 
 // --- artifacts and hunts -----------------------------------------------------------------------
 
