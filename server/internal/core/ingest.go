@@ -107,10 +107,23 @@ func (c *Core) detect(ctx context.Context, e *event.Event) {
 }
 
 func (c *Core) recordAlert(ctx context.Context, in store.AlertInput) {
+	in.Suppression = c.Suppress.Check(ctx, in)
 	a, isNew, err := c.State.RecordAlert(ctx, in)
 	if err != nil {
 		c.Log.Error("record alert", "err", err, "rule", in.Rule.ID)
 		return
+	}
+	if sup := in.Suppression; sup != nil {
+		if err := c.State.RecordSuppressionHit(ctx, sup.ID, sup.Overridden); err != nil {
+			c.Log.Warn("count suppression hit", "err", err, "suppression", sup.ID)
+		}
+		if !sup.Overridden {
+			return // never sent to the AI analyst or notifications
+		}
+		if isNew {
+			c.Log.Warn("suppression overridden: alert kept", "alert", a.ID, "rule", in.Rule.ID, "suppression", sup.ID, "why", sup.Why)
+			c.Audit(ctx, "system", "suppression.override", sup.ID, "alert "+a.ID+" kept: "+sup.Why)
+		}
 	}
 	if isNew {
 		c.Log.Info("alert", "id", a.ID, "rule", in.Rule.Title, "severity", a.Severity, "host", a.Hostname)

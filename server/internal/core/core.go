@@ -41,6 +41,8 @@ type Core struct {
 	Intel *intel.Service
 	// Enrich answers offline questions about domains, addresses and MAC addresses.
 	Enrich enrich.Lookup
+	// Suppress decides whether a hit is suppressed (suppressions.go).
+	Suppress *Suppressor
 }
 
 // New builds a Core and loads rules.
