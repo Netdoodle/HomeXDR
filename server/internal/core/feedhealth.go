@@ -802,7 +802,8 @@ func (f *FeedHealth) SetChoice(ctx context.Context, hostID, module, dataset stri
 func (f *FeedHealth) Run(ctx context.Context) {
 	tick := time.NewTicker(feedTick)
 	defer tick.Stop()
-	nextBoot := time.Time{}
+	booted := false
+	var retryBoot time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -812,12 +813,9 @@ func (f *FeedHealth) Run(ctx context.Context) {
 			return
 		case <-tick.C:
 		}
-		if now := f.now(); now.After(nextBoot) {
-			if !f.Bootstrap(ctx) {
-				nextBoot = now.Add(time.Hour)
-			} else {
-				nextBoot = now.Add(100 * 365 * 24 * time.Hour)
-			}
+		if now := f.now(); !booted && now.After(retryBoot) {
+			booted = f.Bootstrap(ctx)
+			retryBoot = now.Add(time.Hour)
 		}
 		f.Tick(ctx)
 		f.Flush(ctx)

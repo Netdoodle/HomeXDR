@@ -58,6 +58,9 @@ For Unraid hosts, see [deploy/unraid](deploy/unraid/README.md).
 - [Agent protocol](docs/protocol.md)
 - [Console REST API](docs/api.md)
 - [AI analyst](docs/ai-analyst.md)
+- [Data health, doctor and self-check](docs/health.md)
+- [Offline lists](docs/lists.md)
+- [Known-exploited software](docs/vulnerabilities.md)
 
 ## Building from source
 
