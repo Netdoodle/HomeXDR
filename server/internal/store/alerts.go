@@ -16,6 +16,9 @@ const (
 	AlertInProgress    = "in_progress"
 	AlertResolved      = "resolved"
 	AlertFalsePositive = "false_positive"
+	// AlertSuppressed is a hit a suppression closed. It is set only by suppressions, and
+	// hidden from lists and counts unless asked for by name.
+	AlertSuppressed = "suppressed"
 )
 
 // ValidAlertStatus reports whether s is a known alert status.
@@ -102,6 +105,18 @@ type Alert struct {
 	Notes           []Note         `json:"notes"`
 	// AITriage summarizes the AI analyst's investigation, if there is one.
 	AITriage *TriageSummary `json:"ai_triage,omitempty"`
+	// Suppression says which suppression closed this alert or, when Overridden is set,
+	// matched it but was not allowed to close it.
+	Suppression *AlertSuppression `json:"suppression,omitempty"`
+}
+
+// AlertSuppression links an alert to the suppression that closed or matched it.
+type AlertSuppression struct {
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+	// Overridden means the alert was kept because of must-alert; Why says which part.
+	Overridden bool   `json:"overridden,omitempty"`
+	Why        string `json:"why,omitempty"`
 }
 
 // AlertInput describes a detection hit.
@@ -113,6 +128,8 @@ type AlertInput struct {
 	// DedupEntity, when set, identifies what repeats of this alert have in common
 	// instead of the event's process (behavioural and system alerts use it).
 	DedupEntity string
+	// Suppression, when set and not overridden, records the hit as suppressed.
+	Suppression *AlertSuppression
 }
 
 // DedupWindow is how long an open alert keeps absorbing repeat hits.
@@ -183,11 +200,25 @@ func (s *Store) RecordAlert(ctx context.Context, in AlertInput) (*Alert, bool, e
 	}
 	defer tx.Rollback()
 
-	var id, idsJSON string
-	err = tx.QueryRowContext(ctx,
-		`SELECT id, event_ids FROM alerts
+	status, suppression := AlertNew, ""
+	if in.Suppression != nil {
+		suppression = mustJSON(in.Suppression)
+		if !in.Suppression.Overridden {
+			status = AlertSuppressed
+		}
+	}
+	// An open alert absorbs repeats for as long as they keep coming. A suppressed one is
+	// cut off after a day, which leaves one row per shape per day however long it runs.
+	lookup := `SELECT id, event_ids FROM alerts
 		 WHERE dedup_key = ? AND status IN ('new','in_progress') AND last_seen >= ?
-		 ORDER BY last_seen DESC LIMIT 1`, key, ts(now.Add(-DedupWindow))).Scan(&id, &idsJSON)
+		 ORDER BY last_seen DESC LIMIT 1`
+	if status == AlertSuppressed {
+		lookup = `SELECT id, event_ids FROM alerts
+		 WHERE dedup_key = ? AND status = 'suppressed' AND first_seen >= ?
+		 ORDER BY first_seen DESC LIMIT 1`
+	}
+	var id, idsJSON string
+	err = tx.QueryRowContext(ctx, lookup, key, ts(now.Add(-DedupWindow))).Scan(&id, &idsJSON)
 	switch {
 	case err == nil:
 		var ids []string
@@ -196,8 +227,9 @@ func (s *Store) RecordAlert(ctx context.Context, in AlertInput) (*Alert, bool, e
 			ids = append(ids, ev.ID)
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE alerts SET count = count + 1, last_seen = MAX(last_seen, ?), event_ids = ?, updated_at = ? WHERE id = ?`,
-			ts(at), mustJSON(ids), ts(now), id); err != nil {
+			`UPDATE alerts SET count = count + 1, last_seen = MAX(last_seen, ?), event_ids = ?, updated_at = ?,
+			   suppression = CASE WHEN ? = '' THEN suppression ELSE ? END WHERE id = ?`,
+			ts(at), mustJSON(ids), ts(now), suppression, suppression, id); err != nil {
 			return nil, false, err
 		}
 		if err := tx.Commit(); err != nil {
@@ -219,11 +251,11 @@ func (s *Store) RecordAlert(ctx context.Context, in AlertInput) (*Alert, bool, e
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO alerts(id, dedup_key, rule_id, rule, mitre, severity, risk_score, status, host_id, hostname,
 		   process_entity_id, process_name, command_line, user_name, first_seen, last_seen, count, event_ids, event,
-		   created_at, updated_at)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)`,
-		id, key, in.Rule.ID, mustJSON(in.Rule), mustJSON(in.Mitre), in.Severity, RiskScore(in.Severity), AlertNew,
+		   created_at, updated_at, suppression)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)`,
+		id, key, in.Rule.ID, mustJSON(in.Rule), mustJSON(in.Mitre), in.Severity, RiskScore(in.Severity), status,
 		ev.Host.ID, ev.Host.Name, entity, pname, truncate(cmdline, 4096), user, ts(at), ts(at),
-		mustJSON([]string{ev.ID}), mustJSON(ev), ts(now), ts(now)); err != nil {
+		mustJSON([]string{ev.ID}), mustJSON(ev), ts(now), ts(now), suppression); err != nil {
 		return nil, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -235,14 +267,14 @@ func (s *Store) RecordAlert(ctx context.Context, in AlertInput) (*Alert, bool, e
 
 const alertCols = `id, created_at, updated_at, first_seen, last_seen, count, status, severity, risk_score,
 	assignee, rule, mitre, host_id, hostname, process_entity_id, process_name, command_line, user_name,
-	event_ids, event, notes`
+	event_ids, event, notes, suppression`
 
 func scanAlert(row interface{ Scan(...any) error }) (*Alert, error) {
 	var a Alert
-	var created, updated, first, last, rule, mitre, ids, ev, notes string
+	var created, updated, first, last, rule, mitre, ids, ev, notes, suppression string
 	if err := row.Scan(&a.ID, &created, &updated, &first, &last, &a.Count, &a.Status, &a.Severity, &a.RiskScore,
 		&a.Assignee, &rule, &mitre, &a.HostID, &a.Hostname, &a.ProcessEntityID, &a.ProcessName, &a.CommandLine,
-		&a.User, &ids, &ev, &notes); err != nil {
+		&a.User, &ids, &ev, &notes, &suppression); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -254,6 +286,10 @@ func scanAlert(row interface{ Scan(...any) error }) (*Alert, error) {
 	unmarshalJSON(mitre, &a.Mitre)
 	unmarshalJSON(ids, &a.EventIDs)
 	unmarshalJSON(notes, &a.Notes)
+	if suppression != "" {
+		a.Suppression = &AlertSuppression{}
+		unmarshalJSON(suppression, a.Suppression)
+	}
 	if ev != "" {
 		a.Event = &event.Event{}
 		unmarshalJSON(ev, a.Event)
@@ -297,6 +333,7 @@ type AlertFilter struct {
 }
 
 // ListAlerts returns alerts newest-last_seen first, and the total matching count.
+// Suppressed alerts are included only when Statuses names them.
 func (s *Store) ListAlerts(ctx context.Context, f AlertFilter) ([]*Alert, int, error) {
 	where := ` WHERE 1=1`
 	var args []any
@@ -305,6 +342,8 @@ func (s *Store) ListAlerts(ctx context.Context, f AlertFilter) ([]*Alert, int, e
 		for _, v := range f.Statuses {
 			args = append(args, v)
 		}
+	} else {
+		where += ` AND status != 'suppressed'`
 	}
 	if len(f.Severities) > 0 {
 		where += ` AND severity IN (` + placeholders(len(f.Severities)) + `)`
@@ -474,7 +513,7 @@ type TimeCount struct {
 // AlertTimeline returns hourly counts of alerts first seen since `since`.
 func (s *Store) AlertTimeline(ctx context.Context, since time.Time) ([]TimeCount, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT substr(first_seen, 1, 13), COUNT(*) FROM alerts WHERE first_seen >= ? GROUP BY 1 ORDER BY 1`, ts(since))
+		`SELECT substr(first_seen, 1, 13), COUNT(*) FROM alerts WHERE first_seen >= ? AND status != 'suppressed' GROUP BY 1 ORDER BY 1`, ts(since))
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +546,7 @@ type RuleCount struct {
 func (s *Store) TopRules(ctx context.Context, since time.Time, limit int) ([]RuleCount, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT rule_id, json_extract(rule, '$.title'), severity, SUM(count) AS n FROM alerts
-		 WHERE last_seen >= ? GROUP BY rule_id ORDER BY n DESC LIMIT ?`, ts(since), limit)
+		 WHERE last_seen >= ? AND status != 'suppressed' GROUP BY rule_id ORDER BY n DESC LIMIT ?`, ts(since), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -535,7 +574,7 @@ type HostCount struct {
 // TopHosts returns the hosts with the most alerts since `since`.
 func (s *Store) TopHosts(ctx context.Context, since time.Time, limit int) ([]HostCount, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT host_id, MAX(hostname), COUNT(*) AS n FROM alerts WHERE last_seen >= ?
+		`SELECT host_id, MAX(hostname), COUNT(*) AS n FROM alerts WHERE last_seen >= ? AND status != 'suppressed'
 		 GROUP BY host_id ORDER BY n DESC LIMIT ?`, ts(since), limit)
 	if err != nil {
 		return nil, err
@@ -555,7 +594,7 @@ func (s *Store) TopHosts(ctx context.Context, since time.Time, limit int) ([]Hos
 // RuleHits returns SUM(count) per rule for alerts seen since `since`.
 func (s *Store) RuleHits(ctx context.Context, since time.Time) (map[string]int, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT rule_id, SUM(count) FROM alerts WHERE last_seen >= ? GROUP BY rule_id`, ts(since))
+		`SELECT rule_id, SUM(count) FROM alerts WHERE last_seen >= ? AND status != 'suppressed' GROUP BY rule_id`, ts(since))
 	if err != nil {
 		return nil, err
 	}
@@ -583,7 +622,7 @@ func (s *Store) AlertCountsByEntity(ctx context.Context, entityIDs []string) (ma
 		args[i] = v
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT process_entity_id, COUNT(*) FROM alerts WHERE process_entity_id IN (`+placeholders(len(entityIDs))+`)
+		`SELECT process_entity_id, COUNT(*) FROM alerts WHERE status != 'suppressed' AND process_entity_id IN (`+placeholders(len(entityIDs))+`)
 		 GROUP BY process_entity_id`, args...)
 	if err != nil {
 		return nil, err

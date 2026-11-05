@@ -33,6 +33,10 @@ func Open(path string) (*Store, error) {
 	q.Add("_pragma", "journal_mode(WAL)")
 	q.Add("_pragma", "foreign_keys(1)")
 	q.Add("_pragma", "synchronous(NORMAL)")
+	// Take the write lock when a transaction starts. A transaction that reads first and
+	// then writes would otherwise fail at once, without waiting, if another process (the
+	// suppress-apply command) had written in between.
+	q.Add("_txlock", "immediate")
 	db, err := sql.Open("sqlite", "file:"+path+"?"+q.Encode())
 	if err != nil {
 		return nil, err
