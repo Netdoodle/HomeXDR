@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,7 +75,7 @@ func startType(unitFileState string) string {
 func collectServices(ctx context.Context, _ map[string]string, emit func(platform.Row) error) error {
 	sc, err := exec.LookPath("systemctl")
 	if err != nil || !systemdRunning() {
-		return collectInitd(emit)
+		return collectNoSystemd(initdDir, slackwareRC, pidDir, emit)
 	}
 	// Unit files (installed services, including ones not loaded right now).
 	files := map[string]string{}
@@ -139,21 +140,96 @@ func collectServices(ctx context.Context, _ map[string]string, emit func(platfor
 	return nil
 }
 
-func collectInitd(emit func(platform.Row) error) error {
-	ents, err := os.ReadDir("/etc/init.d")
-	if err != nil {
+var (
+	initdDir    = "/etc/init.d"
+	slackwareRC = "/etc/rc.d"
+	pidDir      = "/var/run"
+)
+
+// errNoServiceManager is what services.list reports on a system with no service manager
+// it can read, so the inventory sensor shows a reason instead of quietly sending nothing.
+var errNoServiceManager = errors.New("no systemd, /etc/init.d or Slackware /etc/rc.d services found")
+
+// collectNoSystemd lists services without systemd: /etc/init.d scripts, or Slackware's
+// /etc/rc.d/rc.* scripts, where the executable bit means enabled. Neither says whether a
+// service is running, so state is "running" only when a pid file proves it, else "unknown".
+func collectNoSystemd(initd, rc, pids string, emit func(platform.Row) error) error {
+	if ents, err := os.ReadDir(initd); err == nil {
+		for _, e := range ents {
+			if e.IsDir() || strings.HasPrefix(e.Name(), ".") || e.Name() == "README" {
+				continue
+			}
+			row := platform.Row{
+				"name": e.Name(), "path": filepath.Join(initd, e.Name()), "start_type": "",
+				"state": serviceState(pids, e.Name()), "account": "root",
+			}
+			if err := emit(row); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
+	ents, err := os.ReadDir(rc)
+	if err != nil {
+		return errNoServiceManager
+	}
+	found := false
 	for _, e := range ents {
-		if e.IsDir() || strings.HasPrefix(e.Name(), ".") || e.Name() == "README" {
+		name, ok := slackwareServiceName(e.Name())
+		if !ok || e.IsDir() {
 			continue
 		}
-		p := filepath.Join("/etc/init.d", e.Name())
-		if err := emit(platform.Row{"name": e.Name(), "path": p, "start_type": "", "state": "", "account": "root"}); err != nil {
+		found = true
+		p := filepath.Join(rc, e.Name())
+		start := "disabled"
+		if fi, err := os.Stat(p); err == nil && fi.Mode()&0o111 != 0 {
+			start = "auto"
+		}
+		row := platform.Row{"name": name, "path": p, "start_type": start, "state": serviceState(pids, name), "account": "root"}
+		if err := emit(row); err != nil {
 			return err
 		}
 	}
+	if !found {
+		return errNoServiceManager
+	}
 	return nil
+}
+
+// slackwareServiceName returns the service an rc.d script manages, leaving out the boot
+// sequence itself (rc.S, rc.M, rc.0), settings files and local hooks.
+func slackwareServiceName(file string) (string, bool) {
+	name, ok := strings.CutPrefix(file, "rc.")
+	if !ok || len(name) < 2 {
+		return "", false
+	}
+	switch name {
+	case "S.cont", "4.local", "local", "local_shutdown", "library.source", "modules.local":
+		return "", false
+	}
+	if strings.HasSuffix(name, ".conf") || strings.HasSuffix(name, ".new") || strings.HasSuffix(name, ".orig") {
+		return "", false
+	}
+	return name, true
+}
+
+// serviceState reports "running" when a <name>.pid file names a live process, else
+// "unknown": many services keep no pid file, so a missing one does not mean stopped.
+func serviceState(pids, name string) string {
+	for _, n := range []string{name, name + "d", strings.TrimSuffix(name, "d")} {
+		b, err := os.ReadFile(filepath.Join(pids, n+".pid"))
+		if err != nil {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+		if err != nil || pid <= 0 {
+			continue
+		}
+		if _, err := os.Stat("/proc/" + strconv.Itoa(pid)); err == nil {
+			return "running"
+		}
+	}
+	return "unknown"
 }
 
 func systemdRunning() bool {
