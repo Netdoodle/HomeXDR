@@ -76,3 +76,48 @@ func TestDevicesAPI(t *testing.T) {
 		t.Fatalf("put settings = %d %v", code, body)
 	}
 }
+
+func TestBehaviorAPI(t *testing.T) {
+	_, srv := setup(t)
+	admin := newClient(t, srv)
+	if code, _ := admin.do("POST", "/api/setup", map[string]string{"username": "admin", "password": "a long enough password"}, true); code != 200 {
+		t.Fatalf("setup = %d", code)
+	}
+	if code, _ := admin.do("POST", "/api/users", map[string]string{"username": "vic", "password": "viewer password!", "role": "viewer"}, true); code != 201 {
+		t.Fatalf("create viewer = %d", code)
+	}
+	viewer := newClient(t, srv)
+	if code, _ := viewer.do("POST", "/api/auth/login", map[string]string{"username": "vic", "password": "viewer password!"}, true); code != 200 {
+		t.Fatalf("login = %d", code)
+	}
+	code, body := viewer.do("GET", "/api/behavior/status", nil, false)
+	if code != 200 {
+		t.Fatalf("status = %d", code)
+	}
+	list := body["detectors"].([]any)
+	if len(list) != 8 {
+		t.Fatalf("%d detectors", len(list))
+	}
+	first := list[0].(map[string]any)
+	if first["id"] != "beaconing" || first["status"] != "pending" || first["enabled"] != true || first["last_finding_count"] != float64(0) {
+		t.Fatalf("status %v", first)
+	}
+	if code, _ := viewer.do("GET", "/api/settings/behavior", nil, false); code != http.StatusForbidden {
+		t.Fatalf("viewer settings = %d", code)
+	}
+	code, body = admin.do("GET", "/api/settings/behavior", nil, false)
+	if code != 200 || body["detectors"].([]any)[0].(map[string]any)["values"].(map[string]any)["max_cv"] != 0.15 {
+		t.Fatalf("settings = %d %v", code, body)
+	}
+	code, body = admin.do("PUT", "/api/settings/behavior", map[string]any{"detectors": map[string]any{"beaconing": map[string]any{"values": map[string]any{"max_cv": 9}}}}, true)
+	if code != 400 || body["error"] == nil {
+		t.Fatalf("bad settings = %d %v", code, body)
+	}
+	code, body = admin.do("PUT", "/api/settings/behavior", map[string]any{"detectors": map[string]any{"beaconing": map[string]any{"enabled": false, "values": map[string]any{"max_cv": 0.1}}}}, true)
+	if code != 200 || body["detectors"].([]any)[0].(map[string]any)["enabled"] != false {
+		t.Fatalf("put settings = %d %v", code, body)
+	}
+	if _, body = viewer.do("GET", "/api/behavior/status", nil, false); body["detectors"].([]any)[0].(map[string]any)["status"] != "disabled" {
+		t.Fatalf("after disabling %v", body)
+	}
+}

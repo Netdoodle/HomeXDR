@@ -38,6 +38,9 @@ type Store interface {
 	EntityCounts(ctx context.Context, hostID string, entityIDs []string) (map[string]map[string]int64, error)
 	// Stats returns counts for the dashboard.
 	Stats(ctx context.Context, from, to time.Time) (*Stats, error)
+	// ConnTimes returns the times of connections from private addresses to the internet,
+	// per source, destination and port, for detectors that measure gaps between them.
+	ConnTimes(ctx context.Context, q ConnTimesQuery) ([]ConnSeries, error)
 	// Scan calls fn for stored events in [from, to), newest first, until fn returns false
 	// or limit events were visited.
 	Scan(ctx context.Context, from, to time.Time, limit int, fn func(*event.Event) bool) error

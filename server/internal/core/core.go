@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Netdoodle/homexdr/server/internal/behavior"
 	"github.com/Netdoodle/homexdr/server/internal/config"
 	"github.com/Netdoodle/homexdr/server/internal/detect"
 	"github.com/Netdoodle/homexdr/server/internal/enrich"
@@ -45,6 +46,8 @@ type Core struct {
 	Flow *FlowStats
 	// Inventory keeps track of the devices on the home network (inventory.go).
 	Inventory *Inventory
+	// Behavior runs the behaviour detectors (feature_network.go).
+	Behavior *behavior.Runner
 }
 
 // New builds a Core and loads rules.

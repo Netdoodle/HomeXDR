@@ -1,10 +1,12 @@
 package console
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/Netdoodle/homexdr/server/internal/behavior"
 	"github.com/Netdoodle/homexdr/server/internal/core"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 )
@@ -15,6 +17,9 @@ func (h *Handler) routesNetwork(viewer, analyst, admin string) {
 	h.route("PATCH /api/devices/{id}", analyst, h.patchDevice)
 	h.route("GET /api/settings/network", admin, h.getNetworkSettings)
 	h.route("PUT /api/settings/network", admin, h.putNetworkSettings)
+	h.route("GET /api/behavior/status", viewer, h.behaviorStatus)
+	h.route("GET /api/settings/behavior", admin, h.getBehaviorSettings)
+	h.route("PUT /api/settings/behavior", admin, h.putBehaviorSettings)
 }
 
 // netflowStats is the NetFlow section of the integrations page.
@@ -89,4 +94,30 @@ func (h *Handler) putNetworkSettings(w http.ResponseWriter, r *http.Request, u *
 	}
 	h.c.Audit(r.Context(), u.Username, "settings.network", "", "")
 	writeJSON(w, http.StatusOK, h.networkSettingsView())
+}
+
+func (h *Handler) behaviorStatus(w http.ResponseWriter, r *http.Request, _ *store.User) {
+	writeJSON(w, http.StatusOK, map[string]any{"detectors": h.c.Behavior.Statuses()})
+}
+
+func (h *Handler) getBehaviorSettings(w http.ResponseWriter, r *http.Request, _ *store.User) {
+	writeJSON(w, http.StatusOK, map[string]any{"detectors": h.c.Behavior.DetectorViews()})
+}
+
+func (h *Handler) putBehaviorSettings(w http.ResponseWriter, r *http.Request, u *store.User) {
+	var req behavior.Settings
+	if !decode(w, r, &req) {
+		return
+	}
+	if err := h.c.Behavior.SetSettings(r.Context(), req); err != nil {
+		var ie *behavior.InputError
+		if errors.As(err, &ie) {
+			writeErr(w, http.StatusBadRequest, ie.Msg)
+			return
+		}
+		h.fail(w, err)
+		return
+	}
+	h.c.Audit(r.Context(), u.Username, "settings.behavior", "", "")
+	writeJSON(w, http.StatusOK, map[string]any{"detectors": h.c.Behavior.DetectorViews()})
 }
