@@ -56,6 +56,7 @@ import { HOUR, hostById, hosts } from './hosts'
 import { getIntelSettings, getLookup, lookupHistory, putIntelSettings, sightings, startLookup } from './intel'
 import { repoFiles, repoSkipped } from './repoFiles'
 import { registerNoiseMocks, reusedTriage } from './noise'
+import { registerNotificationMocks } from './notifications'
 import { makeId } from './rng'
 import { detectionNeedles, parseRuleYaml, ruleById, rules } from './rules'
 import { isArchiveUrl } from '../lib/ruleRepos'
@@ -849,6 +850,7 @@ function alertMatches(a: Alert, q: string) {
 }
 
 registerNoiseMocks({ route, fail, obj, logAudit, noContent: NO_CONTENT })
+registerNotificationMocks({ route, fail, obj, logAudit, noContent: NO_CONTENT })
 
 route('GET', '/api/alerts', ({ query }) => {
   const status = list(query, 'status')
