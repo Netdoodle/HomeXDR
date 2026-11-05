@@ -894,6 +894,10 @@ a.stat:hover {
   border-color: color-mix(in srgb, var(--ok) 70%, transparent);
   background: var(--ok-soft);
 }
+.badge.status.suppressed {
+  color: var(--text-muted);
+  border-style: dashed;
+}
 .badge.status.false_positive {
   color: var(--text-muted);
 }

@@ -141,6 +141,17 @@ function ReportView({ triage: t }: { triage: AITriage }) {
   const r = t.report!
   return (
     <div className="stack" style={{ gap: 14 }}>
+      {t.trigger === 'reused' ? (
+        <div className="callout info">
+          <Icon name="info" size={14} />
+          <div>
+            <strong>Reused verdict.</strong> The AI did not look at this alert. This is its report on{' '}
+            {t.reused_from_alert ? <Link to={`/alerts/${encodeURIComponent(t.reused_from_alert)}`}>an earlier alert</Link> : 'an earlier alert'} with the same
+            rule, host and process{t.reused_from_at ? `, from ${formatDateTime(t.reused_from_at)}` : ''}. It cost no AI call and does not count against the
+            daily limit. Use Investigate again for a fresh look.
+          </div>
+        </div>
+      ) : null}
       <p className="ai-text" style={{ fontWeight: 600 }}>
         {r.summary}
       </p>
@@ -218,7 +229,7 @@ function ReportView({ triage: t }: { triage: AITriage }) {
       <p className="xsmall faint" style={{ margin: 0 }}>
         {t.model ? `Written by ${t.model}` : 'Written by the AI analyst'}
         {t.engine === 'mcp' ? ' through MCP' : ''}
-        {t.finished_at ? ` on ${formatDateTime(t.finished_at)}` : ''} · {t.trigger === 'manual' ? `requested by ${t.requested_by}` : 'automatic'} ·{' '}
+        {t.finished_at ? ` on ${formatDateTime(t.finished_at)}` : ''} · {t.trigger === 'manual' ? `requested by ${t.requested_by}` : t.trigger === 'reused' ? 'reused' : 'automatic'} ·{' '}
         {t.engine === 'mcp'
           ? `${t.tool_calls} tool calls, on the client's own subscription.`
           : `${formatTokens(t.usage.input_tokens + t.usage.cache_read_tokens)} tokens in, ${formatTokens(t.usage.output_tokens)} out.`}{' '}

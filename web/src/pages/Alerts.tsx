@@ -6,6 +6,7 @@ import { useCan, useUser } from '../components/Auth'
 import { AIVerdictBadge } from '../components/AITriage'
 import { AlertStatusBadge, MitreTag, SeverityBadge } from '../components/Badges'
 import { Icon } from '../components/Icon'
+import { TopRepeatingPanel } from '../components/TopRepeating'
 import { PageHeader } from '../components/Layout'
 import { Pager, RelTime } from '../components/Misc'
 import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
@@ -103,6 +104,7 @@ export function AlertsPage() {
           alertsQ.isFetching && !alertsQ.isPending ? <Spinner small /> : null
         }
       />
+      <TopRepeatingPanel />
       <div className="filters">
         <input
           type="search"
@@ -113,7 +115,7 @@ export function AlertsPage() {
           aria-label="Filter alerts"
         />
         <div className="chips" role="group" aria-label="Status">
-          {ALERT_STATUSES.map((s) => (
+          {[...ALERT_STATUSES, 'suppressed' as const].map((s) => (
             <button key={s} type="button" className="chip" aria-pressed={statuses.includes(s)} onClick={() => setStatuses(toggleIn(statuses, s))}>
               {ALERT_STATUS_LABEL[s]}
             </button>
@@ -189,7 +191,7 @@ export function AlertsPage() {
           <ErrorState error={alertsQ.error} onRetry={() => alertsQ.refetch()} />
         ) : alertsQ.data.alerts.length === 0 ? (
           <EmptyState title="No alerts match these filters">
-            {statusParam ? 'Try including more statuses.' : 'No open alerts. Resolved and false-positive alerts are hidden by default.'}
+            {statusParam ? 'Try including more statuses.' : 'No open alerts. Resolved, false-positive and suppressed alerts are hidden by default.'}
           </EmptyState>
         ) : (
           <>

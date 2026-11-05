@@ -55,6 +55,7 @@ import {
 import { HOUR, hostById, hosts } from './hosts'
 import { getIntelSettings, getLookup, lookupHistory, putIntelSettings, sightings, startLookup } from './intel'
 import { repoFiles, repoSkipped } from './repoFiles'
+import { registerNoiseMocks, reusedTriage } from './noise'
 import { makeId } from './rng'
 import { detectionNeedles, parseRuleYaml, ruleById, rules } from './rules'
 import { isArchiveUrl } from '../lib/ruleRepos'
@@ -847,6 +848,8 @@ function alertMatches(a: Alert, q: string) {
     .every((w) => hay.includes(w))
 }
 
+registerNoiseMocks({ route, fail, obj, logAudit, noContent: NO_CONTENT })
+
 route('GET', '/api/alerts', ({ query }) => {
   const status = list(query, 'status')
   const sev = list(query, 'severity')
@@ -855,7 +858,7 @@ route('GET', '/api/alerts', ({ query }) => {
   const q = query.get('q') ?? ''
   const out = alerts.filter(
     (a) =>
-      (!status.length || status.includes(a.status)) &&
+      (status.length ? status.includes(a.status) : a.status !== 'suppressed') &&
       (!sev.length || sev.includes(a.severity)) &&
       (!hostId || a.host_id === hostId) &&
       (!ruleId || a.rule.id === ruleId) &&
@@ -1589,6 +1592,7 @@ if (alerts[0]) {
   const t: AITriage = { alert_id: alerts[0].id, status: 'done', trigger: 'auto', tool_calls: 0, usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, created_at: new Date().toISOString() }
   triages[alerts[0].id] = t
   finishTriage(alerts[0], t)
+  if (alerts[3]) triages[alerts[3].id] = reusedTriage(alerts[3], alerts[0])
 }
 
 route('GET', '/api/alerts/:id/triage', ({ params }) => {
