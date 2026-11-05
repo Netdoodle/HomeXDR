@@ -45,3 +45,80 @@ export const healthKeys = {
 
 export const getFeeds = () => http.get<FeedReport>('/api/health/feeds')
 export const patchFeed = (p: FeedPatch) => http.patch<FeedReport>('/api/health/feeds', p)
+
+export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip'
+
+export interface CheckResult {
+  id: string
+  name: string
+  status: CheckStatus
+  message: string
+  fix?: string
+}
+
+export interface DoctorReport {
+  at: string
+  ok: number
+  warn: number
+  fail: number
+  results: CheckResult[]
+}
+
+export interface SelfCheckFailure {
+  rule_id: string
+  title: string
+  reason: string
+}
+
+export interface FieldCount {
+  field: string
+  rules: number
+}
+
+export interface CoverageGroup {
+  logsource: string
+  rules: number
+  can_fire: number
+  no_events: number
+  missing_field: number
+  missing?: FieldCount[]
+}
+
+export interface SelfCheckCoverage {
+  days: number
+  events: number
+  sources: number
+  rules: number
+  can_fire: number
+  cannot_fire: number
+  groups: CoverageGroup[]
+  missing: FieldCount[]
+  note?: string
+}
+
+export interface SelfCheckResult {
+  at: string
+  took_ms: number
+  rules: number
+  fired: number
+  rate: number
+  failed: number
+  failures: SelfCheckFailure[]
+  pipeline: { passed: boolean; message: string }
+  coverage?: SelfCheckCoverage
+  previous?: { at: string; rules: number; fired: number; rate: number; cannot_fire: number; pipeline: boolean }
+  regression: boolean
+  reason?: string
+}
+
+export interface SelfCheckState {
+  running: boolean
+  last?: SelfCheckResult
+}
+
+export const doctorKey = ['health', 'doctor'] as const
+export const selfCheckKey = ['health', 'selfcheck'] as const
+
+export const getDoctor = (refresh = false) => http.get<DoctorReport>('/api/doctor', refresh ? { refresh: 1 } : undefined)
+export const getSelfCheck = () => http.get<SelfCheckState>('/api/selfcheck')
+export const startSelfCheck = () => http.post<SelfCheckState>('/api/selfcheck')

@@ -12,8 +12,13 @@ import { useToast } from '../components/Toast'
 import { FEED_STATUS_BADGE, FEED_STATUS_LABEL, feedName, formatGap, sortFeeds } from '../lib/health'
 import { useDocumentTitle } from '../lib/hooks'
 import { formatDateTime } from '../lib/time'
+import { DoctorTab, SelfCheckTab } from './HealthChecks'
 
-const ALL_TABS: (TabDef & { admin?: boolean })[] = [{ id: 'sources', label: 'Data sources', icon: 'pulse' }]
+const ALL_TABS: (TabDef & { admin?: boolean })[] = [
+  { id: 'sources', label: 'Data sources', icon: 'pulse' },
+  { id: 'doctor', label: 'Doctor', icon: 'settings', admin: true },
+  { id: 'selfcheck', label: 'Self-check', icon: 'rules', admin: true },
+]
 
 export function HealthPage() {
   useDocumentTitle('Data health')
@@ -26,6 +31,8 @@ export function HealthPage() {
       <PageHeader title="Data health" subtitle="Is everything still sending data, and can your rules actually fire on it?" />
       <LinkTabs tabs={tabs} active={tab} href={(id) => `/health/${id}`} />
       {tab === 'sources' ? <SourcesTab /> : null}
+      {tab === 'doctor' ? <DoctorTab /> : null}
+      {tab === 'selfcheck' ? <SelfCheckTab /> : null}
     </>
   )
 }

@@ -535,6 +535,31 @@ homexdr-agent.exe install --server https://<server>:8443 --token <token> --ca-pi
 `PATCH /api/health/feeds` (admin), body `{host_id, module, dataset, muted?, expected?}`, sets your
 choice for one source and returns the same report. Audited.
 
+`GET /api/doctor` (admin) runs the doctor's checks, reusing a report from the last 30 seconds unless
+`?refresh=1`.
+
+```ts
+{ at: string; ok: number; warn: number; fail: number;
+  results: { id: string; name: string; status: "ok" | "warn" | "fail" | "skip"; message: string; fix?: string }[] }
+```
+
+`GET /api/selfcheck` (admin) → `{running: boolean, last?: SelfCheckResult}`. `POST /api/selfcheck`
+(admin) starts a run in the background and answers `202` with the same shape. Audited.
+
+```ts
+type SelfCheckResult = {
+  at: string; took_ms: number; rules: number; fired: number; rate: number; failed: number;
+  failures: { rule_id: string; title: string; reason: string }[];   // first 200
+  pipeline: { passed: boolean; message: string };
+  coverage?: { days: number; events: number; sources: number; rules: number; can_fire: number; cannot_fire: number;
+    groups: { logsource: string; rules: number; can_fire: number; no_events: number; missing_field: number;
+              missing?: { field: string; rules: number }[] }[];
+    missing: { field: string; rules: number }[]; note?: string };
+  previous?: { at: string; rules: number; fired: number; rate: number; cannot_fire: number; pipeline: boolean };
+  regression: boolean; reason?: string;
+}
+```
+
 ## Health
 
 `GET /healthz` (no auth) → `{"status": "ok", "event_store": "ok" | "error: ..."}`.
