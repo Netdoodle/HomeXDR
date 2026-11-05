@@ -12,6 +12,7 @@ import (
 // condNode is a compiled Sigma condition.
 type condNode interface {
 	eval(d *Doc) bool
+	alts(s *synth, want bool) []alt // ways to make it true or false (synth.go)
 }
 
 type andCond []condNode

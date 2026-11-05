@@ -64,6 +64,9 @@ For Unraid hosts, see [deploy/unraid](deploy/unraid/README.md).
 - [Alert grouping and suppressions](docs/alerts.md)
 - [Notifications and the daily digest](docs/notifications.md)
 - [Network visibility](docs/network-visibility.md), [device inventory](docs/devices.md) and [behaviour detection](docs/behavior.md)
+- [Data health, doctor and self-check](docs/health.md)
+- [Offline lists](docs/lists.md)
+- [Known-exploited software](docs/vulnerabilities.md)
 
 ## Building from source
 

@@ -55,6 +55,10 @@ import {
 import { HOUR, hostById, hosts } from './hosts'
 import { getIntelSettings, getLookup, lookupHistory, putIntelSettings, sightings, startLookup } from './intel'
 import { networkRoutes } from './network'
+import { registerHealthMocks } from './health'
+import { registerHealthCheckMocks } from './healthChecks'
+import { registerListMocks } from './lists'
+import { registerVulnMocks } from './vuln'
 import { repoFiles, repoSkipped } from './repoFiles'
 import { registerNoiseMocks, reusedTriage } from './noise'
 import { registerNotificationMocks } from './notifications'
@@ -1816,3 +1820,7 @@ route(
 route('GET', '/api/audit', ({ query }) => ({ entries: page(audit, query), total: audit.length }), { role: 'admin' })
 
 route('GET', '/api/integrations', () => integrations)
+registerHealthMocks(route)
+registerHealthCheckMocks(route)
+registerListMocks(route)
+registerVulnMocks(route)

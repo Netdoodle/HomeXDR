@@ -232,6 +232,7 @@ func (r *Rule) compile() error {
 // matcher evaluates a search identifier.
 type matcher interface {
 	match(d *Doc) bool
+	alts(s *synth, want bool) []alt // ways to make it match or not (synth.go)
 }
 
 type allOf []matcher
@@ -312,7 +313,8 @@ type fieldMatcher struct {
 	field    string
 	matchAll bool // "all" modifier: every value matcher must match
 	vals     []valueMatcher
-	exists   *bool // exists modifier or null value
+	samples  []string // a value each matcher accepts (synth.go)
+	exists   *bool    // exists modifier or null value
 }
 
 func (f *fieldMatcher) match(d *Doc) bool {
@@ -508,11 +510,12 @@ func compileField(key string, n *yaml.Node) (matcher, error) {
 			continue
 		}
 		val := rn.Value
-		vms, err := buildValueMatchers(val, op, cased, reFlags, encode, windash)
+		vms, samples, err := buildValueMatchers(val, op, cased, reFlags, encode, windash)
 		if err != nil {
 			return nil, err
 		}
 		fm.vals = append(fm.vals, vms...)
+		fm.samples = append(fm.samples, samples...)
 	}
 	if fm.exists != nil && len(fm.vals) > 0 {
 		// "field: [null, x]" means absent OR x.
@@ -524,7 +527,7 @@ func compileField(key string, n *yaml.Node) (matcher, error) {
 	return fm, nil
 }
 
-func buildValueMatchers(val, op string, cased bool, reFlags string, encode []string, windash bool) ([]valueMatcher, error) {
+func buildValueMatchers(val, op string, cased bool, reFlags string, encode []string, windash bool) ([]valueMatcher, []string, error) {
 	switch op {
 	case "re":
 		expr := val
@@ -533,22 +536,22 @@ func buildValueMatchers(val, op string, cased bool, reFlags string, encode []str
 		}
 		re, err := regexp.Compile(expr)
 		if err != nil {
-			return nil, fmt.Errorf("bad regex: %w", err)
+			return nil, nil, fmt.Errorf("bad regex: %w", err)
 		}
-		return []valueMatcher{re.MatchString}, nil
+		return []valueMatcher{re.MatchString}, []string{regexSample(expr)}, nil
 	case "cidr":
 		pfx, err := netip.ParsePrefix(val)
 		if err != nil {
-			return nil, fmt.Errorf("bad cidr %q", val)
+			return nil, nil, fmt.Errorf("bad cidr %q", val)
 		}
 		return []valueMatcher{func(v string) bool {
 			a, err := netip.ParseAddr(v)
 			return err == nil && pfx.Contains(a.Unmap())
-		}}, nil
+		}}, []string{pfx.Addr().String()}, nil
 	case "gt", "gte", "lt", "lte":
 		limit, err := strconv.ParseFloat(val, 64)
 		if err != nil {
-			return nil, fmt.Errorf("%s needs a number", op)
+			return nil, nil, fmt.Errorf("%s needs a number", op)
 		}
 		return []valueMatcher{func(v string) bool {
 			f, err := strconv.ParseFloat(v, 64)
@@ -564,7 +567,7 @@ func buildValueMatchers(val, op string, cased bool, reFlags string, encode []str
 				return f < limit
 			}
 			return f <= limit
-		}}, nil
+		}}, []string{numberSample(limit, op)}, nil
 	}
 
 	// String matching. Expand the value through windash and encodings into candidates.
@@ -576,15 +579,17 @@ func buildValueMatchers(val, op string, cased bool, reFlags string, encode []str
 		var err error
 		candidates, err = applyEncodings(candidates, encode)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		cased = true // encoded output is case-sensitive
 	}
 	var out []valueMatcher
+	var samples []string
 	for _, c := range candidates {
 		out = append(out, wildcardMatcher(c, op, cased))
+		samples = append(samples, wildcardSample(c))
 	}
-	return out, nil
+	return out, samples, nil
 }
 
 // wildcardMatcher compiles a Sigma value (with * and ? wildcards and \ escapes) for op.
@@ -749,7 +754,8 @@ func base64Offsets(v []byte) []string {
 
 // keywordMatcher matches values anywhere in the document's free-text fields.
 type keywordMatcher struct {
-	vals []valueMatcher
+	vals    []valueMatcher
+	samples []string
 }
 
 func (k *keywordMatcher) match(d *Doc) bool {
@@ -766,11 +772,12 @@ func (k *keywordMatcher) match(d *Doc) bool {
 func compileKeywords(nodes []*yaml.Node) (matcher, error) {
 	km := &keywordMatcher{}
 	for _, n := range nodes {
-		vms, err := buildValueMatchers(n.Value, "contains", false, "", nil, false)
+		vms, samples, err := buildValueMatchers(n.Value, "contains", false, "", nil, false)
 		if err != nil {
 			return nil, err
 		}
 		km.vals = append(km.vals, vms...)
+		km.samples = append(km.samples, samples...)
 	}
 	return km, nil
 }
