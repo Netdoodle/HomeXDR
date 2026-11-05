@@ -289,6 +289,16 @@ func TestSecretsAreWriteOnly(t *testing.T) {
 	}
 }
 
+func TestUpdateWithoutRoutesKeepsSafeDefaults(t *testing.T) {
+	set := SettingsUpdate{Settings: Settings{RatePerHour: 5, DigestTime: "08:00"}}.Apply(DefaultSettings())
+	if got := set.Route(store.SevCritical, "r1"); got != RouteNow {
+		t.Fatalf("critical with no routes in the update = %s", got)
+	}
+	if got := set.Route(store.SevLow, "r1"); got != RouteLog {
+		t.Fatalf("low with no routes in the update = %s", got)
+	}
+}
+
 func TestOffUntilAChannelIsAdded(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)

@@ -58,6 +58,8 @@ For Unraid hosts, see [deploy/unraid](deploy/unraid/README.md).
 - [Agent protocol](docs/protocol.md)
 - [Console REST API](docs/api.md)
 - [AI analyst](docs/ai-analyst.md)
+- [Alert grouping and suppressions](docs/alerts.md)
+- [Notifications and the daily digest](docs/notifications.md)
 
 ## Building from source
 

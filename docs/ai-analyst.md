@@ -46,7 +46,7 @@ The code is in `server/internal/triage`; the console settings are under
 | Endpoint URL | OpenAI and Gemini use their public endpoints unless overridden. Local needs one, e.g. Ollama `http://host:11434/v1`, LM Studio `http://host:1234/v1`, vLLM `http://host:8000/v1`. |
 | API key | One per provider (optional for local servers). Stored in the server's state database and never returned by the API, only whether one is set and its last four characters. Environment variables override them: `HOMEXDR_ANTHROPIC_API_KEY`, `HOMEXDR_OPENAI_API_KEY`, `HOMEXDR_GEMINI_API_KEY`, `HOMEXDR_LOCAL_AI_API_KEY`. |
 | Which alerts | **Medium and above** (default): skips low and informational alerts to keep the cost down. **High and critical only**: cheapest. **Every new alert**: most coverage, highest cost. |
-| Daily limit | Automatic investigations per day (default 50). Later alerts are marked *skipped*; an analyst can still start one by hand. |
+| Daily limit | Automatic investigations per day (default 50). Later alerts are marked *skipped*; an analyst can still start one by hand. Alerts below high may use 80% of it, and the rest is kept for high and critical alerts. |
 | Tool calls per investigation | Default 20. When it is used up the model is asked to report with what it has. |
 | Alert data | Sent as-is to the provider for each investigation (hostnames, usernames, IPs, command lines), under the provider's API data terms. Choose the local provider to keep it on your network. Redaction is planned. |
 
@@ -57,7 +57,10 @@ minimal request with the current form values.
 
 1. A new alert (not a repeat hit folded into an open alert) at or above the threshold is
    queued, unless the daily limit is reached. Analysts can queue any alert with
-   **Investigate with AI** / **Investigate again**.
+   **Investigate with AI** / **Investigate again**. If the AI called an alert with the same
+   rule, host and process shape benign in the last 7 days, the new alert gets a labelled copy
+   of that report instead, with no AI call ([alerts.md](alerts.md)). Critical alerts always
+   get their own look. Suppressed alerts are never queued automatically.
 2. One worker processes the queue in order. Investigations interrupted by a restart are
    queued again.
 3. The model gets a fixed system prompt, the alert and up to five matching events, and the

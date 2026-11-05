@@ -196,9 +196,10 @@ the network/file/registry/dns events attributed to one process.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/alerts?status=&severity=&host_id=&rule_id=&q=&limit=&offset=` | `{"alerts": Alert[], "total": n}`; `status` and `severity` accept comma lists |
+| GET | `/api/alerts?status=&severity=&host_id=&rule_id=&q=&limit=&offset=` | `{"alerts": Alert[], "total": n}`; `status` and `severity` accept comma lists. Suppressed alerts appear only when `status` names them |
+| GET | `/api/alerts/noise?hours=&limit=` | `{"shapes": RepeatingShape[], "hours": n}`: the noisiest shapes among open alerts (suppressions, below) |
 | GET | `/api/alerts/{id}` | `Alert` with `events` (up to 20 matching events) |
-| PATCH | `/api/alerts/{id}` | `{"status"?, "assignee"?}` → `Alert` (analyst+) |
+| PATCH | `/api/alerts/{id}` | `{"status"?, "assignee"?}` → `Alert` (analyst+). `suppressed` cannot be set by hand, but a suppressed alert can be set back to another status |
 | POST | `/api/alerts/bulk` | `{"ids": string[], "status"?, "assignee"?}` → `{"updated": n}` |
 | POST | `/api/alerts/{id}/notes` | `{"text"}` → `Alert` |
 | GET | `/api/alerts/{id}/triage` | `{"triage": AITriage \| null, "available": bool, "reason"?: string}` (AI analyst, below) |
@@ -208,7 +209,7 @@ the network/file/registry/dns events attributed to one process.
 type Alert = {
   id: string; created_at: string; updated_at: string;
   first_seen: string; last_seen: string; count: number;      // de-duplicated hits
-  status: "new" | "in_progress" | "resolved" | "false_positive";
+  status: "new" | "in_progress" | "resolved" | "false_positive" | "suppressed";
   severity: Severity; risk_score: number;                       // 0-100
   assignee?: string;
   rule: { id: string; title: string; description?: string; level: Severity; tags: string[]; references?: string[]; false_positives?: string[] };
@@ -220,10 +221,57 @@ type Alert = {
   events?: Event[];              // detail view only
   notes: { author: string; text: string; at: string }[];
   ai_triage?: { status: AITriageStatus; verdict?: AIVerdict; confidence?: "low" | "medium" | "high" };
+  // The suppression that closed this alert or, with overridden, matched but had to keep it.
+  suppression?: { id: string; reason: string; overridden?: boolean; why?: string };
 }
 ```
 
 Risk score from severity: informational 10, low 21, medium 47, high 73, critical 99.
+
+## Suppressions
+
+See [alerts.md](alerts.md). Every write is in the audit log.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/suppressions` | `{"suppressions": Suppression[]}` |
+| POST | `/api/suppressions` | `SuppressionSpec` → `201 {"suppression": Suppression, "closed": n, "kept": n}` (admin). `400` for no scope, no reason, or a whole rule on every host without `confirm_broad` |
+| POST | `/api/suppressions/preview` | `SuppressionSpec` → `SuppressionPreview` (analyst+). Needs a scope, but no reason or confirmation. Changes nothing |
+| PATCH | `/api/suppressions/{id}` | Any of `rule_id`, `host_id`, `conditions`, `reason`, `expires_at`, `never_expires`, `enabled`, `confirm_broad` → `Suppression` (admin) |
+| DELETE | `/api/suppressions/{id}` | `204` (admin). Alerts it closed stay closed |
+| GET | `/api/settings/noise` | `{"must_alert_rules": string[]}` |
+| PUT | `/api/settings/noise` | same → same (admin) |
+
+```ts
+type SuppressionSpec = {
+  rule_id?: string; host_id?: string;
+  conditions?: { field: string; op: "equals" | "contains" | "startswith" | "endswith"; value: string }[];
+  reason: string;
+  expires_at?: string;     // default: 90 days from now
+  never_expires?: boolean; // instead of expires_at
+  enabled?: boolean;       // default true
+  confirm_broad?: boolean; // accept a whole rule on every host
+  apply?: boolean;         // also close the open alerts that match, as suppressed, with a note
+};
+type Suppression = {
+  id: string; rule_id?: string; rule_title?: string; host_id?: string; hostname?: string;
+  conditions: SuppressionSpec["conditions"]; reason: string;
+  created_by: string; created_at: string; expires_at: string | null; enabled: boolean;
+  hit_count: number; last_hit_at: string | null;           // hits it closed
+  override_count: number; last_override_at: string | null; // hits it matched but had to keep
+};
+type SuppressionPreview = {
+  matches: number; hits: number; // open alerts it would close, and the hits they hold
+  kept: number;                  // more that match, but stay open because of must-alert
+  sample: { id: string; rule_title: string; severity: Severity; hostname: string; process_name?: string;
+            command_line?: string; count: number; last_seen: string }[]; // up to 5
+};
+type RepeatingShape = {
+  rule_id: string; rule_title: string; severity: Severity; host_id: string; hostname: string;
+  process?: string; parent?: string; alerts: number; hits: number; last_seen: string;
+  sample_alert_id: string;
+};
+```
 
 ## AI analyst
 
@@ -252,7 +300,8 @@ session; it answers only while `mcp_enabled` is on:
 type AIVerdict = "benign" | "suspicious" | "malicious" | "inconclusive"
 type AITriageStatus = "queued" | "running" | "done" | "failed" | "refused" | "skipped"
 type AITriage = {
-  alert_id: string; status: AITriageStatus; trigger: "auto" | "manual"; requested_by?: string;
+  alert_id: string; status: AITriageStatus; trigger: "auto" | "manual" | "reused"; requested_by?: string;
+  reused_from_alert?: string; reused_from_at?: string; // trigger "reused": the alert the AI looked at, and when
   provider?: string; model?: string; verdict?: AIVerdict; confidence?: "low" | "medium" | "high";
   report?: {
     verdict: AIVerdict; confidence: string; severity_assessment: Severity; summary: string; analysis: string;
@@ -451,6 +500,41 @@ type Hunt = {
 
 A hunt queues one `artifact.collect` command per matching host, and also for matching hosts
 that enroll or come online before it expires.
+
+## Notifications
+
+See [notifications.md](notifications.md). All admin only. Secrets are write-only.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/settings/notifications` | `NotifySettings` |
+| PUT | `/api/settings/notifications` | `NotifySettingsUpdate` → `NotifySettings`. Replaces the settings, and channels left out are removed. `400` with a reason for a bad value |
+| POST | `/api/settings/notifications/channels/{id}/test` | Sends a test message now → `{"ok": bool, "error"?: string}` |
+
+```ts
+type NotifySettings = {
+  channels: {
+    id: string; kind: "ntfy" | "discord" | "email" | "webhook"; name: string; enabled: boolean;
+    url_set: boolean; url_host?: string; token_set: boolean; password_set: boolean;
+    smtp_host?: string; smtp_port?: number; smtp_user?: string; from?: string; to?: string;
+  }[];
+  severity_routes: Record<Severity, "now" | "digest" | "log">;
+  rule_routes: { prefix: string; route: "now" | "digest" | "log" }[];
+  rate_per_hour: number;  // 1-1000
+  digest_enabled: boolean; digest_time: string /* "07:00" */; timezone: string; heartbeat: boolean;
+  console_url: string;
+  status: {
+    pending: number; sent_24h: number; failed_24h: number; overflow_1h: number;
+    last_sent_at: string | null; last_digest_at: string | null; next_digest_at: string | null;
+    recent_failures: { id: string; channel_id: string; kind: string; title?: string; status: string;
+                       attempts: number; next_attempt_at: string; last_error?: string; created_at: string }[];
+  };
+};
+// The same without status, and channels as: id (blank for a new one), kind, name, enabled, the
+// smtp fields, plus url, token and password. A blank secret keeps the stored one; clear_token and
+// clear_password remove them.
+type NotifySettingsUpdate = Omit<NotifySettings, "status" | "channels"> & { channels: ChannelUpdate[] };
+```
 
 ## Settings and admin
 
