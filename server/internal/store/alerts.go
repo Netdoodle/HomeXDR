@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -141,6 +143,13 @@ const maxAlertEventIDs = 50
 // ProcessShape describes a process by what it is and what started it: its executable
 // (else name) and its parent's. Repeated runs of one scheduled job share a shape, while
 // the same program started by something else does not.
+//
+// Not every event says what started the process: on Linux only process starts carry a
+// parent, not file or network events. Folding those on the executable alone would put a
+// wget from a shell into the alert for a wget from a scheduled job, so they need something
+// else to tell runs apart: the command line, which a job repeats and an attacker's run does
+// not, else the process itself, which does not fold at all. Log-derived events have neither
+// and fold by name.
 func ProcessShape(p *event.Process) string {
 	if p == nil {
 		return ""
@@ -150,10 +159,16 @@ func ProcessShape(p *event.Process) string {
 	if p.Parent != nil {
 		parent = firstNonEmpty(p.Parent.Executable, p.Parent.Name)
 	}
-	if exe == "" && parent == "" {
-		return p.EntityID // nothing better to tell it apart by
+	switch {
+	case parent != "":
+		return exe + "<" + parent
+	case p.CommandLine != "":
+		sum := sha256.Sum256([]byte(p.CommandLine))
+		return exe + "<cmd:" + hex.EncodeToString(sum[:8])
+	case p.EntityID != "":
+		return exe + "<pid:" + p.EntityID
 	}
-	return exe + "<" + parent
+	return exe + "<"
 }
 
 func firstNonEmpty(a, b string) string {

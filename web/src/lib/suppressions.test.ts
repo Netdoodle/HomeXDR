@@ -23,6 +23,17 @@ describe('formFromAlert', () => {
     ])
   })
 
+  it('uses the command line when the event does not say what started the process', () => {
+    const file = { ...alert, event: { process: { name: 'wget', executable: '/usr/bin/wget', command_line: 'wget -O /tmp/x' } } } as unknown as Alert
+    expect(formFromAlert(file).conditions).toEqual([
+      { field: 'process.executable', op: 'equals', value: '/usr/bin/wget' },
+      { field: 'process.command_line', op: 'equals', value: 'wget -O /tmp/x' },
+    ])
+    const long = 'x'.repeat(2000)
+    const longFile = { ...alert, event: { process: { executable: '/bin/x', command_line: long } } } as unknown as Alert
+    expect(formFromAlert(longFile).conditions[1]).toEqual({ field: 'process.command_line', op: 'startswith', value: long.slice(0, 1024) })
+  })
+
   it('falls back to names, and to nothing when there is no process', () => {
     const named = { ...alert, event: { process: { name: 'curl', parent: { name: 'cron' } } } } as unknown as Alert
     expect(formFromAlert(named).conditions).toEqual([
