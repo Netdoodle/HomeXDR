@@ -304,6 +304,12 @@ type SettingsUpdate struct {
 // Apply merges an update over the current settings, keeping secrets it does not change.
 func (u SettingsUpdate) Apply(cur Settings) Settings {
 	out := u.Settings
+	if out.SeverityRoutes == nil {
+		out.SeverityRoutes = DefaultSettings().SeverityRoutes
+	}
+	if out.RuleRoutes == nil {
+		out.RuleRoutes = []RuleRoute{}
+	}
 	out.Channels = make([]Channel, 0, len(u.Channels))
 	for _, cu := range u.Channels {
 		c := cu.Channel
