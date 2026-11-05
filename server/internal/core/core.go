@@ -41,6 +41,8 @@ type Core struct {
 	Intel *intel.Service
 	// Enrich answers offline questions about domains, addresses and MAC addresses.
 	Enrich enrich.Lookup
+	// Health is feed health, the offline lists and vulnerability matching.
+	Health *Health
 }
 
 // New builds a Core and loads rules.

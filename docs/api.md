@@ -516,6 +516,25 @@ curl -fsSLk https://<server>:8443/v1/install/linux.sh | sudo sh -s -- --token <t
 homexdr-agent.exe install --server https://<server>:8443 --token <token> --ca-pin <pin>
 ```
 
+## Data health
+
+`GET /api/health/feeds` (viewer) lists every data source. See [health.md](health.md).
+
+```ts
+{ sources: {
+    host_id: string; hostname: string;
+    module: string; dataset: string;      // both empty on the row about the host as a whole
+    status: "ok" | "silent" | "learning" | "never_seen" | "quiet" | "muted" | "host_offline";
+    explanation?: string; first_seen?: string; last_seen?: string; arrivals: number;
+    usual_gap_sec: number; allowance_sec: number; silent_sec: number;
+    muted: boolean; expected: boolean; can_alert: boolean;
+  }[];
+  bootstrapped: boolean; grace_until?: string; note?: string }
+```
+
+`PATCH /api/health/feeds` (admin), body `{host_id, module, dataset, muted?, expected?}`, sets your
+choice for one source and returns the same report. Audited.
+
 ## Health
 
 `GET /healthz` (no auth) → `{"status": "ok", "event_store": "ok" | "error: ..."}`.
