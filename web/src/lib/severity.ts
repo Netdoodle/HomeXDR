@@ -34,6 +34,7 @@ export const ALERT_STATUS_LABEL: Record<AlertStatus, string> = {
   in_progress: 'In progress',
   resolved: 'Resolved',
   false_positive: 'False positive',
+  suppressed: 'Suppressed',
 }
 
 export const OPEN_ALERT_STATUSES: AlertStatus[] = ['new', 'in_progress']

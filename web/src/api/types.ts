@@ -497,7 +497,7 @@ export interface ProcessNode {
 // ---------------------------------------------------------------------------------------
 // Alerts
 
-export type AlertStatus = 'new' | 'in_progress' | 'resolved' | 'false_positive'
+export type AlertStatus = 'new' | 'in_progress' | 'resolved' | 'false_positive' | 'suppressed'
 export const ALERT_STATUSES: AlertStatus[] = ['new', 'in_progress', 'resolved', 'false_positive']
 
 export interface MitreMapping {
@@ -545,6 +545,15 @@ export interface Alert {
   notes: AlertNote[]
   /** the AI analyst's investigation, when there is one */
   ai_triage?: AITriageSummary
+  /** the suppression that closed this alert or, when overridden, matched but had to keep it */
+  suppression?: AlertSuppression
+}
+
+export interface AlertSuppression {
+  id: string
+  reason: string
+  overridden?: boolean
+  why?: string
 }
 
 export interface AlertFilter {
@@ -1014,7 +1023,10 @@ export type AIEngine = 'api' | 'mcp'
 export interface AITriage {
   alert_id: string
   status: AITriageStatus
-  trigger: 'auto' | 'manual'
+  /** reused: copied from an earlier benign investigation of the same kind of alert, no AI call */
+  trigger: 'auto' | 'manual' | 'reused'
+  reused_from_alert?: string
+  reused_from_at?: string
   /** api: the server's own worker; mcp: an MCP client such as Claude Code */
   engine?: AIEngine
   requested_by?: string

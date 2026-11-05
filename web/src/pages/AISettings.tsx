@@ -289,7 +289,7 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
                   value={form.daily_limit}
                   onChange={(e) => set('daily_limit', Number(e.target.value))}
                 />
-                <span className="help">Automatic investigations per day; later alerts are marked as skipped. You can still start one by hand.</span>
+                <span className="help">Automatic investigations per day; later alerts are marked as skipped. Alerts below high may use 80% of this, so high and critical alerts still get a look late in a noisy day. A repeat of something the AI called benign in the last 7 days reuses that verdict and does not count. You can still start one by hand.</span>
               </label>
               <label className="field">
                 <span className="label">Tool calls per investigation</span>

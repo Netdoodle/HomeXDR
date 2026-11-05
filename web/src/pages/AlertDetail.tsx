@@ -10,12 +10,14 @@ import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
 import { ExpandableText, KV, RelTime } from '../components/Misc'
 import { ResponseButtons } from '../components/ResponseButtons'
+import { SuppressDialog } from '../components/SuppressDialog'
 import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
 import { formatNumber } from '../lib/format'
 import { useDocumentTitle } from '../lib/hooks'
 import { eventIndicators, investigateHref } from '../lib/intel'
 import { hasRole } from '../lib/roles'
+import { formFromAlert, type SuppressForm } from '../lib/suppressions'
 import { ALERT_STATUS_LABEL } from '../lib/severity'
 import { formatDateTime } from '../lib/time'
 
@@ -43,6 +45,8 @@ function AlertView({ alert: a }: { alert: Alert }) {
   const qc = useQueryClient()
   const toast = useToast()
   const canTriage = useCan('analyst')
+  const canSuppress = useCan('admin')
+  const [suppressing, setSuppressing] = useState<SuppressForm | null>(null)
   const user = useUser()
   const hostQ = useQuery({ queryKey: queryKeys.host(a.host_id), queryFn: () => api.getHost(a.host_id) })
 
@@ -89,6 +93,11 @@ function AlertView({ alert: a }: { alert: Alert }) {
         }
         actions={
           <>
+            {canSuppress && a.status !== 'suppressed' ? (
+              <button type="button" className="btn" onClick={() => setSuppressing(formFromAlert(a))}>
+                <Icon name="filter" size={14} /> Suppress similar
+              </button>
+            ) : null}
             {treeHref ? (
               <Link className="btn" to={treeHref}>
                 <Icon name="tree" size={14} /> View process tree
@@ -104,6 +113,24 @@ function AlertView({ alert: a }: { alert: Alert }) {
         }
       />
 
+      <SuppressDialog initial={suppressing} onClose={() => setSuppressing(null)} />
+      {a.suppression?.overridden ? (
+        <div className="callout warn" style={{ marginBottom: 12 }} role="note">
+          <Icon name="warning" size={14} />
+          <div>
+            <strong>A suppression matched this alert, but it was kept:</strong> {a.suppression.why}. The suppression says: {a.suppression.reason}.{' '}
+            <Link to="/settings/suppressions">See suppressions</Link>
+          </div>
+        </div>
+      ) : a.status === 'suppressed' && a.suppression ? (
+        <div className="callout info" style={{ marginBottom: 12 }} role="note">
+          <Icon name="info" size={14} />
+          <div>
+            <strong>Closed by a suppression:</strong> {a.suppression.reason}. It was not sent to the AI analyst or to notifications.{' '}
+            <Link to="/settings/suppressions">See suppressions</Link>
+          </div>
+        </div>
+      ) : null}
       <div className="grid grid-sidebar" style={{ alignItems: 'start' }}>
         <div className="stack">
           <section className="panel">
