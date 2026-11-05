@@ -10,6 +10,7 @@ import { ToastProvider } from './components/Toast'
 import { AlertDetailPage } from './pages/AlertDetail'
 import { AlertsPage } from './pages/Alerts'
 import { DashboardPage } from './pages/Dashboard'
+import { DevicesPage } from './pages/Devices'
 import { HostDetailPage } from './pages/HostDetail'
 import { HostsPage } from './pages/Hosts'
 import { HuntCreatePage } from './pages/HuntCreate'
@@ -78,6 +79,7 @@ export function App() {
                 <Route path="hosts" element={<HostsPage />} />
                 <Route path="hosts/:id" element={<HostDetailPage />} />
                 <Route path="hosts/:id/process/:entityId" element={<ProcessTreePage />} />
+                <Route path="devices" element={<DevicesPage />} />
                 <Route path="search" element={<SearchPage />} />
                 <Route path="investigate" element={<InvestigatePage />} />
                 <Route path="rules" element={<RulesPage />} />

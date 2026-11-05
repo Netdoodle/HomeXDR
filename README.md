@@ -18,6 +18,9 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
   run built-in collection artifacts and fleet-wide hunts.
 - **Network correlation.** Ingests OPNsense `filterlog` and Suricata EVE over syslog and
   joins them to endpoint processes by Community ID.
+- **Network visibility.** Optional NetFlow/IPFIX, Unbound and DHCP intake name each device behind
+  NAT. A device inventory alerts on new devices, and behaviour detectors look for beaconing, DNS
+  tunnelling, upload spikes, scans and more, with no agent on the device.
 - **Docker-first backend.** `docker compose up` runs the server and ClickHouse. A single
   container "lite" mode uses SQLite. Retention by age, by size, or both.
 - **AI analyst.** New alerts above a chosen severity are triaged by an AI model through
@@ -58,6 +61,7 @@ For Unraid hosts, see [deploy/unraid](deploy/unraid/README.md).
 - [Agent protocol](docs/protocol.md)
 - [Console REST API](docs/api.md)
 - [AI analyst](docs/ai-analyst.md)
+- [Network visibility](docs/network-visibility.md), [device inventory](docs/devices.md) and [behaviour detection](docs/behavior.md)
 
 ## Building from source
 

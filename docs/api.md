@@ -516,6 +516,63 @@ curl -fsSLk https://<server>:8443/v1/install/linux.sh | sudo sh -s -- --token <t
 homexdr-agent.exe install --server https://<server>:8443 --token <token> --ca-pin <pin>
 ```
 
+## Devices and behaviour detection
+
+See [devices.md](devices.md) and [behavior.md](behavior.md).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/devices` | `DeviceList`. Every device, most recently seen first; the console filters and sorts it |
+| PATCH | `/api/devices/{id}` | `{"name"?, "note"?, "known"?}` → `Device` (analyst, audited). The ID holds colons, so encode it. `400` when empty, `404` when unknown |
+| GET | `/api/settings/network` | `NetworkSettings` (admin) |
+| PUT | `/api/settings/network` | `NetworkSettings` → `NetworkSettings` (admin, audited); `400` with the problem when invalid. Records of addresses that no longer count as home are dropped, unless named or noted |
+| GET | `/api/behavior/status` | `{"detectors": DetectorStatus[]}` |
+| GET | `/api/settings/behavior` | `{"detectors": DetectorSettings[]}` (admin), with defaults filled in |
+| PUT | `/api/settings/behavior` | `{"detectors": {"<id>": {"enabled"?, "values"?, "lists"?}}}` → the same as GET (admin, audited); `400` with the problem when invalid. It replaces all detector settings; what is left out goes back to its default |
+
+```ts
+type Device = {
+  id: string;                  // first MAC, or "ip:<address>" until DHCP reveals one
+  mac?: string; macs?: string[]; randomized_mac?: boolean;
+  ip?: string; ips: { ip: string; first_seen: string; last_seen: string }[];
+  hostname?: string; hostnames?: string[]; vendor?: string;
+  subnet?: string; interface?: string;
+  sources: string[];           // dhcp, firewall, netflow, dns, suricata, agent
+  host_id?: string; host_name?: string;
+  name?: string; note?: string; known: boolean;
+  dest_only?: boolean;         // only ever received traffic
+  first_seen: string; last_seen: string; alerted_at?: string;
+  new: boolean;                // first seen after learning, and not marked as known
+};
+type DeviceList = {
+  devices: Device[]; total: number;
+  learning: boolean; learning_until: string;
+  subnets: { subnet: string; devices: number }[];
+  overflow?: number;           // addresses ignored because the inventory is full
+};
+type NetworkSettings = {
+  subnets: string[];           // empty = automatic
+  exclude: string[]; firewall_ips: string[];
+  new_device_alerts: boolean; learning_days: number;
+  // In responses only:
+  firewall_learned?: string[]; subnets_seen?: { subnet: string; devices: number }[]; learning_until?: string;
+};
+type DetectorStatus = {
+  id: string; title: string; about: string; enabled: boolean;
+  status: "pending" | "ok" | "limited" | "learning" | "needs_data" | "disabled" | "error";
+  data_needed?: string;        // what to turn on, when input is missing or partial
+  last_run?: string; last_duration_ms?: number;
+  last_finding_count: number; total_finding_count: number;
+  learning_until?: string; error?: string;
+};
+type DetectorSettings = {
+  id: string; title: string; about: string; enabled: boolean;
+  values: Record<string, number>; lists: Record<string, string[]>;
+  thresholds: { key: string; label: string; help: string; default: number; min: number; max: number }[];
+  list_defs: { key: string; label: string; help: string; kind: string; default?: string[] }[];
+};
+```
+
 ## Health
 
 `GET /healthz` (no auth) → `{"status": "ok", "event_store": "ok" | "error: ..."}`.
