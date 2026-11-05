@@ -2,7 +2,7 @@
 // count of the open alerts it would match.
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { errorMessage, queryKeys } from '../api'
 import { createSuppression, noiseKeys, previewSuppression, type SuppressionCondition } from '../api/noise'
@@ -32,7 +32,8 @@ function SuppressFormBody({ initial, onClose }: { initial: SuppressForm; onClose
   const [closeOpen, setCloseOpen] = useState(true)
   const [confirmBroad, setConfirmBroad] = useState(false)
 
-  const spec = specFromForm(form)
+  // Memoized: useDebounced restarts its timer whenever this object changes identity.
+  const spec = useMemo(() => specFromForm(form), [form])
   const broad = isBroad(spec)
   const scoped = hasScope(spec)
   useEffect(() => {

