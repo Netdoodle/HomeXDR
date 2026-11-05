@@ -44,6 +44,10 @@ type Triage struct {
 	CreatedAt   time.Time       `json:"created_at"`
 	StartedAt   *time.Time      `json:"started_at,omitempty"`
 	FinishedAt  *time.Time      `json:"finished_at,omitempty"`
+	// ReusedFromAlert and ReusedFromAt, on a report with trigger "reused", name the alert
+	// the AI actually investigated and when. No AI call was made for this one.
+	ReusedFromAlert string     `json:"reused_from_alert,omitempty"`
+	ReusedFromAt    *time.Time `json:"reused_from_at,omitempty"`
 }
 
 // TriageUsage is the token usage of one investigation.
@@ -83,14 +87,15 @@ CREATE INDEX IF NOT EXISTS alert_triage_status ON alert_triage(status, created_a
 `
 
 const triageCols = `alert_id, status, trigger, engine, requested_by, provider, model, verdict, confidence,
-	report, transcript, error, tool_calls, usage, created_at, started_at, finished_at`
+	report, transcript, error, tool_calls, usage, created_at, started_at, finished_at, reused_from_alert, reused_from_at`
 
 func scanTriage(row interface{ Scan(...any) error }) (*Triage, error) {
 	var t Triage
 	var report, transcript, usage, created string
-	var started, finished sql.NullString
+	var started, finished, reusedAt sql.NullString
 	err := row.Scan(&t.AlertID, &t.Status, &t.Trigger, &t.Engine, &t.RequestedBy, &t.Provider, &t.Model, &t.Verdict,
-		&t.Confidence, &report, &transcript, &t.Error, &t.ToolCalls, &usage, &created, &started, &finished)
+		&t.Confidence, &report, &transcript, &t.Error, &t.ToolCalls, &usage, &created, &started, &finished,
+		&t.ReusedFromAlert, &reusedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -107,6 +112,7 @@ func scanTriage(row interface{ Scan(...any) error }) (*Triage, error) {
 	t.CreatedAt = parseTS(created)
 	t.StartedAt = parseNullTS(started)
 	t.FinishedAt = parseNullTS(finished)
+	t.ReusedFromAt = parseNullTS(reusedAt)
 	return &t, nil
 }
 
@@ -141,9 +147,49 @@ func (s *Store) putTriage(ctx context.Context, alertID, status, trigger, request
 		ON CONFLICT(alert_id) DO UPDATE SET status = excluded.status, trigger = excluded.trigger, engine = excluded.engine,
 			requested_by = excluded.requested_by, provider = '', model = '', verdict = '', confidence = '',
 			report = '', transcript = '', error = excluded.error, tool_calls = 0, usage = '{}',
-			created_at = excluded.created_at, started_at = excluded.started_at, finished_at = NULL
+			created_at = excluded.created_at, started_at = excluded.started_at, finished_at = NULL,
+			reused_from_alert = '', reused_from_at = NULL
 		WHERE alert_triage.status NOT IN ('queued', 'running')`,
 		alertID, status, trigger, engine, requestedBy, reason, now, started)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, ErrConflict
+	}
+	return s.GetTriage(ctx, alertID)
+}
+
+// TriggerReused marks a report copied from an earlier investigation of the same kind of
+// alert. It costs no AI call and does not count against the daily limit.
+const TriggerReused = "reused"
+
+// BenignTriageForRepeat returns the newest benign verdict the AI reached since `since` on
+// another alert with the same grouping key as alertID, or ErrNotFound. Reused reports do
+// not count, so a verdict cannot keep itself alive past its first week.
+func (s *Store) BenignTriageForRepeat(ctx context.Context, alertID string, since time.Time) (*Triage, error) {
+	return scanTriage(s.db.QueryRowContext(ctx, `SELECT `+triageCols+` FROM alert_triage
+		WHERE status = 'done' AND verdict = 'benign' AND trigger != ? AND finished_at >= ? AND alert_id != ?
+		  AND alert_id IN (SELECT id FROM alerts WHERE dedup_key = (SELECT dedup_key FROM alerts WHERE id = ?))
+		ORDER BY finished_at DESC LIMIT 1`, TriggerReused, ts(since), alertID, alertID))
+}
+
+// ReuseTriage records src's verdict and report on another alert, as finished, with
+// `report` in place of src's. It keeps no transcript or usage, because nothing ran.
+// ErrConflict while an investigation of the alert is queued or running.
+func (s *Store) ReuseTriage(ctx context.Context, alertID string, src *Triage, report []byte) (*Triage, error) {
+	now := ts(time.Now())
+	res, err := s.db.ExecContext(ctx, `INSERT INTO alert_triage(alert_id, status, trigger, engine, provider, model, verdict, confidence,
+			report, created_at, started_at, finished_at, reused_from_alert, reused_from_at)
+		VALUES(?, 'done', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(alert_id) DO UPDATE SET status = 'done', trigger = excluded.trigger, engine = excluded.engine,
+			requested_by = '', provider = excluded.provider, model = excluded.model, verdict = excluded.verdict,
+			confidence = excluded.confidence, report = excluded.report, transcript = '', error = '', tool_calls = 0,
+			usage = '{}', created_at = excluded.created_at, started_at = excluded.started_at, finished_at = excluded.finished_at,
+			reused_from_alert = excluded.reused_from_alert, reused_from_at = excluded.reused_from_at
+		WHERE alert_triage.status NOT IN ('queued', 'running')`,
+		alertID, TriggerReused, src.Engine, src.Provider, src.Model, src.Verdict, src.Confidence, string(report),
+		now, now, now, src.AlertID, nullTS(src.FinishedAt))
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +281,8 @@ func (s *Store) RequeueRunningTriages(ctx context.Context) (int, error) {
 }
 
 // CountTriages counts investigations of a trigger kind created since t (skipped ones
-// excluded), for the daily limit.
+// excluded), for the daily limit. Reused reports have their own trigger, so a count of
+// automatic investigations leaves them out.
 func (s *Store) CountTriages(ctx context.Context, trigger string, since time.Time) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_triage

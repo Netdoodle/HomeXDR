@@ -396,18 +396,41 @@ func (s *Service) AutoToday(ctx context.Context) int {
 	return n
 }
 
-// AlertCreated queues an automatic investigation of a new alert when the settings
-// call for one.
+// reuseWindow is how long a benign verdict covers repeats of the same kind of alert.
+const reuseWindow = 7 * 24 * time.Hour
+
+// lowSeverityPercent is how much of the daily limit alerts below high may use. The rest
+// is kept, so that a flood of medium alerts cannot use up the day before a serious one.
+const lowSeverityPercent = 80
+
+// dailyLimitFor returns how many of the day's automatic investigations may have been used
+// for an alert of this severity to still get one.
+func dailyLimitFor(severity string, limit int) int {
+	if severityRank(severity) >= severityRank(store.SevHigh) {
+		return limit
+	}
+	return max(limit*lowSeverityPercent/100, 1)
+}
+
+// AlertCreated attaches an earlier benign verdict to a new alert that repeats an old one,
+// or queues an automatic investigation when the settings call for one.
 func (s *Service) AlertCreated(ctx context.Context, a *store.Alert) {
 	set := s.Settings(ctx)
 	if ok, _ := s.Ready(set); !ok || severityRank(a.Severity) < severityRank(set.MinSeverity) {
 		return
 	}
+	if s.reuseVerdict(ctx, a) {
+		return
+	}
 	if set.Engine == store.EngineMCP && !set.MCPAutoTrigger {
 		return // MCP investigations run on request only
 	}
-	if s.AutoToday(ctx) >= set.DailyLimit {
-		if _, err := s.st.SkipTriage(ctx, a.ID, TriggerAuto, set.Engine, fmt.Sprintf("daily limit of %d automatic investigations reached", set.DailyLimit)); err != nil {
+	if limit := dailyLimitFor(a.Severity, set.DailyLimit); s.AutoToday(ctx) >= limit {
+		reason := fmt.Sprintf("daily limit of %d automatic investigations reached", set.DailyLimit)
+		if limit < set.DailyLimit {
+			reason = fmt.Sprintf("daily limit reached for this severity: alerts below high may use %d of the %d automatic investigations, and the rest are kept for high and critical alerts", limit, set.DailyLimit)
+		}
+		if _, err := s.st.SkipTriage(ctx, a.ID, TriggerAuto, set.Engine, reason); err != nil {
 			s.log.Warn("ai triage: record skip", "alert", a.ID, "err", err)
 		}
 		return
@@ -419,6 +442,51 @@ func (s *Service) AlertCreated(ctx context.Context, a *store.Alert) {
 		return
 	}
 	s.poke()
+}
+
+// reuseVerdict copies a recent benign verdict from an alert with the same grouping key,
+// and reports whether it did. Only benign verdicts are reused: anything else needs a
+// fresh look. Critical alerts always get one too. A person can re-investigate any time.
+func (s *Service) reuseVerdict(ctx context.Context, a *store.Alert) bool {
+	if a.Severity == store.SevCritical {
+		return false
+	}
+	src, err := s.st.BenignTriageForRepeat(ctx, a.ID, time.Now().Add(-reuseWindow))
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			s.log.Warn("ai triage: look for an earlier verdict", "alert", a.ID, "err", err)
+		}
+		return false
+	}
+	report, err := reusedReport(src)
+	if err != nil {
+		s.log.Warn("ai triage: reuse report", "alert", src.AlertID, "err", err)
+		return false
+	}
+	if _, err := s.st.ReuseTriage(ctx, a.ID, src, report); err != nil {
+		if !errors.Is(err, store.ErrConflict) {
+			s.log.Warn("ai triage: reuse verdict", "alert", a.ID, "err", err)
+		}
+		return false
+	}
+	_ = s.st.Audit(ctx, "ai", "ai.triage.reused", a.ID, "benign verdict reused from alert "+src.AlertID)
+	return true
+}
+
+// reusedReport is the source report with a summary that says where it came from.
+func reusedReport(src *store.Triage) ([]byte, error) {
+	var rep map[string]any
+	if err := json.Unmarshal(src.Report, &rep); err != nil {
+		return nil, err
+	}
+	when := "an earlier date"
+	if src.FinishedAt != nil {
+		when = src.FinishedAt.UTC().Format("2006-01-02 15:04 UTC")
+	}
+	summary, _ := rep["summary"].(string)
+	rep["summary"] = fmt.Sprintf("Reused verdict: the AI did not look at this alert. It looked at alert %s on %s, which has the same rule, host and process shape, and said: %s",
+		src.AlertID, when, summary)
+	return json.Marshal(rep)
 }
 
 // ErrNotReady is returned by Request when the analyst cannot run.
