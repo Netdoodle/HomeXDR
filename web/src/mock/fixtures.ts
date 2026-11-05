@@ -34,6 +34,7 @@ import {
 import { DAY, FW_ID, HOUR, LAPTOP_ID, LINUX_ID, MIN, NOW, PI_ID, SEC, WIN_ID, ago, hostById, hosts } from './hosts'
 import { hex, makeId, mulberry32 } from './rng'
 import { RULE, ruleById } from './rules'
+import { netflowStats } from './network'
 
 const r = mulberry32(0xa1e27)
 
@@ -476,6 +477,7 @@ export const audit: AuditEntry[] = [
 ].sort((a, b) => (a.at < b.at ? 1 : -1))
 
 export const integrations: Integrations = {
+  netflow: netflowStats,
   syslog: {
     listening: true,
     addr: ':5514',
