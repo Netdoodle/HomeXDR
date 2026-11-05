@@ -17,6 +17,7 @@ func (h *Handler) routesHealth(viewer, analyst, admin string) {
 	h.route("GET /api/doctor", admin, h.getDoctor)
 	h.route("GET /api/selfcheck", admin, h.getSelfCheck)
 	h.route("POST /api/selfcheck", admin, h.startSelfCheck)
+	h.routesLists(viewer, admin)
 }
 
 func (h *Handler) getFeeds(w http.ResponseWriter, r *http.Request, _ *store.User) {

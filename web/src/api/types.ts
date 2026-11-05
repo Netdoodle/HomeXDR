@@ -619,6 +619,8 @@ export interface IntelCoverage {
 }
 
 export interface IntelView {
+  /** What the offline lists say about it, from this server. */
+  offline?: import('./lists').OfflineFacts
   indicator: { value: string; kind: IndicatorKind; hash_type?: string; private: boolean }
   running: boolean
   summary: {

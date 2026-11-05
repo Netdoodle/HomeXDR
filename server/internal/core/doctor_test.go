@@ -69,7 +69,7 @@ func TestDoctorFreshInstall(t *testing.T) {
 	}
 	for id, want := range map[string]string{
 		"state_db": CheckOK, "event_store": CheckOK, "disk": CheckOK, "rules": CheckWarn, "rule_repos": CheckSkip,
-		"syslog": CheckWarn, "agent_release": CheckWarn, "agents": CheckSkip, "ai": CheckWarn, "feeds": CheckOK,
+		"syslog": CheckWarn, "agent_release": CheckWarn, "agents": CheckSkip, "ai": CheckWarn, "feeds": CheckOK, "lists": CheckWarn,
 	} {
 		if r := doctorResult(t, rep, id); r.Status != want {
 			t.Errorf("%s: %+v, want %s", id, r, want)

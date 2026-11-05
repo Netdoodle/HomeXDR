@@ -560,6 +560,33 @@ type SelfCheckResult = {
 }
 ```
 
+## Offline lists
+
+`GET /api/settings/lists` (admin) returns `{lists: OfflineList[]}`. See [lists.md](lists.md).
+
+```ts
+type OfflineList = {
+  id: string; name: string; about: string; site_url: string; warning?: string;
+  license: string; license_url?: string; enabled: boolean; default_on: boolean; every_hours: number;
+  last_check?: string; last_update?: string; entries: number; error?: string; updating: boolean;
+}
+```
+
+`PUT /api/settings/lists/{id}` (admin), body `{enabled: boolean}`, and
+`POST /api/settings/lists/{id}/refresh` (admin, runs in the background) return the same. Audited.
+
+`POST /api/lists/lookup` (viewer), body `{indicators: string[]}` (at most 50), returns
+`{results: {[indicator]: Facts}}`, leaving out what the lists know nothing about. It never touches
+the network. The intel view (`/api/intel/lookup`) has the same facts as an optional `offline` field.
+
+```ts
+type Facts = {
+  domain?: { registered?: string; rank?: number; category?: string; newly_registered?: boolean };
+  ip?: { asn?: number; as_name?: string; country?: string };
+  mac?: { vendor?: string; randomized?: boolean };
+}
+```
+
 ## Health
 
 `GET /healthz` (no auth) → `{"status": "ok", "event_store": "ok" | "error: ..."}`.
