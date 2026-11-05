@@ -587,6 +587,28 @@ type Facts = {
 }
 ```
 
+## Known-exploited software
+
+`GET /api/vulnerabilities` (viewer). See [vulnerabilities.md](vulnerabilities.md).
+
+```ts
+{ matches: {
+    host_id: string; hostname: string; package: string; version: string; package_type: string;
+    cve: string; title: string; kev_date: string; due_date: string; ransomware: boolean;
+    confidence: "confirmed" | "possible"; reason: string; first_seen: string; last_seen: string;
+  }[];
+  confirmed: number; possible: number;
+  hosts: { host_id: string; hostname: string; packages: number; snapshot_at?: string; note?: string }[];
+  kev: { enabled: boolean; entries: number; version?: string; last_update?: string; error?: string };
+  osv: { enabled: boolean; error?: string };
+  last_run?: string; running: boolean }
+```
+
+`POST /api/vulnerabilities/refresh` (admin) compares now, in the background, and returns the same.
+
+`PUT /api/settings/vuln` (admin), body `{osv: boolean}`, turns the optional OSV check on or off and
+returns the same. Audited. OSV is off by default.
+
 ## Health
 
 `GET /healthz` (no auth) → `{"status": "ok", "event_store": "ok" | "error: ..."}`.
