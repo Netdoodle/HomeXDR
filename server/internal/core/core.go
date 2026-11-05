@@ -43,6 +43,8 @@ type Core struct {
 	Enrich enrich.Lookup
 	// Flow counts NetFlow and IPFIX intake (flowstats.go).
 	Flow *FlowStats
+	// Inventory keeps track of the devices on the home network (inventory.go).
+	Inventory *Inventory
 }
 
 // New builds a Core and loads rules.
