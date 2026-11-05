@@ -14,6 +14,7 @@ import (
 	"github.com/Netdoodle/homexdr/server/internal/enrich"
 	"github.com/Netdoodle/homexdr/server/internal/events"
 	"github.com/Netdoodle/homexdr/server/internal/intel"
+	"github.com/Netdoodle/homexdr/server/internal/notify"
 	"github.com/Netdoodle/homexdr/server/internal/pki"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/server/internal/triage"
@@ -43,6 +44,8 @@ type Core struct {
 	Enrich enrich.Lookup
 	// Suppress decides whether a hit is suppressed (suppressions.go).
 	Suppress *Suppressor
+	// Notify tells the owner about new alerts and sends the daily digest.
+	Notify *notify.Service
 }
 
 // New builds a Core and loads rules.

@@ -128,6 +128,8 @@ func (c *Core) recordAlert(ctx context.Context, in store.AlertInput) {
 	if isNew {
 		c.Log.Info("alert", "id", a.ID, "rule", in.Rule.Title, "severity", a.Severity, "host", a.Hostname)
 		c.Triage.AlertCreated(ctx, a)
+		// Only an outbox write. The agent hanging up must not lose the notification.
+		c.Notify.AlertCreated(context.WithoutCancel(ctx), a)
 	}
 }
 

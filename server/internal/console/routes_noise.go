@@ -1,10 +1,14 @@
 package console
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Netdoodle/homexdr/server/internal/core"
+	"github.com/Netdoodle/homexdr/server/internal/notify"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 )
 
@@ -18,6 +22,9 @@ func (h *Handler) routesNoise(viewer, analyst, admin string) {
 	h.route("DELETE /api/suppressions/{id}", admin, h.deleteSuppression)
 	h.route("GET /api/settings/noise", viewer, h.getNoiseSettings)
 	h.route("PUT /api/settings/noise", admin, h.putNoiseSettings)
+	h.route("GET /api/settings/notifications", admin, h.getNotifySettings)
+	h.route("PUT /api/settings/notifications", admin, h.putNotifySettings)
+	h.route("POST /api/settings/notifications/channels/{id}/test", admin, h.testNotifyChannel)
 }
 
 func (h *Handler) alertNoise(w http.ResponseWriter, r *http.Request, _ *store.User) {
@@ -113,4 +120,63 @@ func (h *Handler) putNoiseSettings(w http.ResponseWriter, r *http.Request, u *st
 		return
 	}
 	writeJSON(w, http.StatusOK, saved)
+}
+
+// notifyView is settings without secrets, with delivery status.
+type notifyView struct {
+	notify.SettingsView
+	Status *notify.Status `json:"status"`
+}
+
+func (h *Handler) notifyResponse(w http.ResponseWriter, r *http.Request, set notify.Settings) {
+	status, err := h.c.Notify.Status(r.Context())
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, notifyView{SettingsView: set.View(), Status: status})
+}
+
+func (h *Handler) getNotifySettings(w http.ResponseWriter, r *http.Request, _ *store.User) {
+	h.notifyResponse(w, r, h.c.Notify.Settings(r.Context()))
+}
+
+func (h *Handler) putNotifySettings(w http.ResponseWriter, r *http.Request, u *store.User) {
+	var req notify.SettingsUpdate
+	if !decode(w, r, &req) {
+		return
+	}
+	set, err := h.c.Notify.SaveSettings(r.Context(), req)
+	if err != nil {
+		var ie *notify.InputError
+		if errors.As(err, &ie) {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		h.fail(w, err)
+		return
+	}
+	// Names and kinds only: the audit log never holds a secret.
+	names := make([]string, len(set.Channels))
+	for i, c := range set.Channels {
+		names[i] = fmt.Sprintf("%s (%s)", c.Name, c.Kind)
+	}
+	h.c.Audit(r.Context(), u.Username, "notify.settings", "", "channels: "+strings.Join(names, ", "))
+	h.notifyResponse(w, r, set)
+}
+
+func (h *Handler) testNotifyChannel(w http.ResponseWriter, r *http.Request, u *store.User) {
+	id := r.PathValue("id")
+	err := h.c.Notify.Test(r.Context(), id)
+	if errors.Is(err, notify.ErrNoChannel) {
+		writeErr(w, http.StatusNotFound, "no such channel")
+		return
+	}
+	if err != nil {
+		h.c.Audit(r.Context(), u.Username, "notify.test", id, "failed: "+err.Error())
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	h.c.Audit(r.Context(), u.Username, "notify.test", id, "sent")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
