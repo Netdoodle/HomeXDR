@@ -147,7 +147,7 @@ function SuppressFormBody({ initial, onClose }: { initial: SuppressForm; onClose
             </button>
           </div>
         </div>
-        <span className="hint">Values must match exactly, including upper and lower case. An event without the field does not match.</span>
+        <span className="help">Values must match exactly, including upper and lower case. An event without the field does not match.</span>
       </div>
 
       <div className="form-grid">

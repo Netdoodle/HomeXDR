@@ -18,6 +18,7 @@ import { AgentConfigEditor } from './AgentConfigEditor'
 import { ThreatIntelTab } from './ThreatIntelSettings'
 import { AgentLifecycleTab } from './AgentLifecycle'
 import { AIAnalystTab } from './AISettings'
+import { NotificationsTab } from './NotificationSettings'
 import { SuppressionsTab } from './Suppressions'
 
 const ALL_TABS: (TabDef & { admin?: boolean })[] = [
@@ -27,6 +28,7 @@ const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'agents', label: 'Agent updates', icon: 'refresh', admin: true },
   { id: 'integrations', label: 'Integrations', icon: 'network' },
   { id: 'suppressions', label: 'Suppressions', icon: 'filter' },
+  { id: 'notifications', label: 'Notifications', icon: 'info', admin: true },
   { id: 'ai', label: 'AI analyst', icon: 'sparkle', admin: true },
   { id: 'intel', label: 'Threat intel', icon: 'radar', admin: true },
   { id: 'audit', label: 'Audit log', icon: 'clock', admin: true },
@@ -49,6 +51,7 @@ export function SettingsPage() {
       {tab === 'agents' ? <AgentLifecycleTab /> : null}
       {tab === 'integrations' ? <IntegrationsTab /> : null}
       {tab === 'suppressions' ? <SuppressionsTab /> : null}
+      {tab === 'notifications' ? <NotificationsTab /> : null}
       {tab === 'ai' ? <AIAnalystTab /> : null}
       {tab === 'intel' ? <ThreatIntelTab /> : null}
       {tab === 'audit' ? <AuditTab /> : null}
