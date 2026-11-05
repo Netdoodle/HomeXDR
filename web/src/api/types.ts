@@ -954,6 +954,32 @@ export interface Integrations {
     failed: number
     sources: SyslogSource[]
   }
+  netflow?: NetFlowStats
+}
+
+export interface NetFlowExporter {
+  ip: string
+  /** 5, 9, or 10 for IPFIX. */
+  version: number
+  packets: number
+  records: number
+  templates: number
+  last_seen: string
+}
+
+export interface NetFlowStats {
+  enabled: boolean
+  listening: boolean
+  addr: string
+  packets: number
+  records: number
+  dropped: number
+  refused: number
+  malformed: number
+  waiting: number
+  discarded: number
+  failed: number
+  exporters: NetFlowExporter[]
 }
 
 export interface Health {

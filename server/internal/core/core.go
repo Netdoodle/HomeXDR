@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Netdoodle/homexdr/server/internal/behavior"
 	"github.com/Netdoodle/homexdr/server/internal/config"
 	"github.com/Netdoodle/homexdr/server/internal/detect"
 	"github.com/Netdoodle/homexdr/server/internal/enrich"
@@ -46,6 +47,12 @@ type Core struct {
 	Suppress *Suppressor
 	// Notify tells the owner about new alerts and sends the daily digest.
 	Notify *notify.Service
+	// Flow counts NetFlow and IPFIX intake (flowstats.go).
+	Flow *FlowStats
+	// Inventory keeps track of the devices on the home network (inventory.go).
+	Inventory *Inventory
+	// Behavior runs the behaviour detectors (feature_network.go).
+	Behavior *behavior.Runner
 }
 
 // New builds a Core and loads rules.
@@ -56,6 +63,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 		Broker: NewBroker(),
 		Syslog: NewSyslogStats(),
 		Enrich: enrich.Nop{},
+		Flow:   NewFlowStats(),
 	}
 	c.Release = NewRelease(cfg.DownloadsDir, cfg.SignaturesDir, log)
 	if cfg.ReleasesDir != "" {

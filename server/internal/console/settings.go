@@ -193,5 +193,5 @@ func (h *Handler) integrations(w http.ResponseWriter, r *http.Request, _ *store.
 		"listening": s.Listening.Load(), "addr": s.Addr.Load(),
 		"received": s.Received.Load(), "parsed": s.Parsed.Load(), "failed": s.Failed.Load(),
 		"sources": s.Sources(),
-	}})
+	}, "netflow": h.netflowStats()})
 }

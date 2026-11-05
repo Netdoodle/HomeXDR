@@ -43,6 +43,9 @@ services:
       HOMEXDR_RETENTION_MAX_SIZE: ${HOMEXDR_RETENTION_MAX_SIZE:-}
       HOMEXDR_SECURE_COOKIES: ${HOMEXDR_SECURE_COOKIES:-false}
       HOMEXDR_SYSLOG_ALLOW: ${HOMEXDR_SYSLOG_ALLOW:-}
+      # NetFlow/IPFIX receiver, off unless HOMEXDR_NETFLOW_ADDR is set (see docs/network-visibility.md).
+      HOMEXDR_NETFLOW_ADDR: ${HOMEXDR_NETFLOW_ADDR:-}
+      HOMEXDR_NETFLOW_ALLOW: ${HOMEXDR_NETFLOW_ALLOW:-}
       # Optional AI analyst API keys (otherwise set them in the console).
       HOMEXDR_ANTHROPIC_API_KEY: ${HOMEXDR_ANTHROPIC_API_KEY:-}
       HOMEXDR_OPENAI_API_KEY: ${HOMEXDR_OPENAI_API_KEY:-}
@@ -54,6 +57,7 @@ services:
       - "${HOMEXDR_AGENT_PORT:-8443}:8443/tcp"
       - "${HOMEXDR_SYSLOG_PORT:-514}:5514/udp"
       - "${HOMEXDR_SYSLOG_PORT:-514}:5514/tcp"
+      - "${HOMEXDR_NETFLOW_PORT:-2055}:2055/udp"
     volumes:
       - data:/data
       # Agent release signatures and the release public key, written by the host's update

@@ -20,6 +20,8 @@ import { AgentLifecycleTab } from './AgentLifecycle'
 import { AIAnalystTab } from './AISettings'
 import { NotificationsTab } from './NotificationSettings'
 import { SuppressionsTab } from './Suppressions'
+import { NetFlowPanel } from './NetFlowPanel'
+import { NetworkSettingsTab } from './NetworkSettings'
 
 const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'tokens', label: 'Enrollment', icon: 'key', admin: true },
@@ -29,6 +31,7 @@ const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'integrations', label: 'Integrations', icon: 'network' },
   { id: 'suppressions', label: 'Suppressions', icon: 'filter' },
   { id: 'notifications', label: 'Notifications', icon: 'info', admin: true },
+  { id: 'network', label: 'Network', icon: 'hosts', admin: true },
   { id: 'ai', label: 'AI analyst', icon: 'sparkle', admin: true },
   { id: 'intel', label: 'Threat intel', icon: 'radar', admin: true },
   { id: 'audit', label: 'Audit log', icon: 'clock', admin: true },
@@ -52,6 +55,7 @@ export function SettingsPage() {
       {tab === 'integrations' ? <IntegrationsTab /> : null}
       {tab === 'suppressions' ? <SuppressionsTab /> : null}
       {tab === 'notifications' ? <NotificationsTab /> : null}
+      {tab === 'network' ? <NetworkSettingsTab /> : null}
       {tab === 'ai' ? <AIAnalystTab /> : null}
       {tab === 'intel' ? <ThreatIntelTab /> : null}
       {tab === 'audit' ? <AuditTab /> : null}
@@ -556,6 +560,7 @@ function IntegrationsTab() {
           </QueryView>
         </div>
       </section>
+      <NetFlowPanel stats={q.data?.netflow} />
     </div>
   )
 }

@@ -12,7 +12,7 @@ import (
 )
 
 // Decode turns a syslog message into an event. kind reports what was recognized:
-// "opnsense", "suricata" or "syslog".
+// "opnsense", "suricata", "unbound", "dhcp" or "syslog".
 func Decode(m *Message) (ev *event.Event, kind string) {
 	switch {
 	case m.AppName == "filterlog":
@@ -26,6 +26,14 @@ func Decode(m *Message) (ev *event.Event, kind string) {
 	case m.AppName == "sshd" || strings.HasPrefix(m.AppName, "sshd-"):
 		if ev := decodeSSHD(m); ev != nil {
 			return ev, "syslog"
+		}
+	case m.AppName == "unbound":
+		if ev := decodeUnbound(m); ev != nil {
+			return ev, "unbound"
+		}
+	case isDHCPApp(m.AppName):
+		if ev := decodeDHCP(m); ev != nil {
+			return ev, "dhcp"
 		}
 	}
 	return decodeGeneric(m), "syslog"
