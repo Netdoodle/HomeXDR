@@ -25,7 +25,9 @@ import { InvestigatePage } from './pages/Investigate'
 import { RuleReposPage } from './pages/RuleRepos'
 import { RulesPage } from './pages/Rules'
 import { SearchPage } from './pages/Search'
+import { HealthPage } from './pages/Health'
 import { SettingsPage } from './pages/Settings'
+import { VulnerabilitiesPage } from './pages/Vulnerabilities'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -90,6 +92,9 @@ export function App() {
                 <Route path="hunts" element={<HuntsPage />} />
                 <Route path="hunts/new" element={<HuntCreatePage />} />
                 <Route path="hunts/:id" element={<HuntDetailPage />} />
+                <Route path="vulnerabilities" element={<VulnerabilitiesPage />} />
+                <Route path="health" element={<HealthPage />} />
+                <Route path="health/:tab" element={<HealthPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="settings/:tab" element={<SettingsPage />} />
                 <Route path="*" element={<NotFoundPage />} />

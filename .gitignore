@@ -5,6 +5,7 @@
 *.test
 *.out
 coverage.*
+!coverage.go
 
 # Go
 /agent/bin/

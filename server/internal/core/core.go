@@ -53,6 +53,8 @@ type Core struct {
 	Inventory *Inventory
 	// Behavior runs the behaviour detectors (feature_network.go).
 	Behavior *behavior.Runner
+	// Health is feed health, the offline lists and vulnerability matching.
+	Health *Health
 }
 
 // New builds a Core and loads rules.

@@ -22,6 +22,7 @@ import { NotificationsTab } from './NotificationSettings'
 import { SuppressionsTab } from './Suppressions'
 import { NetFlowPanel } from './NetFlowPanel'
 import { NetworkSettingsTab } from './NetworkSettings'
+import { OfflineListsTab } from './OfflineLists'
 
 const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'tokens', label: 'Enrollment', icon: 'key', admin: true },
@@ -34,6 +35,7 @@ const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'network', label: 'Network', icon: 'hosts', admin: true },
   { id: 'ai', label: 'AI analyst', icon: 'sparkle', admin: true },
   { id: 'intel', label: 'Threat intel', icon: 'radar', admin: true },
+  { id: 'lists', label: 'Offline lists', icon: 'table', admin: true },
   { id: 'audit', label: 'Audit log', icon: 'clock', admin: true },
   { id: 'account', label: 'My account', icon: 'user' },
 ]
@@ -58,6 +60,7 @@ export function SettingsPage() {
       {tab === 'network' ? <NetworkSettingsTab /> : null}
       {tab === 'ai' ? <AIAnalystTab /> : null}
       {tab === 'intel' ? <ThreatIntelTab /> : null}
+      {tab === 'lists' ? <OfflineListsTab /> : null}
       {tab === 'audit' ? <AuditTab /> : null}
       {tab === 'account' ? <AccountTab /> : null}
     </>

@@ -657,6 +657,99 @@ type DetectorSettings = {
 };
 ```
 
+## Data health
+
+`GET /api/health/feeds` (viewer) lists every data source. See [health.md](health.md).
+
+```ts
+{ sources: {
+    host_id: string; hostname: string;
+    module: string; dataset: string;      // both empty on the row about the host as a whole
+    status: "ok" | "silent" | "learning" | "never_seen" | "quiet" | "muted" | "host_offline";
+    explanation?: string; first_seen?: string; last_seen?: string; arrivals: number;
+    usual_gap_sec: number; allowance_sec: number; silent_sec: number;
+    muted: boolean; expected: boolean; can_alert: boolean;
+  }[];
+  bootstrapped: boolean; grace_until?: string; note?: string }
+```
+
+`PATCH /api/health/feeds` (admin), body `{host_id, module, dataset, muted?, expected?}`, sets your
+choice for one source and returns the same report. Audited.
+
+`GET /api/doctor` (admin) runs the doctor's checks, reusing a report from the last 30 seconds unless
+`?refresh=1`.
+
+```ts
+{ at: string; ok: number; warn: number; fail: number;
+  results: { id: string; name: string; status: "ok" | "warn" | "fail" | "skip"; message: string; fix?: string }[] }
+```
+
+`GET /api/selfcheck` (admin) → `{running: boolean, last?: SelfCheckResult}`. `POST /api/selfcheck`
+(admin) starts a run in the background and answers `202` with the same shape. Audited.
+
+```ts
+type SelfCheckResult = {
+  at: string; took_ms: number; rules: number; fired: number; rate: number; failed: number;
+  failures: { rule_id: string; title: string; reason: string }[];   // first 200
+  pipeline: { passed: boolean; message: string };
+  coverage?: { days: number; events: number; sources: number; rules: number; can_fire: number; cannot_fire: number;
+    groups: { logsource: string; rules: number; can_fire: number; no_events: number; missing_field: number;
+              missing?: { field: string; rules: number }[] }[];
+    missing: { field: string; rules: number }[]; note?: string };
+  previous?: { at: string; rules: number; fired: number; rate: number; cannot_fire: number; pipeline: boolean };
+  regression: boolean; reason?: string;
+}
+```
+
+## Offline lists
+
+`GET /api/settings/lists` (admin) returns `{lists: OfflineList[]}`. See [lists.md](lists.md).
+
+```ts
+type OfflineList = {
+  id: string; name: string; about: string; site_url: string; warning?: string;
+  license: string; license_url?: string; enabled: boolean; default_on: boolean; every_hours: number;
+  last_check?: string; last_update?: string; entries: number; error?: string; updating: boolean;
+}
+```
+
+`PUT /api/settings/lists/{id}` (admin), body `{enabled: boolean}`, and
+`POST /api/settings/lists/{id}/refresh` (admin, runs in the background) return the same. Audited.
+
+`POST /api/lists/lookup` (viewer), body `{indicators: string[]}` (at most 50), returns
+`{results: {[indicator]: Facts}}`, leaving out what the lists know nothing about. It never touches
+the network. The intel view (`/api/intel/lookup`) has the same facts as an optional `offline` field.
+
+```ts
+type Facts = {
+  domain?: { registered?: string; rank?: number; category?: string; newly_registered?: boolean };
+  ip?: { asn?: number; as_name?: string; country?: string };
+  mac?: { vendor?: string; randomized?: boolean };
+}
+```
+
+## Known-exploited software
+
+`GET /api/vulnerabilities` (viewer). See [vulnerabilities.md](vulnerabilities.md).
+
+```ts
+{ matches: {
+    host_id: string; hostname: string; package: string; version: string; package_type: string;
+    cve: string; title: string; kev_date: string; due_date: string; ransomware: boolean;
+    confidence: "confirmed" | "possible"; reason: string; first_seen: string; last_seen: string;
+  }[];
+  confirmed: number; possible: number;
+  hosts: { host_id: string; hostname: string; packages: number; snapshot_at?: string; note?: string }[];
+  kev: { enabled: boolean; entries: number; version?: string; last_update?: string; error?: string };
+  osv: { enabled: boolean; error?: string };
+  last_run?: string; running: boolean }
+```
+
+`POST /api/vulnerabilities/refresh` (admin) compares now, in the background, and returns the same.
+
+`PUT /api/settings/vuln` (admin), body `{osv: boolean}`, turns the optional OSV check on or off and
+returns the same. Audited. OSV is off by default.
+
 ## Health
 
 `GET /healthz` (no auth) → `{"status": "ok", "event_store": "ok" | "error: ..."}`.

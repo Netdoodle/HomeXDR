@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Netdoodle/homexdr/server/internal/enrich"
 	"github.com/Netdoodle/homexdr/server/internal/events"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/shared/event"
@@ -60,6 +61,8 @@ type Service struct {
 	mu      sync.Mutex
 	running map[string]*run
 	wg      sync.WaitGroup
+
+	offline enrich.Lookup // nil until SetOffline
 }
 
 // run is a lookup in progress.
@@ -140,6 +143,18 @@ type View struct {
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 	UpdatedBy string     `json:"updated_by,omitempty"`
 	Lookups   int        `json:"lookups,omitempty"`
+	// Offline is what the offline lists say. It comes from this server, never the network.
+	Offline *enrich.Facts `json:"offline,omitempty"`
+}
+
+// SetOffline gives lookups the offline lists, so a result can say what they know.
+func (s *Service) SetOffline(l enrich.Lookup) { s.offline = l }
+
+func (s *Service) offlineFacts(ind Indicator) *enrich.Facts {
+	if s.offline == nil || ind.Kind == KindHash {
+		return nil
+	}
+	return enrich.Describe(s.offline, ind.Value)
 }
 
 // assemble orders results by source, leaving out disabled providers and showing which need
@@ -197,6 +212,7 @@ func (s *Service) view(ctx context.Context, ind Indicator, set Settings) (*View,
 	}
 	v := &View{Indicator: ind, Running: r != nil, Results: s.assemble(ind, set, have)}
 	v.Summary = summarize(ind, v.Results)
+	v.Offline = s.offlineFacts(ind)
 	if rec != nil {
 		t := rec.UpdatedAt
 		v.UpdatedAt, v.UpdatedBy, v.Lookups = &t, rec.UpdatedBy, rec.Lookups

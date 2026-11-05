@@ -6,6 +6,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,7 +25,16 @@ var (
 	dpkgStatus   = "/var/lib/dpkg/status"
 	apkInstalled = "/lib/apk/db/installed"
 	pacmanLocal  = "/var/lib/pacman/local"
+	// slackwarePackages is the Slackware (and Unraid) package database: one file per
+	// package, named name-version-arch-build. /var/log/packages is a link to it on
+	// current systems and the real directory on older ones.
+	slackwarePackages = []string{"/var/lib/pkgtools/packages", "/var/log/packages"}
+	dockerSocket      = "/var/run/docker.sock"
 )
+
+// errNoPackageDB is what software.list reports on a system whose packages it cannot read,
+// so the inventory sensor shows a reason instead of quietly sending nothing.
+var errNoPackageDB = errors.New("no supported package database found (looked for dpkg, rpm, apk, pacman and Slackware packages)")
 
 type pkg struct {
 	Name, Version, Vendor, Type, Arch string
@@ -139,8 +153,112 @@ func parsePacmanDesc(b []byte) pkg {
 	return p
 }
 
+// parseSlackwareName splits a Slackware package file name, name-version-arch-build. The
+// name may hold dashes; the other three never do.
+func parseSlackwareName(file string) (pkg, bool) {
+	parts := strings.Split(file, "-")
+	if len(parts) < 4 || strings.HasPrefix(file, ".") {
+		return pkg{}, false
+	}
+	n := len(parts)
+	name, version := strings.Join(parts[:n-3], "-"), parts[n-3]
+	if name == "" || version == "" {
+		return pkg{}, false
+	}
+	build := parts[n-1]
+	vendor := ""
+	if strings.Contains(build, "_slack") || (build != "" && !strings.Contains(build, "_")) {
+		vendor = "Slackware"
+	}
+	return pkg{Name: name, Version: version, Vendor: vendor, Type: "slackware", Arch: parts[n-2]}, true
+}
+
+// readSlackware lists the packages in a Slackware package directory. ok is false when
+// there is no such directory.
+func readSlackware(dirs []string) (out []pkg, ok bool) {
+	for _, dir := range dirs {
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			p, valid := parseSlackwareName(e.Name())
+			if !valid {
+				continue
+			}
+			if fi, err := e.Info(); err == nil {
+				p.Installed = fi.ModTime()
+			}
+			out = append(out, p)
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+// parseDockerContainers reads the Docker API's container list. Each image in use once.
+func parseDockerContainers(b []byte) []pkg {
+	var list []struct {
+		Image string `json:"Image"`
+	}
+	if json.Unmarshal(b, &list) != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []pkg
+	for _, c := range list {
+		img := c.Image
+		if img == "" || strings.HasPrefix(img, "sha256:") || seen[img] {
+			continue
+		}
+		seen[img] = true
+		img, _, _ = strings.Cut(img, "@") // drop a digest
+		name, tag := img, "latest"
+		if i := strings.LastIndex(img, ":"); i > strings.LastIndex(img, "/") {
+			name, tag = img[:i], img[i+1:]
+		}
+		out = append(out, pkg{Name: name, Version: tag, Type: "docker"})
+	}
+	return out
+}
+
+// dockerImages asks the local Docker socket which images containers run. A host without
+// Docker, or a socket that does not answer, simply has none.
+func dockerImages(ctx context.Context, socket string) []pkg {
+	if _, err := os.Stat(socket); err != nil {
+		return nil
+	}
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", socket)
+		}},
+	}
+	defer client.CloseIdleConnections()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/containers/json?all=1", nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil
+	}
+	return parseDockerContainers(b)
+}
+
 func collectSoftware(ctx context.Context, _ map[string]string, emit func(platform.Row) error) error {
+	found := false
 	if b, err := os.ReadFile(dpkgStatus); err == nil {
+		found = true
 		for _, p := range parseDpkgStatus(b) {
 			p.Installed = dpkgInstallTime(p.Name, p.Arch)
 			if err := emit(p.row()); err != nil {
@@ -149,6 +267,7 @@ func collectSoftware(ctx context.Context, _ map[string]string, emit func(platfor
 		}
 	}
 	if rpm, err := exec.LookPath("rpm"); err == nil {
+		found = true
 		out, err := exec.CommandContext(ctx, rpm, "-qa", "--qf", `%{NAME}\t%{VERSION}-%{RELEASE}\t%{VENDOR}\t%{INSTALLTIME}\t%{ARCH}\n`).Output()
 		if err == nil && len(out) > 0 {
 			sc := bufio.NewScanner(bytes.NewReader(out))
@@ -168,6 +287,7 @@ func collectSoftware(ctx context.Context, _ map[string]string, emit func(platfor
 		}
 	}
 	if b, err := os.ReadFile(apkInstalled); err == nil {
+		found = true
 		for _, p := range parseAPK(b) {
 			if err := emit(p.row()); err != nil {
 				return err
@@ -175,6 +295,7 @@ func collectSoftware(ctx context.Context, _ map[string]string, emit func(platfor
 		}
 	}
 	if ents, err := os.ReadDir(pacmanLocal); err == nil {
+		found = true
 		for _, e := range ents {
 			b, err := os.ReadFile(filepath.Join(pacmanLocal, e.Name(), "desc"))
 			if err != nil {
@@ -186,6 +307,22 @@ func collectSoftware(ctx context.Context, _ map[string]string, emit func(platfor
 				}
 			}
 		}
+	}
+	if list, ok := readSlackware(slackwarePackages); ok {
+		found = true
+		for _, p := range list {
+			if err := emit(p.row()); err != nil {
+				return err
+			}
+		}
+	}
+	for _, p := range dockerImages(ctx, dockerSocket) {
+		if err := emit(p.row()); err != nil {
+			return err
+		}
+	}
+	if !found {
+		return errNoPackageDB
 	}
 	return nil
 }

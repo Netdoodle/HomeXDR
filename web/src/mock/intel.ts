@@ -1,5 +1,6 @@
 // Mock threat intelligence: canned answers that arrive one by one, like the real services.
 
+import { offlineFacts } from './lists'
 import type { Alert, Event, IndicatorKind, IntelLookupSummary, IntelProvider, IntelResult, IntelSettings, IntelSettingsUpdate, IntelSightings, IntelVerdict, IntelView } from '../api/types'
 
 const PROVIDERS: IntelProvider[] = [
@@ -166,6 +167,7 @@ function viewOf(l: Lookup): IntelView {
   const whoisReady = rs.some((r) => r.source === 'rdap' && r.state === 'ok')
   return {
     indicator: l.indicator,
+    offline: offlineFacts(l.indicator.value),
     running: rs.some((r) => r.state === 'pending'),
     results: rs,
     updated_at: l.updated_at,
