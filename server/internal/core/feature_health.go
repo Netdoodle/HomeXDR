@@ -2,9 +2,12 @@ package core
 
 import (
 	"context"
+	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/Netdoodle/homexdr/server/internal/lists"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/shared/event"
 )
@@ -13,6 +16,7 @@ import (
 // matching.
 type Health struct {
 	Feeds *FeedHealth
+	Lists *lists.Service
 
 	// serving is set when the background loops run, so checks can tell the running server
 	// from a command-line tool that knows only what is saved.
@@ -23,7 +27,12 @@ type Health struct {
 // initHealth sets up feed health, the offline lists and vulnerability matching. It starts
 // nothing and writes nothing, because the command line tools build a Core too.
 func (c *Core) initHealth(ctx context.Context) {
-	c.Health = &Health{Feeds: newFeedHealth(c, func() time.Time { return time.Now().UTC() })}
+	c.Health = &Health{
+		Feeds: newFeedHealth(c, func() time.Time { return time.Now().UTC() }),
+		Lists: lists.New(filepath.Join(c.Cfg.DataDir, "lists"), c.State, c.Log),
+	}
+	c.Enrich = c.Health.Lists
+	c.Intel.SetOffline(c.Health.Lists)
 	if err := c.Health.Feeds.load(ctx); err != nil {
 		c.Log.Warn("feed health: load", "err", err)
 	}
@@ -32,7 +41,15 @@ func (c *Core) initHealth(ctx context.Context) {
 // runHealth is the background loop of those features.
 func (c *Core) runHealth(ctx context.Context) {
 	c.Health.serving.Store(true)
-	c.Health.Feeds.Run(ctx)
+	var wg sync.WaitGroup
+	for _, run := range []func(context.Context){c.Health.Feeds.Run, c.Health.Lists.Run} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			run(ctx)
+		}()
+	}
+	wg.Wait()
 }
 
 // observeHealth sees every stored batch of events.

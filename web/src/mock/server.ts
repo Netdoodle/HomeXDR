@@ -56,6 +56,7 @@ import { HOUR, hostById, hosts } from './hosts'
 import { getIntelSettings, getLookup, lookupHistory, putIntelSettings, sightings, startLookup } from './intel'
 import { registerHealthMocks } from './health'
 import { registerHealthCheckMocks } from './healthChecks'
+import { registerListMocks } from './lists'
 import { repoFiles, repoSkipped } from './repoFiles'
 import { makeId } from './rng'
 import { detectionNeedles, parseRuleYaml, ruleById, rules } from './rules'
@@ -1811,3 +1812,4 @@ route('GET', '/api/audit', ({ query }) => ({ entries: page(audit, query), total:
 route('GET', '/api/integrations', () => integrations)
 registerHealthMocks(route)
 registerHealthCheckMocks(route)
+registerListMocks(route)

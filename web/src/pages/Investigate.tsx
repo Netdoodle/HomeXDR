@@ -12,6 +12,7 @@ import { EventTable } from '../components/EventTable'
 import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
 import { CopyButton, KV, RelTime } from '../components/Misc'
+import { OfflineFacts } from '../components/OfflineFacts'
 import { ErrorState, Loading, Spinner } from '../components/States'
 import { formatNumber } from '../lib/format'
 import { useDocumentTitle, useUrlState } from '../lib/hooks'
@@ -221,6 +222,7 @@ function SummaryPanel({ view: v, canLookup, onRefresh, refreshing }: { view: Int
             </div>
             <div className="small muted">{s.basis}</div>
           </div>
+          <OfflineFacts facts={v.offline} />
           {s.brief.map((p, i) => (
             <p key={i} className="intel-brief">
               {p}

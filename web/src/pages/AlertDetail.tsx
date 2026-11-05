@@ -9,6 +9,7 @@ import { EventTable } from '../components/EventTable'
 import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
 import { ExpandableText, KV, RelTime } from '../components/Misc'
+import { IndicatorFacts } from '../components/OfflineFacts'
 import { ResponseButtons } from '../components/ResponseButtons'
 import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
@@ -238,11 +239,14 @@ function AlertView({ alert: a }: { alert: Alert }) {
               </div>
               <div className="panel-body stack" style={{ gap: 6 }}>
                 {eventIndicators(a.event).map((i) => (
-                  <div key={i.value} className="row small" style={{ justifyContent: 'space-between', gap: 10 }}>
+                  <div key={i.value}>
+                    <div className="row small" style={{ justifyContent: 'space-between', gap: 10 }}>
                     <span className="muted nowrap">{i.label}</span>
                     <Link className="mono truncate-inline" to={investigateHref(i.value)} title={`Investigate ${i.value}`}>
                       {i.value}
                     </Link>
+                    </div>
+                    <IndicatorFacts value={i.value} />
                   </div>
                 ))}
               </div>
