@@ -191,6 +191,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, schema+triageSchema+mcpTokenSchema+ruleRepoSchema+intelSchema); err != nil {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
+	for _, extra := range featureSchemas {
+		if _, err := s.db.ExecContext(ctx, extra); err != nil {
+			return fmt.Errorf("store: migrate: %w", err)
+		}
+	}
 	for _, m := range columnMigrations {
 		var n int
 		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, m.table, m.column).Scan(&n); err != nil {
@@ -204,6 +209,10 @@ func (s *Store) migrate(ctx context.Context) error {
 	}
 	return nil
 }
+
+// featureSchemas holds the tables of features that register them from their own file:
+// func init() { featureSchemas = append(featureSchemas, mySchema) }.
+var featureSchemas []string
 
 // columnMigrations add columns to databases created by older versions.
 var columnMigrations = []struct{ table, column, def string }{

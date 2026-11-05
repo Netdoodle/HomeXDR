@@ -30,6 +30,8 @@ func (c *Core) Ingest(ctx context.Context, host *store.Host, evs []*event.Event)
 	for _, e := range evs {
 		c.detect(ctx, e)
 	}
+	c.observeHealth(ctx, host, evs)
+	c.observeNetwork(ctx, host, evs)
 	return nil
 }
 

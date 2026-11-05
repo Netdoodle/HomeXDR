@@ -11,6 +11,7 @@ import (
 
 	"github.com/Netdoodle/homexdr/server/internal/config"
 	"github.com/Netdoodle/homexdr/server/internal/detect"
+	"github.com/Netdoodle/homexdr/server/internal/enrich"
 	"github.com/Netdoodle/homexdr/server/internal/events"
 	"github.com/Netdoodle/homexdr/server/internal/intel"
 	"github.com/Netdoodle/homexdr/server/internal/pki"
@@ -38,6 +39,8 @@ type Core struct {
 	Triage *triage.Service
 	// Intel looks up indicators of compromise in threat intelligence services.
 	Intel *intel.Service
+	// Enrich answers offline questions about domains, addresses and MAC addresses.
+	Enrich enrich.Lookup
 }
 
 // New builds a Core and loads rules.
@@ -47,6 +50,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 		Engine: detect.NewEngine(),
 		Broker: NewBroker(),
 		Syslog: NewSyslogStats(),
+		Enrich: enrich.Nop{},
 	}
 	c.Release = NewRelease(cfg.DownloadsDir, cfg.SignaturesDir, log)
 	if cfg.ReleasesDir != "" {
@@ -60,6 +64,9 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 	if err := c.Rules.Reload(ctx); err != nil {
 		return nil, err
 	}
+	c.initNoise(ctx)
+	c.initHealth(ctx)
+	c.initNetwork(ctx)
 	return c, nil
 }
 

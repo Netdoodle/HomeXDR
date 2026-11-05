@@ -94,4 +94,6 @@ const (
 	ModuleSyslog    = "syslog"    // generic syslog
 	ModuleOPNsense  = "opnsense"  // OPNsense filterlog
 	ModuleSuricata  = "suricata"  // Suricata EVE JSON
+	ModuleNetFlow   = "netflow"   // NetFlow and IPFIX flow records
+	ModuleHomeXDR   = "homexdr"   // findings the server itself produces (health, behaviour)
 )

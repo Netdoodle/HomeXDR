@@ -110,6 +110,9 @@ type AlertInput struct {
 	Mitre    []Mitre
 	Severity string
 	Event    *event.Event
+	// DedupEntity, when set, identifies what repeats of this alert have in common
+	// instead of the event's process (behavioural and system alerts use it).
+	DedupEntity string
 }
 
 // DedupWindow is how long an open alert keeps absorbing repeat hits.
@@ -132,7 +135,11 @@ func (s *Store) RecordAlert(ctx context.Context, in AlertInput) (*Alert, bool, e
 	if user == "" && ev.User != nil {
 		user = ev.User.Name
 	}
-	key := in.Rule.ID + "|" + ev.Host.ID + "|" + entity
+	dedup := entity
+	if in.DedupEntity != "" {
+		dedup = in.DedupEntity
+	}
+	key := in.Rule.ID + "|" + ev.Host.ID + "|" + dedup
 	now := time.Now().UTC()
 	at := ev.Timestamp.UTC()
 	if at.IsZero() {

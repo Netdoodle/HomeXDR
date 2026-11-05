@@ -123,6 +123,10 @@ func New(c *core.Core) *Handler {
 	h.route("POST /api/settings/ai/mcp-tokens", admin, h.createMCPToken)
 	h.route("DELETE /api/settings/ai/mcp-tokens/{id}", admin, h.deleteMCPToken)
 
+	h.routesNoise(viewer, analyst, admin)
+	h.routesHealth(viewer, analyst, admin)
+	h.routesNetwork(viewer, analyst, admin)
+
 	h.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})

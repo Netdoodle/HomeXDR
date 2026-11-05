@@ -180,6 +180,7 @@ func serve() error {
 	go c.RunMaintenance(ctx)
 	go c.RuleRepos.Run(ctx)
 	go c.Triage.Run(ctx)
+	go c.RunFeatures(ctx)
 
 	if n, _ := st.CountUsers(ctx); n == 0 {
 		log.Info("no users yet: open the console to create the admin account", "addr", cfg.HTTPAddr)
