@@ -221,6 +221,8 @@ var featureSchemas []string
 // columnMigrations add columns to databases created by older versions.
 var columnMigrations = []struct{ table, column, def string }{
 	{"alert_triage", "engine", `TEXT NOT NULL DEFAULT 'api'`},
+	{"alert_triage", "reused_from_alert", `TEXT NOT NULL DEFAULT ''`},
+	{"alert_triage", "reused_from_at", `TEXT`},
 	// Agent lifecycle: certificate renewal, decommissioning and update policy.
 	{"hosts", "pending_cert_serial", `TEXT NOT NULL DEFAULT ''`},
 	{"hosts", "cert_expires", `TEXT`},
