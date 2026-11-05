@@ -95,5 +95,7 @@ const (
 	ModuleOPNsense  = "opnsense"  // OPNsense filterlog
 	ModuleSuricata  = "suricata"  // Suricata EVE JSON
 	ModuleNetFlow   = "netflow"   // NetFlow and IPFIX flow records
+	ModuleDNS       = "dns"       // resolver query logs (Unbound)
+	ModuleDHCP      = "dhcp"      // DHCP server logs (ISC dhcpd, Kea, dnsmasq)
 	ModuleHomeXDR   = "homexdr"   // findings the server itself produces (health, behaviour)
 )

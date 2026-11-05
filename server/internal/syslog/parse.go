@@ -1,5 +1,6 @@
 // Package syslog receives syslog over UDP and TCP and decodes OPNsense/pfSense
-// filterlog, Suricata EVE JSON, sshd authentication lines and generic messages into events.
+// filterlog, Suricata EVE JSON, Unbound and DHCP lease logs, sshd authentication lines and
+// generic messages into events.
 package syslog
 
 import (
