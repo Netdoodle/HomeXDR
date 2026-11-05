@@ -78,3 +78,55 @@ The idea of tracking arrival gaps and shifting clocks for time away comes from t
 
 `Core.FeedHealthDigest` returns a title and lines ready for the daily digest. It lists silent
 sources and counts never-seen ones, and returns no lines when there is nothing to say.
+
+## Doctor
+
+**Data health > Doctor**, `GET /api/doctor` and `homexdr-server doctor` run the same checks. The
+command exits 1 if any check fails, and takes `--json`. Each check gives a plain message and a
+suggested fix: settings database, event store (it writes one small row and reads it back), disk and
+retention, rules and load errors, rule repositories, syslog intake, signed agent release, agent
+certificates and versions, AI analyst and MCP runner, and data sources.
+
+Inside a container: `docker exec homexdr homexdr-server doctor`. The command line sees the same
+databases as the server, but not what only the running process knows, so it cannot say when the
+MCP runner last checked in.
+
+A feature adds a check from its own file, with no change here:
+
+```go
+func init() {
+	core.RegisterDoctorCheck(core.DoctorCheck{ID: "my_feature", Name: "My feature", Run: myCheck})
+}
+```
+
+Secrets never appear: messages are scrubbed of the event store's address and of any credentials in
+a URL.
+
+## Self-check
+
+**Data health > Self-check**, `POST /api/selfcheck` and `homexdr-server selfcheck` answer "can my
+rules actually fire?". The command exits 1 on a regression or when the pipeline check fails, and
+takes `--json`. A run writes nothing to your events and creates no real alerts; only its result is
+saved, in the settings database, to compare with the next run.
+
+1. **Rule logic.** For each enabled rule, it builds an event from the rule's own selection (no
+   hand-written content) and evaluates it through the engine. The number is the detection rate. A
+   miss means the rule cannot fire on anything, for example a condition that contradicts itself.
+2. **Can they fire on your data?** It samples up to 200 of each source's newest events from the
+   last 7 days and works out how many rules could fire on them, grouped by log source: either no
+   event of that kind arrives, or those events lack a field the rule needs. This is the number that
+   matters most. Many SigmaHQ rules are for Windows, so a Linux and firewall install cannot fire
+   them. Because it is a sample, a rare field can be missed.
+3. **Pipeline.** It sends a hit through a real ingest into a temporary store and checks that it
+   makes an alert and that a repeat folds into it. With no rules loaded, it uses a small built-in
+   test rule that matches only a marker field.
+
+A regression is a detection rate that fell by more than 0.05 points, or a pipeline check that passed
+last time and fails now. Adding a rule set the engine cannot fully run can count, since the rate
+falls; check the failure list.
+
+`TestSelfCheck` in `server/internal/core` runs the same machinery on fixed rules, so CI fails if a
+change to the engine or the alert path stops rules firing or alerts folding.
+
+The idea of a self-check that yields a number, and of a doctor with a suggested fix per check,
+comes from tapwatch's `selfcheck.py` and `doctor.py` (MIT licensed).

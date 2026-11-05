@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FeedView } from '../api/health'
-import { feedName, formatGap, sortFeeds } from './health'
+import { feedName, formatGap, rateDelta, sortFeeds } from './health'
 
 const feed = (p: Partial<FeedView>): FeedView => ({
   host_id: 'h',
@@ -31,6 +31,12 @@ describe('feed helpers', () => {
   it('sorts problems first', () => {
     const out = sortFeeds([feed({ dataset: 'a', status: 'muted' }), feed({ dataset: 'b', status: 'ok' }), feed({ dataset: 'c', status: 'silent' })])
     expect(out.map((f) => f.dataset)).toEqual(['c', 'b', 'a'])
+  })
+
+  it('compares detection rates', () => {
+    expect(rateDelta(99.8, 99.8)).toBe('The same as last time.')
+    expect(rateDelta(99.8, 95)).toBe('Up from 95.0% last time.')
+    expect(rateDelta(90, 95)).toBe('Down from 95.0% last time.')
   })
 
   it('names the row about a whole host', () => {

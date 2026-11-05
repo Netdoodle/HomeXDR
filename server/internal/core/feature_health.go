@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/Netdoodle/homexdr/server/internal/store"
@@ -12,6 +13,11 @@ import (
 // matching.
 type Health struct {
 	Feeds *FeedHealth
+
+	// serving is set when the background loops run, so checks can tell the running server
+	// from a command-line tool that knows only what is saved.
+	serving          atomic.Bool
+	selfCheckRunning atomic.Bool
 }
 
 // initHealth sets up feed health, the offline lists and vulnerability matching. It starts
@@ -25,6 +31,7 @@ func (c *Core) initHealth(ctx context.Context) {
 
 // runHealth is the background loop of those features.
 func (c *Core) runHealth(ctx context.Context) {
+	c.Health.serving.Store(true)
 	c.Health.Feeds.Run(ctx)
 }
 

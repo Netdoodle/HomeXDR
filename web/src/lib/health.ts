@@ -45,3 +45,9 @@ export function formatGap(sec: number | undefined | null): string {
   if (sec < 48 * 3600) return `${Math.round(sec / 3600)} h`
   return `${Math.round(sec / 86400)} d`
 }
+
+/** Compares a detection rate with the previous run, in words. */
+export function rateDelta(now: number, prev: number): string {
+  if (Math.abs(now - prev) < 0.05) return 'The same as last time.'
+  return `${now > prev ? 'Up' : 'Down'} from ${prev.toFixed(1)}% last time.`
+}

@@ -45,9 +45,13 @@ func main() {
 			os.Exit(enrollmentToken(os.Args[2:]))
 		case "release-manifest":
 			os.Exit(releaseManifest(os.Args[2:]))
+		case "doctor":
+			os.Exit(doctor(os.Args[2:]))
+		case "selfcheck":
+			os.Exit(selfcheck(os.Args[2:]))
 		case "serve":
 		default:
-			fmt.Fprintf(os.Stderr, "usage: homexdr-server [serve|version|healthcheck|reset-password|enrollment-token|release-manifest]\n")
+			fmt.Fprintf(os.Stderr, "usage: homexdr-server [serve|version|healthcheck|reset-password|enrollment-token|release-manifest|doctor|selfcheck]\n")
 			os.Exit(2)
 		}
 	}

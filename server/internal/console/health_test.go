@@ -77,3 +77,24 @@ func TestFeedHealthRoutes(t *testing.T) {
 		t.Fatalf("no change = %d", code)
 	}
 }
+
+func TestDoctorAndSelfCheckRoutes(t *testing.T) {
+	_, s := setup(t)
+	admin, viewer := signedIn(t, s)
+	if code, _ := viewer.do("GET", "/api/doctor", nil, false); code != http.StatusForbidden {
+		t.Fatalf("viewer doctor = %d", code)
+	}
+	code, body := admin.do("GET", "/api/doctor?refresh=1", nil, false)
+	if code != 200 || len(body["results"].([]any)) < 10 {
+		t.Fatalf("doctor = %d %v", code, body)
+	}
+	if code, _ := viewer.do("POST", "/api/selfcheck", nil, true); code != http.StatusForbidden {
+		t.Fatalf("viewer selfcheck = %d", code)
+	}
+	if code, body := admin.do("POST", "/api/selfcheck", nil, true); code != http.StatusAccepted {
+		t.Fatalf("selfcheck = %d %v", code, body)
+	}
+	if code, _ := admin.do("GET", "/api/selfcheck", nil, false); code != 200 {
+		t.Fatalf("selfcheck state = %d", code)
+	}
+}
