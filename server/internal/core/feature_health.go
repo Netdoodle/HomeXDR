@@ -9,6 +9,7 @@ import (
 
 	"github.com/Netdoodle/homexdr/server/internal/lists"
 	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/server/internal/vuln"
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
@@ -17,6 +18,7 @@ import (
 type Health struct {
 	Feeds *FeedHealth
 	Lists *lists.Service
+	Vuln  *vuln.Service
 
 	// serving is set when the background loops run, so checks can tell the running server
 	// from a command-line tool that knows only what is saved.
@@ -33,6 +35,7 @@ func (c *Core) initHealth(ctx context.Context) {
 	}
 	c.Enrich = c.Health.Lists
 	c.Intel.SetOffline(c.Health.Lists)
+	c.Health.Vuln = vuln.New(c.State, c.Events, c.Health.Lists, vulnNotifier{c}, c.Log)
 	if err := c.Health.Feeds.load(ctx); err != nil {
 		c.Log.Warn("feed health: load", "err", err)
 	}
@@ -42,7 +45,7 @@ func (c *Core) initHealth(ctx context.Context) {
 func (c *Core) runHealth(ctx context.Context) {
 	c.Health.serving.Store(true)
 	var wg sync.WaitGroup
-	for _, run := range []func(context.Context){c.Health.Feeds.Run, c.Health.Lists.Run} {
+	for _, run := range []func(context.Context){c.Health.Feeds.Run, c.Health.Lists.Run, c.Health.Vuln.Run} {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

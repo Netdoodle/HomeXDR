@@ -57,6 +57,7 @@ import { getIntelSettings, getLookup, lookupHistory, putIntelSettings, sightings
 import { registerHealthMocks } from './health'
 import { registerHealthCheckMocks } from './healthChecks'
 import { registerListMocks } from './lists'
+import { registerVulnMocks } from './vuln'
 import { repoFiles, repoSkipped } from './repoFiles'
 import { makeId } from './rng'
 import { detectionNeedles, parseRuleYaml, ruleById, rules } from './rules'
@@ -1813,3 +1814,4 @@ route('GET', '/api/integrations', () => integrations)
 registerHealthMocks(route)
 registerHealthCheckMocks(route)
 registerListMocks(route)
+registerVulnMocks(route)
