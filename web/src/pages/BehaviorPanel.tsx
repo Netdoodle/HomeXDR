@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { behaviorStatus, networkKeys, type DetectorStatus } from '../api/network'
+import { useCan } from '../components/Auth'
 import { RelTime } from '../components/Misc'
 import { QueryView } from '../components/States'
 import { stateDot, STATE_LABEL } from '../lib/network'
@@ -18,13 +19,16 @@ function Detail({ d }: { d: DetectorStatus }) {
 
 export function BehaviorPanel() {
   const q = useQuery({ queryKey: networkKeys.behaviorStatus, queryFn: behaviorStatus, refetchInterval: 60_000 })
+  const isAdmin = useCan('admin')
   return (
     <section className="panel">
       <div className="panel-header">
         <h2>Behaviour detection</h2>
-        <Link className="small" to="/settings/network">
-          Toggles and thresholds
-        </Link>
+        {isAdmin ? (
+          <Link className="small" to="/settings/network">
+            Toggles and thresholds
+          </Link>
+        ) : null}
       </div>
       <QueryView query={q}>
         {(data) => (

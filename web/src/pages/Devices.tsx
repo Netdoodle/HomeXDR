@@ -23,6 +23,7 @@ export function DevicesPage() {
   const q = useQuery({ queryKey: networkKeys.devices, queryFn: listDevices, refetchInterval: 30_000 })
   const [editing, setEditing] = useState<string | null>(null)
   const canEdit = useCan('analyst')
+  const isAdmin = useCan('admin')
   const text = sp.get('q') ?? ''
   const filter = (sp.get('show') ?? '') as DeviceFilter
   const sort = (sp.get('sort') || 'last_seen') as DeviceSort
@@ -36,9 +37,11 @@ export function DevicesPage() {
         actions={
           <>
             {q.isFetching && !q.isPending ? <Spinner small /> : null}
-            <Link className="btn" to="/settings/network">
-              Network settings
-            </Link>
+            {isAdmin ? (
+              <Link className="btn" to="/settings/network">
+                Network settings
+              </Link>
+            ) : null}
           </>
         }
       />
