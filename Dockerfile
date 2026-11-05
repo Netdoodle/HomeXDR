@@ -54,7 +54,7 @@ ENV HOMEXDR_DATA_DIR=/data \
     HOMEXDR_HTTP_ADDR=:8080 \
     HOMEXDR_AGENT_ADDR=:8443 \
     HOMEXDR_SYSLOG_ADDR=:5514
-EXPOSE 8080/tcp 8443/tcp 5514/udp 5514/tcp
+EXPOSE 8080/tcp 8443/tcp 5514/udp 5514/tcp 2055/udp
 VOLUME /data
 USER 65532:65532
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

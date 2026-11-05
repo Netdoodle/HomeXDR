@@ -18,6 +18,8 @@ type Config struct {
 	AgentAddr         string         // HOMEXDR_AGENT_ADDR: agent API (TLS)
 	SyslogAddr        string         // HOMEXDR_SYSLOG_ADDR: UDP+TCP syslog; "" disables
 	SyslogAllow       []netip.Prefix // HOMEXDR_SYSLOG_ALLOW: comma list of CIDRs/IPs allowed to send syslog
+	NetFlowAddr       string         // HOMEXDR_NETFLOW_ADDR: UDP NetFlow/IPFIX; "" disables (the default)
+	NetFlowAllow      []netip.Prefix // HOMEXDR_NETFLOW_ALLOW: exporters allowed to send flows (default: SyslogAllow)
 	ServerNames       []string       // HOMEXDR_SERVER_NAMES: DNS names / IPs for the agent TLS cert
 	AgentURL          string         // HOMEXDR_AGENT_URL: URL agents use to reach AgentAddr
 	EventStore        string         // HOMEXDR_EVENT_STORE: sqlite | clickhouse
@@ -69,19 +71,15 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("HOMEXDR_RELEASES_KEEP must be a whole number, at least 2 (N-1 needs two)")
 	}
 
-	for _, s := range strings.Split(os.Getenv("HOMEXDR_SYSLOG_ALLOW"), ",") {
-		if s = strings.TrimSpace(s); s == "" {
-			continue
-		}
-		p, err := netip.ParsePrefix(s)
-		if err != nil {
-			a, aerr := netip.ParseAddr(s)
-			if aerr != nil {
-				return c, fmt.Errorf("HOMEXDR_SYSLOG_ALLOW: %q is not an IP or CIDR", s)
-			}
-			p = netip.PrefixFrom(a, a.BitLen())
-		}
-		c.SyslogAllow = append(c.SyslogAllow, p.Masked())
+	if c.SyslogAllow, err = parseAllow("HOMEXDR_SYSLOG_ALLOW"); err != nil {
+		return c, err
+	}
+	c.NetFlowAddr = strings.TrimSpace(os.Getenv("HOMEXDR_NETFLOW_ADDR"))
+	if c.NetFlowAllow, err = parseAllow("HOMEXDR_NETFLOW_ALLOW"); err != nil {
+		return c, err
+	}
+	if len(c.NetFlowAllow) == 0 {
+		c.NetFlowAllow = c.SyslogAllow
 	}
 
 	for _, n := range strings.Split(os.Getenv("HOMEXDR_SERVER_NAMES"), ",") {
@@ -115,6 +113,26 @@ func Load() (Config, error) {
 		return c, err
 	}
 	return c, nil
+}
+
+// parseAllow reads a comma list of IPs and CIDRs from the environment.
+func parseAllow(key string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, s := range strings.Split(os.Getenv(key), ",") {
+		if s = strings.TrimSpace(s); s == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			a, aerr := netip.ParseAddr(s)
+			if aerr != nil {
+				return nil, fmt.Errorf("%s: %q is not an IP or CIDR", key, s)
+			}
+			p = netip.PrefixFrom(a, a.BitLen())
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
 }
 
 func env(key, def string) string {

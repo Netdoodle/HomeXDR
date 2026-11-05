@@ -41,6 +41,8 @@ type Core struct {
 	Intel *intel.Service
 	// Enrich answers offline questions about domains, addresses and MAC addresses.
 	Enrich enrich.Lookup
+	// Flow counts NetFlow and IPFIX intake (flowstats.go).
+	Flow *FlowStats
 }
 
 // New builds a Core and loads rules.
@@ -51,6 +53,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 		Broker: NewBroker(),
 		Syslog: NewSyslogStats(),
 		Enrich: enrich.Nop{},
+		Flow:   NewFlowStats(),
 	}
 	c.Release = NewRelease(cfg.DownloadsDir, cfg.SignaturesDir, log)
 	if cfg.ReleasesDir != "" {

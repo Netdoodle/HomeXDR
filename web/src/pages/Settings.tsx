@@ -18,6 +18,7 @@ import { AgentConfigEditor } from './AgentConfigEditor'
 import { ThreatIntelTab } from './ThreatIntelSettings'
 import { AgentLifecycleTab } from './AgentLifecycle'
 import { AIAnalystTab } from './AISettings'
+import { NetFlowPanel } from './NetFlowPanel'
 
 const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'tokens', label: 'Enrollment', icon: 'key', admin: true },
@@ -550,6 +551,7 @@ function IntegrationsTab() {
           </QueryView>
         </div>
       </section>
+      <NetFlowPanel stats={q.data?.netflow} />
     </div>
   )
 }
