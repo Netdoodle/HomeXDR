@@ -14,6 +14,7 @@ func TestUnbound(t *testing.T) {
 		{"query 3164", `<30>Nov  5 12:00:00 fw unbound[4242]: [4242:0] info: 192.168.20.5 example.com. A IN`, "192.168.20.5", "example.com", "A", "query", ""},
 		{"query 5424", `<30>1 2026-11-05T12:00:00+00:00 fw.lan unbound 4242 - - [4242:0] info: 192.168.20.5 WWW.Example.COM. AAAA IN`, "192.168.20.5", "www.example.com", "AAAA", "query", ""},
 		{"no brackets", `<30>Nov  5 12:00:00 fw unbound: info: 10.0.0.2 example.org. TXT IN`, "10.0.0.2", "example.org", "TXT", "query", ""},
+		{"structured data", `<30>1 2026-11-05T12:00:00+00:00 fw.lan unbound 4242 - [meta sequenceId="5"] [4242:0] info: 192.168.20.5 example.com. A IN`, "192.168.20.5", "example.com", "A", "query", ""},
 		{"reply", `<30>1 2026-11-05T12:00:00Z fw unbound 4242 - - [4242:1] info: 192.168.20.5 example.com. A IN NOERROR 0.012500 0 86`, "192.168.20.5", "example.com", "A", "answer", "NOERROR"},
 		{"reply without timing", `<30>Nov  5 12:00:00 fw unbound[1]: [1:0] info: 192.168.20.5 nope.example. A IN NXDOMAIN`, "192.168.20.5", "nope.example", "A", "answer", "NXDOMAIN"},
 		{"tagged reply", `<30>Nov  5 12:00:00 fw unbound[1]: [1:0] reply: 192.168.20.5 example.com. A IN SERVFAIL 1.500000 0 40`, "192.168.20.5", "example.com", "A", "answer", "SERVFAIL"},

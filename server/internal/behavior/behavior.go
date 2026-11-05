@@ -454,10 +454,11 @@ func (r *Runner) SetSettings(ctx context.Context, set Settings) error {
 			if len(items) > 500 {
 				return &InputError{fmt.Sprintf("%s: %s is too long", s.Title, l.Label)}
 			}
-			for _, item := range items {
+			for i, item := range items {
 				if !validListItem(l.Kind, item) {
 					return &InputError{fmt.Sprintf("%s: %q does not belong in %s", s.Title, item, l.Label)}
 				}
+				items[i] = normalListItem(l.Kind, item)
 			}
 		}
 	}
@@ -479,12 +480,25 @@ func validListItem(kind, item string) bool {
 		_, err := netip.ParseAddr(item)
 		return err == nil
 	case "domain":
-		return strings.Contains(item, ".") || item == strings.ToLower(item)
+		return strings.Contains(strings.Trim(item, "."), ".")
 	case "port", "endpoint":
 		_, _, _, ok := parsePortItem(item)
 		return ok
 	}
 	return true
+}
+
+// normalListItem writes an entry the way detectors compare it.
+func normalListItem(kind, item string) string {
+	switch kind {
+	case "ip":
+		if a, err := netip.ParseAddr(item); err == nil {
+			return a.Unmap().String()
+		}
+	case "domain":
+		return strings.ToLower(strings.Trim(item, "."))
+	}
+	return item
 }
 
 func (r *Runner) spec(id string) *Spec {

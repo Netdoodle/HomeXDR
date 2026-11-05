@@ -778,6 +778,22 @@ func TestSettings(t *testing.T) {
 			t.Errorf("%+v: %v", s, err)
 		}
 	}
+	// Entries are stored the way detectors compare them.
+	h.settings("beaconing", DetectorSetting{Lists: map[string][]string{"benign_domains": {"Vendor.Example."}}})
+	h.settings("dns_bypass", DetectorSetting{Lists: map[string][]string{"approved_resolvers": {"::ffff:192.168.20.53"}}})
+	for _, v := range h.r.DetectorViews() {
+		if v.ID == "dns_bypass" && v.Lists["approved_resolvers"][0] != "192.168.20.53" {
+			t.Errorf("address %v", v.Lists)
+		}
+	}
+	h.settings("beaconing", DetectorSetting{Lists: map[string][]string{"benign_domains": {"Vendor.Example."}}})
+	if got := h.r.DetectorViews()[0].Lists["benign_domains"][0]; got != "vendor.example" {
+		t.Errorf("domain %q", got)
+	}
+	var ie *InputError
+	if err := h.r.SetSettings(ctx, Settings{Detectors: map[string]DetectorSetting{"beaconing": {Lists: map[string][]string{"benign_domains": {"justaword"}}}}}); !errors.As(err, &ie) {
+		t.Errorf("a bare word as a domain: %v", err)
+	}
 	// A toggle stops the detector, and its status says so.
 	off := false
 	h.beat("192.168.20.5", "198.51.100.10", 8443, "tcp", 5*time.Minute, 20)

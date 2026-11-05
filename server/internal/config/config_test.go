@@ -35,3 +35,30 @@ func TestLoadRetention(t *testing.T) {
 		t.Fatal("negative retention accepted")
 	}
 }
+
+func TestNetFlowConfig(t *testing.T) {
+	t.Setenv("HOMEXDR_DATA_DIR", t.TempDir())
+	t.Setenv("HOMEXDR_SYSLOG_ALLOW", "192.168.20.1")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.NetFlowAddr != "" {
+		t.Errorf("on by default: %q", c.NetFlowAddr)
+	}
+	if len(c.NetFlowAllow) != 1 || c.NetFlowAllow[0].String() != "192.168.20.1/32" {
+		t.Errorf("allow list does not follow syslog's: %v", c.NetFlowAllow)
+	}
+	t.Setenv("HOMEXDR_NETFLOW_ADDR", ":2055")
+	t.Setenv("HOMEXDR_NETFLOW_ALLOW", "10.0.0.0/8, 192.168.20.2")
+	if c, err = Load(); err != nil {
+		t.Fatal(err)
+	}
+	if c.NetFlowAddr != ":2055" || len(c.NetFlowAllow) != 2 || c.NetFlowAllow[1].String() != "192.168.20.2/32" {
+		t.Errorf("config %q %v", c.NetFlowAddr, c.NetFlowAllow)
+	}
+	t.Setenv("HOMEXDR_NETFLOW_ALLOW", "not an address")
+	if _, err = Load(); err == nil {
+		t.Error("a bad allow list was accepted")
+	}
+}
