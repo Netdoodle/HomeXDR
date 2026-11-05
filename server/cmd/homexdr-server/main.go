@@ -23,6 +23,7 @@ import (
 	"github.com/Netdoodle/homexdr/server/internal/console"
 	"github.com/Netdoodle/homexdr/server/internal/core"
 	"github.com/Netdoodle/homexdr/server/internal/events"
+	"github.com/Netdoodle/homexdr/server/internal/flow"
 	"github.com/Netdoodle/homexdr/server/internal/mcpserver"
 	"github.com/Netdoodle/homexdr/server/internal/pki"
 	"github.com/Netdoodle/homexdr/server/internal/store"
@@ -176,6 +177,16 @@ func serve() error {
 	if cfg.SyslogAddr != "" {
 		lis := syslog.New(c, cfg.SyslogAllow)
 		run("syslog", func() error { return lis.Run(ctx, cfg.SyslogAddr) })
+	}
+	if cfg.NetFlowAddr != "" {
+		lis := flow.New(c, cfg.NetFlowAllow)
+		run("netflow", func() error {
+			// An optional feature with a busy port must not take the server down with it.
+			if err := lis.Run(ctx, cfg.NetFlowAddr); err != nil {
+				log.Error("netflow receiver did not start", "addr", cfg.NetFlowAddr, "err", err)
+			}
+			return nil
+		})
 	}
 	go c.RunMaintenance(ctx)
 	go c.RuleRepos.Run(ctx)

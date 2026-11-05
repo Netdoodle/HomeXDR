@@ -469,7 +469,7 @@ that enroll or come online before it expires.
 | PATCH | `/api/users/{id}` | `{"role"?, "password"?}` → `User` (admin, or self for password) |
 | DELETE | `/api/users/{id}` | `204` (admin; cannot delete self) |
 | GET | `/api/audit?limit=&offset=` | `{"entries": {id, at, user, action, target, details}[], "total": n}` (admin) |
-| GET | `/api/integrations` | `{"syslog": {"listening": bool, "addr", "received": n, "parsed": n, "failed": n, "sources": {ip, name, kind, last_seen, count}[]}}` |
+| GET | `/api/integrations` | `{"syslog": {"listening": bool, "addr", "received": n, "parsed": n, "failed": n, "sources": {ip, name, kind, last_seen, count}[]}, "netflow": {"enabled": bool, "listening": bool, "addr", "packets": n, "records": n, "dropped": n, "refused": n, "malformed": n, "waiting": n, "discarded": n, "failed": n, "exporters": {ip, version, packets, records, templates, last_seen}[]}}`. In netflow: `dropped` is packets lost to a full queue, `refused` is senders off the allow list, `waiting` is data sets that arrived before their template, `discarded` is those there was no room to keep, `failed` is records the event store refused. |
 
 ```ts
 type ServerSettings = {

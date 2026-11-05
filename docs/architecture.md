@@ -73,7 +73,8 @@ directive, so modules build independently without a `go.work` file.
 |---|---|---|
 | 8443/tcp | Agent API | TLS with the server's own CA. Client certs required except `/v1/enroll`. |
 | 8080/tcp | Web console + REST API | Plain HTTP; put it behind your reverse proxy for HTTPS. |
-| 514/udp+tcp → 5514 | Syslog intake | RFC 3164/5424, OPNsense `filterlog`, Suricata EVE JSON. |
+| 514/udp+tcp → 5514 | Syslog intake | RFC 3164/5424, OPNsense `filterlog`, Suricata EVE JSON, Unbound queries, DHCP leases. |
+| 2055/udp | NetFlow v5, v9 and IPFIX intake | Off unless `HOMEXDR_NETFLOW_ADDR` is set. See [network-visibility.md](network-visibility.md). |
 
 ## Security model
 
