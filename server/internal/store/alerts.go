@@ -121,8 +121,43 @@ const DedupWindow = 24 * time.Hour
 // maxAlertEventIDs caps the event IDs kept on one alert.
 const maxAlertEventIDs = 50
 
+// ProcessShape describes a process by what it is and what started it: its executable
+// (else name) and its parent's. Repeated runs of one scheduled job share a shape, while
+// the same program started by something else does not.
+func ProcessShape(p *event.Process) string {
+	if p == nil {
+		return ""
+	}
+	exe := firstNonEmpty(p.Executable, p.Name)
+	var parent string
+	if p.Parent != nil {
+		parent = firstNonEmpty(p.Parent.Executable, p.Parent.Name)
+	}
+	if exe == "" && parent == "" {
+		return p.EntityID // nothing better to tell it apart by
+	}
+	return exe + "<" + parent
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// AlertKey is the grouping key of a hit: rule, host and process shape, or the input's
+// DedupEntity instead of the shape when it has one.
+func AlertKey(in AlertInput) string {
+	dedup := ProcessShape(in.Event.Process)
+	if in.DedupEntity != "" {
+		dedup = in.DedupEntity
+	}
+	return in.Rule.ID + "|" + in.Event.Host.ID + "|" + dedup
+}
+
 // RecordAlert creates an alert for a hit, or folds it into an open alert with the same
-// rule, host and process within DedupWindow. It returns the alert and whether it is new.
+// grouping key within DedupWindow. It returns the alert and whether it is new.
 func (s *Store) RecordAlert(ctx context.Context, in AlertInput) (*Alert, bool, error) {
 	ev := in.Event
 	var entity, pname, cmdline, user string
@@ -135,11 +170,7 @@ func (s *Store) RecordAlert(ctx context.Context, in AlertInput) (*Alert, bool, e
 	if user == "" && ev.User != nil {
 		user = ev.User.Name
 	}
-	dedup := entity
-	if in.DedupEntity != "" {
-		dedup = in.DedupEntity
-	}
-	key := in.Rule.ID + "|" + ev.Host.ID + "|" + dedup
+	key := AlertKey(in)
 	now := time.Now().UTC()
 	at := ev.Timestamp.UTC()
 	if at.IsZero() {
