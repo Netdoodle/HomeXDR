@@ -20,6 +20,9 @@ func (h *Handler) routesNetwork(viewer, analyst, admin string) {
 	h.route("GET /api/behavior/status", viewer, h.behaviorStatus)
 	h.route("GET /api/settings/behavior", admin, h.getBehaviorSettings)
 	h.route("PUT /api/settings/behavior", admin, h.putBehaviorSettings)
+	h.route("GET /api/settings/adguard", admin, h.getAdGuardSettings)
+	h.route("PUT /api/settings/adguard", admin, h.putAdGuardSettings)
+	h.route("POST /api/settings/adguard/test", admin, h.testAdGuardSettings)
 }
 
 // netflowStats is the NetFlow section of the integrations page.

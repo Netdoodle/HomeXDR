@@ -5,11 +5,12 @@ over syslog. Firewall logs have one big gap: traffic to the internet is logged a
 outbound row carries the firewall's WAN address and not the device's. Measured on one home network over
 48 hours: 789,274 outbound pass rows from the WAN address, and 264 rows that named a LAN device.
 
-Three optional sources fill the gap. Each one is off until you turn it on.
+Four optional sources fill the gap. Each one is off until you turn it on.
 
 | Source | What it gives you | What needs it |
 |---|---|---|
 | **Unbound query logs** | Which device looked up which name | DNS tunnelling, device inventory |
+| **AdGuard Home query log** | The same, when AdGuard Home answers DNS instead of Unbound | DNS tunnelling, device inventory |
 | **DHCP logs** | IP, MAC and hostname of each device | Device inventory: real names, new-device alerts with a MAC, rogue server context |
 | **NetFlow** | Every connection by its real LAN address, with bytes and packets | Beaconing, upload spike, unusual port, DNS bypass, internal scan |
 
@@ -27,7 +28,7 @@ HomeXDR never changes the firewall. All of these are changes you make yourself.
 
 Only useful when Unbound answers your devices. If AdGuard Home or another resolver listens on port 53 in front
 of it, or Unbound is turned off, Unbound's log names that resolver and not the device, so skip this section.
-DNS from such a resolver is not collected yet.
+If that resolver is AdGuard Home, read its query log instead: see [AdGuard Home query log](#adguard-home-query-log).
 
 1. **Services → Unbound DNS → Advanced**: turn on **Log Replies**. Each reply line names the client, the
    name, the type, the result, the time taken and whether it came from cache.
@@ -41,6 +42,32 @@ Check it works: search for `event.module:dns`. Each row should have a `source.ip
 
 Only clients that use this resolver appear. A device with a hardcoded public resolver shows up through
 NetFlow and the DNS bypass detector instead.
+
+## AdGuard Home query log
+
+When AdGuard Home answers your network's DNS, HomeXDR reads its query log over AdGuard Home's own API, every
+30 seconds by default. Each lookup becomes a DNS event (`event.dataset:dns.adguard`) with the device's address,
+the name, the type, the result and the upstream that answered. Lookups AdGuard Home blocked have
+`event.action:dns-blocked` and the reason and rule under `data.adguard`. Nothing changes on the firewall.
+
+Set it up in **Settings → Network → AdGuard Home**:
+
+1. **Address**: AdGuard Home's web address, scheme, host and port only. Prefer https (for example
+   `https://192.168.20.1:3001`), so the password is encrypted on the way.
+2. **Username** and **password** of an AdGuard Home login. AdGuard Home has no read-only accounts, so this login
+   could change its settings. HomeXDR only reads `/control/status` and `/control/querylog`, stores the password
+   write-only, and never shows it again.
+3. **Certificate**: when the address is an IP, put the name on AdGuard Home's certificate in **Certificate name**.
+   If the certificate cannot be checked (expired, self-signed), **Test connection** shows its fingerprint and offers
+   **Trust this certificate**. HomeXDR then accepts exactly that certificate and refuses any other, so after a
+   renewal you trust the new one, or clear the field to check it normally again.
+4. Turn it on and save. Lookups from before that moment are not imported.
+
+Check it works: the panel shows **Reading** and a count of new lookups, and a search for
+`event.dataset:dns.adguard` returns rows whose `source.ip` is a device.
+
+If more lookups arrive between two reads than HomeXDR reads at once (20,000), it keeps the newest and counts
+the miss under **Fell behind**. Check more often if that happens.
 
 ## DHCP logs
 

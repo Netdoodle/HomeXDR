@@ -613,6 +613,9 @@ See [devices.md](devices.md) and [behavior.md](behavior.md).
 | GET | `/api/behavior/status` | `{"detectors": DetectorStatus[]}` |
 | GET | `/api/settings/behavior` | `{"detectors": DetectorSettings[]}` (admin), with defaults filled in |
 | PUT | `/api/settings/behavior` | `{"detectors": {"<id>": {"enabled"?, "values"?, "lists"?}}}` → the same as GET (admin, audited); `400` with the problem when invalid. It replaces all detector settings; what is left out goes back to its default |
+| GET | `/api/settings/adguard` | `AdGuardSettings` (admin). The password is never returned, only `password_set` |
+| PUT | `/api/settings/adguard` | `AdGuardInput` → `AdGuardSettings` (admin, audited). An empty `password` keeps the saved one; `clear_password` removes it. Changing `url` starts reading afresh from now |
+| POST | `/api/settings/adguard/test` | `AdGuardInput` → `{ok, message, version?, certificate?}` (admin). Uses the saved password when none is given, and the saved settings when `url` is empty. `certificate` (subject, issuer, `not_after`, `expired`, `fingerprint`) is set when the certificate check failed |
 
 ```ts
 type Device = {
@@ -648,6 +651,18 @@ type DetectorStatus = {
   last_run?: string; last_duration_ms?: number;
   last_finding_count: number; total_finding_count: number;
   learning_until?: string; error?: string;
+};
+type AdGuardInput = {
+  enabled: boolean; url: string;        // scheme, host and port only
+  username: string; password?: string; clear_password?: boolean;
+  server_name?: string;                 // name to check the certificate against
+  pin_sha256?: string;                  // trust exactly this certificate
+  interval_sec: number;                 // 10 to 3600, default 30
+};
+type AdGuardSettings = Omit<AdGuardInput, "password" | "clear_password"> & {
+  password_set: boolean;
+  status: { state: "off" | "waiting" | "ok" | "error"; last_poll?: string; last_success?: string; last_error?: string;
+            version?: string; imported: number; last_batch: number; fell_behind: number; since?: string };
 };
 type DetectorSettings = {
   id: string; title: string; about: string; enabled: boolean;

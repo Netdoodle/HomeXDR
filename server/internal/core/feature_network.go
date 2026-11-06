@@ -2,9 +2,12 @@ package core
 
 import (
 	"context"
+	"net"
+	"net/netip"
 	"sync"
 	"time"
 
+	"github.com/Netdoodle/homexdr/server/internal/adguard"
 	"github.com/Netdoodle/homexdr/server/internal/behavior"
 	"github.com/Netdoodle/homexdr/server/internal/enrich"
 	"github.com/Netdoodle/homexdr/server/internal/store"
@@ -29,6 +32,35 @@ func (c *Core) initNetwork(ctx context.Context) {
 	if err := c.Behavior.Load(ctx); err != nil {
 		c.Log.Error("load behaviour settings", "err", err)
 	}
+	c.AdGuard = adguard.New(c.State, c.Log, c.ingestAdGuard)
+	if err := c.AdGuard.Load(ctx); err != nil {
+		c.Log.Error("load AdGuard Home settings", "err", err)
+	}
+}
+
+// ingestAdGuard stores lookups read from AdGuard Home as events of the host it runs on,
+// which is the firewall's host when AdGuard Home runs there.
+func (c *Core) ingestAdGuard(ctx context.Context, evs []*event.Event) error {
+	u, err := adguard.ParseURL(c.AdGuard.View().URL)
+	if err != nil {
+		return err
+	}
+	addr := u.Hostname()
+	if _, err := netip.ParseAddr(addr); err != nil {
+		if ips, err := net.DefaultResolver.LookupHost(ctx, addr); err == nil && len(ips) > 0 {
+			addr = ips[0]
+		}
+	}
+	host, err := c.State.EnsureNetworkHost(ctx, addr, "", "")
+	if err != nil {
+		return err
+	}
+	for _, e := range evs {
+		if e.Observer != nil {
+			e.Observer.Hostname = host.Hostname
+		}
+	}
+	return c.Ingest(ctx, host, evs)
 }
 
 // raiseBehavior turns a detector's finding into an alert.
@@ -43,10 +75,14 @@ func (c *Core) raiseBehavior(ctx context.Context, f behavior.Finding) error {
 // runNetwork is the background loop of those features.
 func (c *Core) runNetwork(ctx context.Context) {
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		c.Behavior.Run(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		c.AdGuard.Run(ctx)
 	}()
 	tick := time.NewTicker(inventoryInterval)
 	defer tick.Stop()

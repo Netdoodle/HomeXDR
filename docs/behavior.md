@@ -16,7 +16,7 @@ yet been measured on yours, so tune them in **Settings → Network** as findings
 | Detector | Rule | Severity | Needs | Learning |
 |---|---|---|---|---|
 | Beaconing | `net:beaconing` | Medium, or low if the domain is popular | NetFlow; partial on firewall rows | None |
-| DNS tunnelling | `net:dns-tunnel` | Medium | Unbound logs or Suricata DNS | None |
+| DNS tunnelling | `net:dns-tunnel` | Medium | Unbound logs, the AdGuard Home query log or Suricata DNS | None |
 | DNS bypass | `net:dns-bypass` | Low | NetFlow; partial on firewall rows | 3 days |
 | Upload spike | `net:upload-spike` | Medium | NetFlow only | 7 days |
 | Unusual port | `net:unusual-port` | Low | NetFlow; partial on firewall rows | 7 days |
