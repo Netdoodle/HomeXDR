@@ -25,6 +25,10 @@ HomeXDR never changes the firewall. All of these are changes you make yourself.
 
 ## Unbound query logs
 
+Only useful when Unbound answers your devices. If AdGuard Home or another resolver listens on port 53 in front
+of it, or Unbound is turned off, Unbound's log names that resolver and not the device, so skip this section.
+DNS from such a resolver is not collected yet.
+
 1. **Services → Unbound DNS → Advanced**: turn on **Log Replies**. Each reply line names the client, the
    name, the type, the result, the time taken and whether it came from cache.
 2. Leave **Log Queries** off. It adds a second, smaller row for every lookup and tells HomeXDR nothing more.
@@ -88,6 +92,8 @@ can write events.
 
 ### Why these interfaces
 
+- **If WAN is already captured** for the firewall's own Insight reports, you can leave it. Its rows name no home
+  address, so the device inventory and the detectors ignore them, but they are still stored, which adds volume.
 - **Why not WAN:** a flow on WAN carries the WAN address after NAT, so it names no device. It would also count every
   internet connection a second time. OPNsense's documentation warns about this same double count.
 - **What you get per connection:** NetFlow records one direction per row. A download appears as a device-to-server

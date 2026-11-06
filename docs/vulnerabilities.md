@@ -48,6 +48,4 @@ exact version as affected by the CVE, the match becomes confirmed. OSV knows Deb
 Alpine packages. It has no data for Slackware, Unraid or Docker images, so on such a host this check
 does nothing. If `api.osv.dev` is blocked, the page says so and matches stay as they were.
 
-The idea of a detector built on the KEV catalog comes from tapwatch's `vulnkev.py` (MIT licensed).
-Unlike tapwatch, this does not download OSV's whole database, so it has no distro-aware version data of
-its own.
+HomeXDR does not download OSV's whole database, so it has no distro-aware version data of its own.

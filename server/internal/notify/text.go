@@ -10,7 +10,7 @@ var httpWord = regexp.MustCompile(`(?i)\bhttp`)
 
 // Defang makes indicators in text inert, so nothing in a chat or a mail app turns into a
 // link: hxxp, [://] and example[.]com. A dot counts only between letters or digits, which
-// leaves the end of a sentence alone. The idea is from tapwatch's notifiers.
+// leaves the end of a sentence alone.
 func Defang(s string) string {
 	s = httpWord.ReplaceAllStringFunc(s, func(m string) string {
 		if m[0] == 'H' {

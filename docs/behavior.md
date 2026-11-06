@@ -8,8 +8,8 @@ severity: they should earn your trust first. Each explains itself in plain words
 
 **The Devices page** shows each detector's status. **Settings → Network** has a toggle and thresholds for each.
 
-Thresholds, benign service lists and design choices follow the measurements published in
-[tapwatch](https://github.com/barnabys-drew/tapwatch) (`docs/detections/DESIGN.md` and `src/tapwatch/detectors.py`, MIT licensed), taken on one home network. They have not yet been measured on yours.
+Thresholds and benign service lists are starting points taken from measurements on one home network. They have not
+yet been measured on yours, so tune them in **Settings → Network** as findings come in.
 
 ## Detectors
 

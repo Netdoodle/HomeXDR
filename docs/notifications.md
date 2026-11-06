@@ -109,9 +109,6 @@ is sent:
 
 The AI analyst has no part in any of this.
 
-The defanging and the Discord mention handling follow the ideas in tapwatch's
-`notifiers.py` (MIT licensed).
-
 ## For developers: adding to the digest
 
 Other features can add a section once, at startup:

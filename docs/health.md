@@ -71,9 +71,6 @@ Unraid and Slackware. They now read `/var/log/packages` for software, the Docker
 images containers run, and `/etc/rc.d` for services. A system with no package database or service
 manager the agent can read reports that on its inventory sensor, so the host page says why.
 
-The idea of tracking arrival gaps and shifting clocks for time away comes from tapwatch's
-`FeedSilence` detector (MIT licensed).
-
 ### Digest
 
 `Core.FeedHealthDigest` returns a title and lines ready for the daily digest. It lists silent
@@ -127,6 +124,3 @@ falls; check the failure list.
 
 `TestSelfCheck` in `server/internal/core` runs the same machinery on fixed rules, so CI fails if a
 change to the engine or the alert path stops rules firing or alerts folding.
-
-The idea of a self-check that yields a number, and of a doctor with a suggested fix per check,
-comes from tapwatch's `selfcheck.py` and `doctor.py` (MIT licensed).

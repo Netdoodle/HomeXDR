@@ -22,8 +22,6 @@ Each source's URL, file format and licence page were checked from the owner's PC
 | Website categories (UT1) | **off** | `https://dsi.ut-capitole.fr/blacklists/download/<category>.tar.gz`, weekly | tar.gz holding `<category>/domains` | **Not confirmed.** The files were reachable, but the licence page answered 503 on the day it was checked. It stays off until you have read their terms |
 | Newly registered domains | **off** | `https://raw.githubusercontent.com/WhoisFreaks/daily-newly-registered-domains/main/<date>-free-newly-registered-domains.csv`, daily, 30 days kept | one domain per line | **None stated** in the repository |
 
-The choice of sources and of UT1's categories comes from tapwatch's `feeds.py` (MIT licensed).
-
 ## Downloads
 
 - Over HTTPS only, with a size cap per file and a plain User-Agent. A redirect to plain HTTP is refused.
