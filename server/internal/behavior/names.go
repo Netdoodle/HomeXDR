@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// Lists and limits below follow tapwatch's measurements on a home network
-// (docs/detections/DESIGN.md and src/tapwatch/detectors.py, MIT licensed); see docs/behavior.md.
+// Lists and limits below are starting points measured on one home network; see docs/behavior.md.
 
 // benignClasses are services that are regular by design. Vendor-level public domains only;
 // the owner adds more in settings.
