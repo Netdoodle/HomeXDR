@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Netdoodle/homexdr/server/internal/adguard"
 	"github.com/Netdoodle/homexdr/server/internal/behavior"
 	"github.com/Netdoodle/homexdr/server/internal/config"
 	"github.com/Netdoodle/homexdr/server/internal/detect"
@@ -53,6 +54,8 @@ type Core struct {
 	Inventory *Inventory
 	// Behavior runs the behaviour detectors (feature_network.go).
 	Behavior *behavior.Runner
+	// AdGuard reads AdGuard Home's query log (feature_network.go).
+	AdGuard *adguard.Poller
 	// Health is feed health, the offline lists and vulnerability matching.
 	Health *Health
 }

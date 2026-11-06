@@ -13,6 +13,7 @@ import {
   type NetworkSettings,
 } from '../api/network'
 import { Toggle } from '../components/Misc'
+import { AdGuardPanel } from './AdGuardPanel'
 import { ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
 import { behaviorUpdate, parseLines } from '../lib/network'
@@ -27,6 +28,7 @@ export function NetworkSettingsTab() {
   return (
     <div className="stack" style={{ maxWidth: 980 }}>
       <HomeNetworkForm settings={net.data} />
+      <AdGuardPanel />
       <DetectorsForm detectors={beh.data.detectors} />
     </div>
   )
