@@ -83,7 +83,10 @@ What each source needs:
   gave no SHA-256, hashes the executable.
 - **Security log**: "Audit Process Creation" (success) for 4688, "Audit Process
   Termination" for 4689, and "Include command line in process creation events" for
-  command lines. Locally, as administrator:
+  command lines. `homexdr-agent install` turns all three on and prints what it changed;
+  `uninstall` restores the settings from before the first install (saved in
+  `C:\ProgramData\HomeXDR\audit-before-install.json`). To set them by hand, as
+  administrator:
 
   ```bat
   auditpol /set /subcategory:{0CCE922B-69AE-11D9-BED3-505054503030} /success:enable
@@ -105,9 +108,9 @@ The sensor uses Sysmon when its channel exists and is enabled, and otherwise the
 Security log; it notices Sysmon being installed or removed within a minute. With the
 Security log it reads the audit policy (`AuditQuerySystemPolicy` and the registry value)
 every minute and keeps subscribing whatever it finds, so events flow as soon as the
-policy is turned on; its status message says what is missing. It never changes the
-policy itself. `audit.go` has the matching setters (`EnableProcessAudit`,
-`SetProcessAudit`, which return the previous state) for install and uninstall.
+policy is turned on; its status message says what is missing. The running agent never
+changes the policy; only `install` and `uninstall` do (`hostsetup.go`, through the
+setters in `audit.go`).
 
 `process.user` carries the SID (`user.id`), name and domain. In 4688 the account is the
 target account when the process was started for another user (`runas`, services), else
@@ -126,7 +129,12 @@ event's time (Sysmon's `UtcTime`, else the record's `TimeCreated`) stands in. Th
 kept in a process table (filled from a snapshot of the running processes at startup,
 bounded to 65,536 entries, exited processes kept for a minute) so exit events and
 children get the same ID; Sysmon's `ProcessGuid` links children to parents even across
-PID reuse. Like on Linux, processes already running at startup produce no events, and the
+PID reuse. A parent whose creation time is later than its child's is normally a newer
+process that reused the PID, but a clock set back after boot (a PC that reads the
+hardware clock as local time until NTP corrects it) gives every boot-time process such a
+time. So a parent is still accepted when its executable matches the one the event names,
+or when its creation time is later than now, which only a clock change can produce.
+Like on Linux, processes already running at startup produce no events, and the
 exit of a process the sensor never saw and that is gone is dropped. Once a minute, running
 entries whose process has disappeared are marked exited, for exits that are never logged.
 
@@ -139,9 +147,17 @@ later fallback does not replay an old backlog. The Event Log reader (`evtlog.go`
 meant to be reused by the next Windows sensors.
 
 Not covered yet on Windows: the network, file, registry, DNS, library and eventlog
-sensors, response actions (kill, isolation) and the artifact collectors; the core
-reports those kinds as unavailable. Running as a Windows service (`install`,
-`uninstall`) is being added separately.
+sensors, response actions (kill, isolation), the artifact collectors and self-update;
+the core reports those kinds as unavailable.
+
+`homexdr-agent install` (from an elevated prompt) enrolls, sets up auditing as above and
+registers the **HomeXDR Agent** service (`HomeXDRAgent`, LocalSystem, automatic start),
+which runs `<exe> run`. The Service Control Manager restarts it 5 s after an unexpected
+stop. Under the service the log goes to `<data dir>\logs\agent.log` (rotated at 10 MB).
+The config file and data directory get a protected ACL that only SYSTEM and
+Administrators can open, instead of inheriting `C:\ProgramData`'s, which every user can
+read. `uninstall` stops and deletes the service, restores the audit settings, and with
+`--purge` deletes the config and data.
 
 ## Build
 
