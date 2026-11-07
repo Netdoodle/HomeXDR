@@ -110,6 +110,9 @@ func newTestMapper(t *testing.T, extra map[int64]*liveProc, pe func(string) *eve
 		src.live[pid] = lp
 	}
 	m := newProcMapper(testEnv(t), src, pe)
+	// A fixed "now" after every fixture time, so no fixture looks like it started after
+	// the clock was set back (clockSetBack) whatever the real date.
+	m.now = func() time.Time { return at(23, 0, 0, 0) }
 	m.users.m[aliceSID] = [2]string{"alice", "HX01"}
 	m.users.m[backupSID] = [2]string{"svc-backup", "HX01"}
 	if n, err := m.loadSnapshot(); err != nil || n != 2 {
@@ -597,6 +600,8 @@ func TestParentStartedInTheFuture(t *testing.T) {
 			{"MandatoryLabel", "S-1-16-16384"},
 		})))
 	}
+	// Now (23:00) is after the parent's start: a different program holding the PID is a
+	// newer process that reused it.
 	if ev := child("0x2400", `C:\Program Files\Other\other.exe`); ev.Process.Parent.EntityID != "" {
 		t.Errorf("a different program with the parent's PID was accepted: %+v", ev.Process.Parent)
 	}
@@ -606,5 +611,20 @@ func TestParentStartedInTheFuture(t *testing.T) {
 		if p := ev.Process.Parent; p.EntityID != want || p.CommandLine != services {
 			t.Errorf("event %d: parent = %+v, want entity %s", i, p, want)
 		}
+	}
+
+	// Now (10:31) is before the parent's start, so the clock was set back since it
+	// started: it is the parent even when the event names no image (Sysmon writes "-"
+	// for parents it does not know).
+	m2, _ := newTestMapper(t, map[int64]*liveProc{
+		940: {Created: ft(future), Executable: services, CommandLine: services},
+	}, nil)
+	m2.now = func() time.Time { return at(10, 31, 0, 0) }
+	ev := m2.handle(mustParse(t, securityXML(4688, 1, "2026-11-07T10:30:00Z", [][2]string{
+		{"SubjectUserSid", "S-1-5-18"}, {"NewProcessId", "0x2410"}, {"NewProcessName", `C:\Windows\System32\whoami.exe`},
+		{"ProcessId", "0x3ac"}, {"MandatoryLabel", "S-1-16-16384"},
+	})))
+	if p := ev.Process.Parent; p.EntityID != want {
+		t.Errorf("parent started after now: %+v, want entity %s", p, want)
 	}
 }

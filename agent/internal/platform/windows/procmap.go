@@ -79,7 +79,8 @@ func (m *procMapper) loadSnapshot() (int, error) {
 		}
 		// The PPID may belong to a newer process by now: only a parent created before
 		// the child is the real one.
-		if par, ok := items[it.pair.PPID]; ok && it.pair.PPID != pid && !par.lp.createdAt().After(start) {
+		if par, ok := items[it.pair.PPID]; ok && it.pair.PPID != pid &&
+			(!par.lp.createdAt().After(start) || (m.clockSetBack(par.lp.createdAt()) && !m.clockSetBack(start))) {
 			e.ParentEntityID = m.env.EntityID(it.pair.PPID, filetimeKey(par.lp.Created))
 		}
 		m.table.put(e)
@@ -172,7 +173,8 @@ func (m *procMapper) startKey(pid int64, created time.Time, want detailFlags) (u
 // the PID. But the clock may have been set back since it started: a PC that boots with
 // the hardware clock read as local time and is then corrected by NTP leaves every
 // process started at boot with a creation time hours in the future. So such a process
-// is still accepted when its executable is the one the event names.
+// is still accepted when its executable is the one the event names, or when its start
+// is later than now (see clockSetBack).
 func (m *procMapper) lookup(pid int64, guid string, at time.Time, image string) *procEntry {
 	if pid <= 0 {
 		return nil
@@ -183,14 +185,14 @@ func (m *procMapper) lookup(pid int64, guid string, at time.Time, image string) 
 	if e := m.table.get(pid, at); e != nil {
 		return e
 	}
-	if e := m.table.getRunning(pid); e != nil && sameImage(e.Executable, image) {
+	if e := m.table.getRunning(pid); e != nil && (sameImage(e.Executable, image) || m.clockSetBack(e.Start)) {
 		return e
 	}
 	// Not in the table (the snapshot could not open it, or it started while the
 	// sensor was switching sources). Accept the live process only if it already
 	// existed at time at.
 	lp, ok := m.src.open(pid, wantDetails)
-	if !ok || (lp.createdAt().After(at.Add(timeSlack)) && !sameImage(lp.Executable, image)) {
+	if !ok || (lp.createdAt().After(at.Add(timeSlack)) && !sameImage(lp.Executable, image) && !m.clockSetBack(lp.createdAt())) {
 		return nil
 	}
 	key := filetimeKey(lp.Created)
@@ -669,6 +671,13 @@ func baseName(path string) string {
 		return ""
 	}
 	return filepath.Base(path)
+}
+
+// clockSetBack reports a process start later than now. Only a clock set back since the
+// process started produces one, so that process was already running at any earlier
+// time and cannot be a newer one that reused the PID.
+func (m *procMapper) clockSetBack(start time.Time) bool {
+	return start.After(m.now().Add(timeSlack))
 }
 
 // sameImage reports whether two Win32 paths name the same executable. An empty path
