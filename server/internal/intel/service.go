@@ -288,6 +288,25 @@ func (s *Service) Start(ctx context.Context, raw string, refresh bool, user stri
 	return s.view(ctx, ind, set)
 }
 
+// LookupAndWait is Start followed by waiting, until ctx ends, for the sources to answer.
+// The antivirus uses it to ask about a file hash before deciding to scan the file.
+func (s *Service) LookupAndWait(ctx context.Context, raw, user string) (*View, error) {
+	v, err := s.Start(ctx, raw, false, user)
+	if err != nil || !v.Running {
+		return v, err
+	}
+	s.mu.Lock()
+	r := s.running[v.Indicator.Value]
+	s.mu.Unlock()
+	if r != nil {
+		select {
+		case <-r.done:
+		case <-ctx.Done():
+		}
+	}
+	return s.Get(ctx, raw)
+}
+
 // execute asks the sources and stores their answers.
 func (s *Service) execute(ind Indicator, set Settings, tasks []Source, have map[string]Result, r *run, user string) {
 	defer s.wg.Done()
