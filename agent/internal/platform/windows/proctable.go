@@ -91,6 +91,16 @@ func (t *procTable) get(pid int64, at time.Time) *procEntry {
 	return e
 }
 
+// getRunning returns the entry for pid if it has not exited, whatever its start time.
+func (t *procTable) getRunning(pid int64) *procEntry {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if e := t.byPID[pid]; e != nil && e.exited.IsZero() {
+		return e
+	}
+	return nil
+}
+
 // getGUID returns the process with this Sysmon ProcessGuid.
 func (t *procTable) getGUID(guid string) *procEntry {
 	if guid == "" {

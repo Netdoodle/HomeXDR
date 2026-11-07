@@ -580,3 +580,31 @@ func TestSecurityStatus(t *testing.T) {
 		}
 	}
 }
+
+// TestParentStartedInTheFuture covers a clock set back after boot: services.exe claims
+// to have started hours after its child. It is still the parent when the event names its
+// executable, and is rejected otherwise (a PID reused by another program).
+func TestParentStartedInTheFuture(t *testing.T) {
+	services := `C:\Windows\System32\services.exe`
+	future := at(18, 30, 0, 0) // the child below starts at 10:30
+	m, _ := newTestMapper(t, map[int64]*liveProc{
+		940: {Created: ft(future), Executable: services, CommandLine: services},
+	}, nil)
+	child := func(pid, parentName string) *event.Event {
+		return m.handle(mustParse(t, securityXML(4688, 1, "2026-11-07T10:30:00Z", [][2]string{
+			{"SubjectUserSid", "S-1-5-18"}, {"NewProcessId", pid}, {"NewProcessName", `C:\Windows\System32\svchost.exe`},
+			{"CommandLine", `svchost.exe -k test`}, {"ProcessId", "0x3ac"}, {"ParentProcessName", parentName},
+			{"MandatoryLabel", "S-1-16-16384"},
+		})))
+	}
+	if ev := child("0x2400", `C:\Program Files\Other\other.exe`); ev.Process.Parent.EntityID != "" {
+		t.Errorf("a different program with the parent's PID was accepted: %+v", ev.Process.Parent)
+	}
+	want := m.env.EntityID(940, filetimeKey(ft(future)))
+	for i, pid := range []string{"0x2404", "0x2408"} { // live process, then table entry
+		ev := child(pid, `C:\WINDOWS\system32\services.exe`)
+		if p := ev.Process.Parent; p.EntityID != want || p.CommandLine != services {
+			t.Errorf("event %d: parent = %+v, want entity %s", i, p, want)
+		}
+	}
+}
