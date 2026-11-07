@@ -5,6 +5,7 @@ package platform
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/netip"
 
@@ -92,6 +93,23 @@ type Service interface {
 	// RunAsService runs fn under the service manager when the process was started by it.
 	// It returns handled=false when the process is running interactively.
 	RunAsService(fn func(ctx context.Context) error) (handled bool, err error)
+}
+
+// ServiceLogger is optionally implemented by a Service whose service manager does not
+// capture stderr (Windows). LogOutput returns where the agent should write its log when
+// it runs under the service manager, and false when it runs interactively.
+type ServiceLogger interface {
+	LogOutput(dataDir string) (io.Writer, bool)
+}
+
+// HostSetup is optionally implemented by a Platform whose sensors depend on host
+// settings that are off by default (Windows process auditing). `install` calls SetupHost
+// and `uninstall` calls RestoreHost, which puts back the settings from before the first
+// install. Both return human-readable lines describing what changed. The running agent
+// never changes host settings.
+type HostSetup interface {
+	SetupHost() ([]string, error)
+	RestoreHost() ([]string, error)
 }
 
 // Paths are the platform's default locations.
