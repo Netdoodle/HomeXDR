@@ -297,3 +297,27 @@ func TestEngine(t *testing.T) {
 		t.Fatalf("hits = %v", hits)
 	}
 }
+
+func TestSigmaUserIncludesDomain(t *testing.T) {
+	r := mustRule(t, `
+title: Process as SYSTEM
+id: 22222222-2222-2222-2222-222222222222
+logsource: {category: process_creation, product: windows}
+detection:
+  sel:
+    User|contains: [AUTHORI, AUTORI]
+    ParentUser|endswith: '\alice'
+  condition: sel
+`)
+	ev := winProc(`C:\Windows\System32\cmd.exe`, "cmd /c whoami", `C:\Windows\explorer.exe`)
+	ev.Process.User = &event.User{Name: "SYSTEM", Domain: "NT AUTHORITY", ID: "S-1-5-18"}
+	ev.Process.Parent.User = &event.User{Name: "alice", Domain: "DESK"}
+	if !r.Match(NewDoc(ev)) {
+		t.Fatal("rule on DOMAIN\name did not match")
+	}
+	// Without a domain (Unix agents) User is the name alone.
+	ev.Process.User = &event.User{Name: "root"}
+	if v, _ := NewDoc(ev).Get("User"); len(v) != 1 || v[0] != "root" {
+		t.Fatalf("User = %v, want [root]", v)
+	}
+}

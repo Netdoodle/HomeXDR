@@ -102,6 +102,16 @@ type ServiceLogger interface {
 	LogOutput(dataDir string) (io.Writer, bool)
 }
 
+// HostSetup is optionally implemented by a Platform whose sensors depend on host
+// settings that are off by default (Windows process auditing). `install` calls SetupHost
+// and `uninstall` calls RestoreHost, which puts back the settings from before the first
+// install. Both return human-readable lines describing what changed. The running agent
+// never changes host settings.
+type HostSetup interface {
+	SetupHost() ([]string, error)
+	RestoreHost() ([]string, error)
+}
+
 // Paths are the platform's default locations.
 type Paths struct {
 	ConfigFile string // local config / policy file
