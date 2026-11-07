@@ -200,6 +200,16 @@ var libraryFields = map[string][]string{
 // Get returns the values of a Sigma or ECS field and whether it is present (non-empty).
 func (d *Doc) Get(field string) ([]string, bool) {
 	key := strings.ToLower(field)
+	// Windows Event Log records keep their EventData verbatim under data.*. Rules
+	// written for Windows logs mean those values, even for fields that also have an ECS
+	// mapping: SubjectUserName → user.name would otherwise read a 4624's logged-on
+	// account. Records the agent maps fully (the process sensor) have no raw fields, so
+	// they still go through the mapping.
+	if d.Event.Event.Module == event.ModuleEventLog {
+		if v := d.flat["data."+key]; nonEmpty(v) {
+			return v, true
+		}
+	}
 	var paths []string
 	if d.has(event.CategoryLibrary) {
 		paths = libraryFields[key]

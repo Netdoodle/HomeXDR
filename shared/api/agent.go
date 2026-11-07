@@ -248,7 +248,12 @@ func DefaultAgentConfig() AgentConfig {
 				"System",
 				"Microsoft-Windows-Sysmon/Operational",
 				"Microsoft-Windows-PowerShell/Operational",
+				"Windows PowerShell",
 				"Microsoft-Windows-Windows Defender/Operational",
+				"Microsoft-Windows-TaskScheduler/Operational",
+				"Microsoft-Windows-WMI-Activity/Operational",
+				"Microsoft-Windows-Bits-Client/Operational",
+				"Microsoft-Windows-CodeIntegrity/Operational",
 			}},
 		},
 		FIM: FIMConfig{

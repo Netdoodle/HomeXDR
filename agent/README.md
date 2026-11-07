@@ -146,9 +146,29 @@ record already in the log. Switching sources deletes the other source's bookmark
 later fallback does not replay an old backlog. The Event Log reader (`evtlog.go`) is
 meant to be reused by the next Windows sensors.
 
-Not covered yet on Windows: the network, file, registry, DNS, library and eventlog
-sensors, response actions (kill, isolation), the artifact collectors and self-update;
-the core reports those kinds as unavailable.
+**eventlog sensor.** Forwards every record from the channels listed in the central
+config (agent config → Windows Event Log; by default Security, System, Sysmon, both
+PowerShell logs, Defender, Task Scheduler, WMI, BITS and Code Integrity). Each channel has
+its own subscription and bookmark. A channel that is not installed (Sysmon on most PCs)
+is noted in the status and checked again every 5 minutes; a disabled or unreadable one
+makes the sensor `degraded` and is retried every minute. Records keep their EventData
+verbatim in `event.data` under the names Windows uses (`TargetUserName`, `LogonType`,
+`ScriptBlockText`, ...), unnamed values go to `data.Data` (the classic "Windows
+PowerShell" log), and `data.Channel` names the log, so Sigma rules for Windows logs need
+no mapping. `event.dataset` is `windows.<Sigma service>` (`windows.security`,
+`windows.powershell-classic`, `windows.windefend`, ...), which is how the server matches
+`logsource: service:`; `event.provider` and `event.code` are the provider and event ID.
+Logons (4624, 4625, 4634, 4647, 4648) also get ECS `authentication` fields (`user.*`,
+`source.ip`, outcome), account and group changes (4720-4740, 4728/4732/4756) `iam`
+fields, and service installs (7045, 4697) `service.*`. Left out: 4688/4689 and Sysmon 1/5
+while the process sensor runs, Windows Filtering Platform connections (5156-5158),
+Credential Manager reads (5379) and PowerShell console startup notices
+(40961/40962/53504).
+
+Not covered yet on Windows: the network, file, registry, DNS and library sensors
+(Sysmon's network, file, registry and DNS events are forwarded by the eventlog sensor
+but not yet mapped to those categories), response actions (kill, isolation), the
+artifact collectors and self-update; the core reports those kinds as unavailable.
 
 `homexdr-agent install` (from an elevated prompt) enrolls, sets up auditing as above and
 registers the **HomeXDR Agent** service (`HomeXDRAgent`, LocalSystem, automatic start),
