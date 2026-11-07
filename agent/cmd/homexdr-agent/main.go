@@ -257,6 +257,16 @@ func cmdInstall(p platform.Platform, args []string) error {
 	if err != nil {
 		return err
 	}
+	if hs, ok := p.(platform.HostSetup); ok {
+		lines, err := hs.SetupHost()
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		if err != nil {
+			// Not fatal: the sensors still run and report what is missing.
+			fmt.Printf("warning: %v\n", err)
+		}
+	}
 	if err := p.Service().Install(exe); err != nil {
 		if errors.Is(err, platform.ErrUnsupported) {
 			return fmt.Errorf("service integration is %v; run `%s run` from your own supervisor", err, exe)
@@ -281,6 +291,15 @@ func cmdUninstall(p platform.Platform, args []string) error {
 		fmt.Println("service stopped and removed")
 	} else {
 		fmt.Println("no service installed")
+	}
+	if hs, ok := p.(platform.HostSetup); ok {
+		lines, err := hs.RestoreHost()
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 	local, _ := config.Load(*cfg)
 	dataDir := core.DataDir(local, p)
