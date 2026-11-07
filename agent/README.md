@@ -167,8 +167,12 @@ Credential Manager reads (5379) and PowerShell console startup notices
 
 Not covered yet on Windows: the network, file, registry, DNS and library sensors
 (Sysmon's network, file, registry and DNS events are forwarded by the eventlog sensor
-but not yet mapped to those categories), response actions (kill, isolation), the
-artifact collectors and self-update; the core reports those kinds as unavailable.
+but not yet mapped to those categories), host isolation, the artifact collectors and
+self-update; the core reports those kinds as unavailable. `process.kill` works: it
+checks the entity ID (creation time) through the same handle it terminates with, kills
+children before parents with `tree`, and refuses system-critical processes (`csrss.exe`,
+`lsass.exe`, `services.exe`, ...). File quarantine, restore, hash and get are
+cross-platform.
 
 `homexdr-agent install` (from an elevated prompt) enrolls, sets up auditing as above and
 registers the **HomeXDR Agent** service (`HomeXDRAgent`, LocalSystem, automatic start),

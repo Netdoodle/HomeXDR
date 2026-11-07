@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Netdoodle/homexdr/server/internal/adguard"
+	"github.com/Netdoodle/homexdr/server/internal/av"
 	"github.com/Netdoodle/homexdr/server/internal/behavior"
 	"github.com/Netdoodle/homexdr/server/internal/config"
 	"github.com/Netdoodle/homexdr/server/internal/detect"
@@ -56,6 +57,8 @@ type Core struct {
 	Behavior *behavior.Runner
 	// AdGuard reads AdGuard Home's query log (feature_network.go).
 	AdGuard *adguard.Poller
+	// AV is the antivirus (feature_av.go).
+	AV *av.Service
 	// Health is feed health, the offline lists and vulnerability matching.
 	Health *Health
 }
@@ -85,6 +88,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 	c.initNoise(ctx)
 	c.initHealth(ctx)
 	c.initNetwork(ctx)
+	c.initAV(ctx)
 	return c, nil
 }
 

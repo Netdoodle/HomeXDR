@@ -26,6 +26,19 @@ services:
       retries: 30
     # Not published: only the HomeXDR server talks to ClickHouse.
 
+  clamav:
+    # Signature scanner for the antivirus (docs/antivirus.md). freshclam inside keeps the
+    # signatures current. Remove this service (and HOMEXDR_CLAMD_ADDR) to go without file
+    # scanning; hash lookups still work. Needs about 1.5 GB of memory.
+    image: clamav/clamav:1.4.6
+    restart: unless-stopped
+    environment:
+      CLAMD_CONF_StreamMaxLength: 100M
+    volumes:
+      - clamav:/var/lib/clamav
+    mem_limit: 3g
+    # Not published: only the HomeXDR server talks to it.
+
   homexdr:
     build:
       context: ..
@@ -46,6 +59,8 @@ services:
       # NetFlow/IPFIX receiver, off unless HOMEXDR_NETFLOW_ADDR is set (see docs/network-visibility.md).
       HOMEXDR_NETFLOW_ADDR: ${HOMEXDR_NETFLOW_ADDR:-}
       HOMEXDR_NETFLOW_ALLOW: ${HOMEXDR_NETFLOW_ALLOW:-}
+      # ClamAV daemon for the antivirus (the clamav service above).
+      HOMEXDR_CLAMD_ADDR: ${HOMEXDR_CLAMD_ADDR:-clamav:3310}
       # Optional AI analyst API keys (otherwise set them in the console).
       HOMEXDR_ANTHROPIC_API_KEY: ${HOMEXDR_ANTHROPIC_API_KEY:-}
       HOMEXDR_OPENAI_API_KEY: ${HOMEXDR_OPENAI_API_KEY:-}
@@ -68,4 +83,5 @@ services:
 
 volumes:
   clickhouse:
+  clamav:
   data:

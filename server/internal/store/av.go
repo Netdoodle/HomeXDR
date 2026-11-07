@@ -1,0 +1,116 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"time"
+)
+
+const avSchema = `
+CREATE TABLE IF NOT EXISTS av_verdicts (
+	sha256 TEXT PRIMARY KEY,
+	verdict TEXT NOT NULL,
+	source TEXT NOT NULL,
+	signature TEXT NOT NULL DEFAULT '',
+	path TEXT NOT NULL DEFAULT '',
+	host_id TEXT NOT NULL DEFAULT '',
+	checked_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS av_verdicts_verdict ON av_verdicts(verdict, checked_at);
+`
+
+func init() { featureSchemas = append(featureSchemas, avSchema) }
+
+// AV verdicts.
+const (
+	AVMalicious = "malicious"
+	AVClean     = "clean"   // scanned, nothing found
+	AVKnown     = "known"   // a known-good file (software distributions, NSRL)
+	AVSkipped   = "skipped" // could not be scanned (too large, gone, not allowed)
+)
+
+// AVVerdict is the antivirus' answer for one file hash.
+type AVVerdict struct {
+	SHA256    string    `json:"sha256"`
+	Verdict   string    `json:"verdict"`
+	Source    string    `json:"source"` // blocklist, intel, clamav, ...
+	Signature string    `json:"signature,omitempty"`
+	Path      string    `json:"path,omitempty"` // where it was first seen
+	HostID    string    `json:"host_id,omitempty"`
+	CheckedAt time.Time `json:"checked_at"`
+}
+
+// GetAVVerdict returns the stored verdict for a hash, or ErrNotFound.
+func (s *Store) GetAVVerdict(ctx context.Context, sha256 string) (*AVVerdict, error) {
+	v := &AVVerdict{SHA256: sha256}
+	var at string
+	err := s.db.QueryRowContext(ctx, `SELECT verdict, source, signature, path, host_id, checked_at FROM av_verdicts WHERE sha256 = ?`, sha256).
+		Scan(&v.Verdict, &v.Source, &v.Signature, &v.Path, &v.HostID, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	v.CheckedAt = parseTS(at)
+	return v, nil
+}
+
+// PutAVVerdict stores or replaces the verdict for a hash.
+func (s *Store) PutAVVerdict(ctx context.Context, v *AVVerdict) error {
+	if v.CheckedAt.IsZero() {
+		v.CheckedAt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO av_verdicts(sha256, verdict, source, signature, path, host_id, checked_at) VALUES(?,?,?,?,?,?,?)
+		ON CONFLICT(sha256) DO UPDATE SET verdict = excluded.verdict, source = excluded.source, signature = excluded.signature,
+		path = excluded.path, host_id = excluded.host_id, checked_at = excluded.checked_at`,
+		v.SHA256, v.Verdict, v.Source, v.Signature, v.Path, v.HostID, ts(v.CheckedAt))
+	return err
+}
+
+// DeleteAVVerdict forgets a hash, so it is checked again the next time it is seen.
+func (s *Store) DeleteAVVerdict(ctx context.Context, sha256 string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM av_verdicts WHERE sha256 = ?`, sha256)
+	return err
+}
+
+// AVVerdictCounts counts stored verdicts by kind.
+func (s *Store) AVVerdictCounts(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT verdict, COUNT(*) FROM av_verdicts GROUP BY verdict`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var k string
+		var n int
+		if err := rows.Scan(&k, &n); err != nil {
+			return nil, err
+		}
+		out[k] = n
+	}
+	return out, rows.Err()
+}
+
+// AVDetections returns the newest malicious verdicts.
+func (s *Store) AVDetections(ctx context.Context, limit int) ([]*AVVerdict, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT sha256, verdict, source, signature, path, host_id, checked_at FROM av_verdicts
+		WHERE verdict = ? ORDER BY checked_at DESC LIMIT ?`, AVMalicious, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*AVVerdict
+	for rows.Next() {
+		v := &AVVerdict{}
+		var at string
+		if err := rows.Scan(&v.SHA256, &v.Verdict, &v.Source, &v.Signature, &v.Path, &v.HostID, &at); err != nil {
+			return nil, err
+		}
+		v.CheckedAt = parseTS(at)
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
