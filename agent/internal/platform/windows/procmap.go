@@ -230,7 +230,7 @@ func (m *procMapper) sysmonStart(r *Record) *event.Event {
 		PID:              pid,
 		Name:             baseName(exe),
 		Executable:       exe,
-		CommandLine:      d["CommandLine"],
+		CommandLine:      noDash(d["CommandLine"]),
 		WorkingDirectory: clean(d["CurrentDirectory"]),
 		Start:            &start,
 		User:             accountUser(d["User"]),
@@ -254,8 +254,11 @@ func (m *procMapper) sysmonStart(r *Record) *event.Event {
 		p.SessionID = s
 	}
 	if lp != nil {
-		if p.User != nil && lp.UserSID != "" {
+		switch {
+		case p.User != nil && lp.UserSID != "":
 			p.User.ID = lp.UserSID
+		case p.User == nil:
+			p.User = m.users.user(lp.UserSID)
 		}
 		if p.CommandLine == "" {
 			p.CommandLine = lp.CommandLine
@@ -267,7 +270,7 @@ func (m *procMapper) sysmonStart(r *Record) *event.Event {
 		if v := clean(d["ParentImage"]); v != "" {
 			parent.Executable, parent.Name = v, baseName(v)
 		}
-		if v := d["ParentCommandLine"]; v != "" {
+		if v := noDash(d["ParentCommandLine"]); v != "" {
 			parent.CommandLine = v
 		}
 		if u := accountUser(d["ParentUser"]); u != nil {
@@ -328,7 +331,7 @@ func (m *procMapper) securityStart(r *Record) *event.Event {
 		PID:            pid,
 		Name:           baseName(exe),
 		Executable:     exe,
-		CommandLine:    d["CommandLine"],
+		CommandLine:    noDash(d["CommandLine"]),
 		Start:          &start,
 		User:           user,
 		IntegrityLevel: il,
@@ -628,6 +631,15 @@ func logonID(s string) string { return strings.ToLower(clean(s)) }
 func clean(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "-" {
+		return ""
+	}
+	return s
+}
+
+// noDash maps the "-" placeholder to empty but keeps everything else as it is:
+// command lines are compared exactly, trailing spaces included.
+func noDash(s string) string {
+	if strings.TrimSpace(s) == "-" {
 		return ""
 	}
 	return s
