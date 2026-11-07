@@ -256,6 +256,24 @@ func TestSysmonMapping(t *testing.T) {
 	}
 }
 
+func TestSysmonPlaceholders(t *testing.T) {
+	created := at(10, 15, 30, 118004200)
+	m, _ := newTestMapper(t, map[int64]*liveProc{7744: {Created: ft(created), UserSID: "S-1-5-18"}}, nil)
+	ev := m.handle(mustParse(t, sysmonXML(1, 1, "2026-11-07T10:15:30.1234567Z", [][2]string{
+		{"UtcTime", "2026-11-07 10:15:30.118"}, {"ProcessId", "7744"}, {"Image", `C:\Windows\System32\svchost.exe`},
+		{"CommandLine", `C:\Windows\system32\svchost.exe -k netsvcs `}, {"User", "-"}, {"IntegrityLevel", "System"},
+		{"ParentProcessId", "6620"}, {"ParentImage", "-"}, {"ParentCommandLine", "-"}, {"ParentUser", "-"},
+	})))
+	p := ev.Process
+	checkUser(t, "user from the live process", p.User, "S-1-5-18", "SYSTEM", "NT AUTHORITY")
+	if p.CommandLine != `C:\Windows\system32\svchost.exe -k netsvcs ` {
+		t.Errorf("command line = %q (must be kept exactly)", p.CommandLine)
+	}
+	if par := p.Parent; par == nil || par.Executable != `C:\Windows\System32\cmd.exe` || par.CommandLine != `"C:\Windows\system32\cmd.exe" ` {
+		t.Errorf("placeholders should fall back to the table: %+v", par)
+	}
+}
+
 func TestStartKeyPIDReuse(t *testing.T) {
 	created := at(10, 15, 30, 118000000)
 	for name, live := range map[string]time.Time{
