@@ -165,8 +165,15 @@ func (m *procMapper) startKey(pid int64, created time.Time, want detailFlags) (u
 }
 
 // lookup finds the table entry for a process that was alive at time at, asking the
-// live process when the table has none.
-func (m *procMapper) lookup(pid int64, guid string, at time.Time) *procEntry {
+// live process when the table has none. image is the executable the event names for
+// it, if any.
+//
+// A process whose recorded start is later than at is normally a newer one that reused
+// the PID. But the clock may have been set back since it started: a PC that boots with
+// the hardware clock read as local time and is then corrected by NTP leaves every
+// process started at boot with a creation time hours in the future. So such a process
+// is still accepted when its executable is the one the event names.
+func (m *procMapper) lookup(pid int64, guid string, at time.Time, image string) *procEntry {
 	if pid <= 0 {
 		return nil
 	}
@@ -176,11 +183,14 @@ func (m *procMapper) lookup(pid int64, guid string, at time.Time) *procEntry {
 	if e := m.table.get(pid, at); e != nil {
 		return e
 	}
+	if e := m.table.getRunning(pid); e != nil && sameImage(e.Executable, image) {
+		return e
+	}
 	// Not in the table (the snapshot could not open it, or it started while the
 	// sensor was switching sources). Accept the live process only if it already
 	// existed at time at.
 	lp, ok := m.src.open(pid, wantDetails)
-	if !ok || lp.createdAt().After(at.Add(timeSlack)) {
+	if !ok || (lp.createdAt().After(at.Add(timeSlack)) && !sameImage(lp.Executable, image)) {
 		return nil
 	}
 	key := filetimeKey(lp.Created)
@@ -195,12 +205,12 @@ func (m *procMapper) lookup(pid int64, guid string, at time.Time) *procEntry {
 
 // parent describes the parent of a process created at childStart. Fields the event
 // carries itself are filled in by the caller.
-func (m *procMapper) parent(ppid int64, guid string, childStart time.Time) (*event.Process, *procEntry) {
+func (m *procMapper) parent(ppid int64, guid string, childStart time.Time, image string) (*event.Process, *procEntry) {
 	if ppid <= 0 {
 		return nil, nil
 	}
 	p := &event.Process{PID: ppid}
-	e := m.lookup(ppid, guid, childStart)
+	e := m.lookup(ppid, guid, childStart, image)
 	if e != nil {
 		p.EntityID, p.Name, p.Executable, p.CommandLine = e.EntityID, e.Name, e.Executable, e.CommandLine
 		if e.User != nil {
@@ -265,7 +275,7 @@ func (m *procMapper) sysmonStart(r *Record) *event.Event {
 		}
 	}
 	ppid := parsePID(d["ParentProcessId"])
-	parent, _ := m.parent(ppid, clean(d["ParentProcessGuid"]), start)
+	parent, _ := m.parent(ppid, clean(d["ParentProcessGuid"]), start, clean(d["ParentImage"]))
 	if parent != nil {
 		if v := clean(d["ParentImage"]); v != "" {
 			parent.Executable, parent.Name = v, baseName(v)
@@ -293,7 +303,7 @@ func (m *procMapper) sysmonExit(r *Record) *event.Event {
 	if ended.IsZero() {
 		ended = recordTime(r)
 	}
-	e := m.lookup(pid, clean(d["ProcessGuid"]), ended)
+	e := m.lookup(pid, clean(d["ProcessGuid"]), ended, clean(d["Image"]))
 	if e == nil {
 		return nil // started before the sensor saw it and already gone: no reliable entity ID
 	}
@@ -353,7 +363,7 @@ func (m *procMapper) securityStart(r *Record) *event.Event {
 		p.PE = m.pe(p.Executable)
 	}
 	ppid := parsePID(d["ProcessId"])
-	parent, _ := m.parent(ppid, "", start)
+	parent, _ := m.parent(ppid, "", start, clean(d["ParentProcessName"]))
 	if parent != nil {
 		if v := clean(d["ParentProcessName"]); v != "" {
 			parent.Executable, parent.Name = v, baseName(v)
@@ -369,7 +379,7 @@ func (m *procMapper) securityExit(r *Record) *event.Event {
 	d := r.Data
 	pid := parsePID(d["ProcessId"])
 	ended := recordTime(r)
-	e := m.lookup(pid, "", ended)
+	e := m.lookup(pid, "", ended, clean(d["ProcessName"]))
 	if e == nil {
 		return nil
 	}
@@ -659,4 +669,10 @@ func baseName(path string) string {
 		return ""
 	}
 	return filepath.Base(path)
+}
+
+// sameImage reports whether two Win32 paths name the same executable. An empty path
+// never matches.
+func sameImage(a, b string) bool {
+	return a != "" && b != "" && strings.EqualFold(a, b)
 }
