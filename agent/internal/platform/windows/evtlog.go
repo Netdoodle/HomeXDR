@@ -573,11 +573,12 @@ func (s *subscription) run(ctx context.Context, fn func(*Record)) error {
 		}
 		if w == windows.WAIT_OBJECT_0 {
 			// Reset before reading, so a record that arrives while we read sets it again.
+			// Read only when signalled: after ERROR_NO_MORE_ITEMS, Windows rejects
+			// EvtNext with ERROR_INVALID_OPERATION until the signal fires again.
 			_ = windows.ResetEvent(s.signal)
-		}
-		// Read on timeouts too: it costs one call and covers a missed signal.
-		if err := s.drain(ctx, handles, fn); err != nil {
-			return err
+			if err := s.drain(ctx, handles, fn); err != nil {
+				return err
+			}
 		}
 		if s.dirty && time.Since(s.lastSave) >= bookmarkSaveInterval {
 			s.saveBookmark()
@@ -591,7 +592,9 @@ func (s *subscription) drain(ctx context.Context, handles []evtHandle, fn func(*
 		r, _, e := procEvtNext.Call(uintptr(s.h), uintptr(len(handles)), uintptr(unsafe.Pointer(&handles[0])), 0, 0, uintptr(unsafe.Pointer(&n)))
 		if r == 0 {
 			switch {
-			case errors.Is(e, windows.ERROR_NO_MORE_ITEMS), errors.Is(e, windows.ERROR_TIMEOUT):
+			case errors.Is(e, windows.ERROR_NO_MORE_ITEMS), errors.Is(e, windows.ERROR_TIMEOUT),
+				// Nothing new since the last ERROR_NO_MORE_ITEMS (see run).
+				errors.Is(e, windows.ERROR_INVALID_OPERATION):
 				return nil
 			case errors.Is(e, windows.ERROR_EVT_QUERY_RESULT_STALE), errors.Is(e, windows.ERROR_EVT_QUERY_RESULT_INVALID_POSITION):
 				// The log was cleared or wrapped past our position: subscribe again

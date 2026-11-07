@@ -207,6 +207,26 @@ func TestEventLogLive(t *testing.T) {
 	stop3()
 }
 
+// TestEventLogIdle keeps a subscription idle for several wait intervals before a record
+// arrives. Windows rejects EvtNext after ERROR_NO_MORE_ITEMS until the signal fires
+// again ("The operation identifier is not valid"), so the reader must not poll.
+func TestEventLogIdle(t *testing.T) {
+	const source = "HomeXDR-Test"
+	query := "*[System[Provider[@Name='" + source + "']]]"
+	nonce := strconv.FormatInt(time.Now().UnixNano(), 36)
+	s, err := subscribe(subscribeOptions{Channel: "Application", Query: query, Log: testLog()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs, stop := runSubscription(t, s)
+	defer stop()
+	time.Sleep(4 * evtWait)
+	writeAppEvent(t, source, nonce+"-idle")
+	if got := collect(t, recs, nonce, nonce+"-idle"); !equalStrings(got, []string{nonce + "-idle"}) {
+		t.Errorf("got %q", got)
+	}
+}
+
 func runSubscription(t *testing.T, s *subscription) (<-chan *Record, func()) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
