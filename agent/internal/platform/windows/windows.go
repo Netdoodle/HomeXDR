@@ -62,4 +62,4 @@ func (*Platform) Collectors(platform.Env) map[string]platform.Collector {
 }
 
 // Service returns the Windows service integration.
-func (*Platform) Service() platform.Service { return platform.UnsupportedService{} }
+func (*Platform) Service() platform.Service { return winService{} }
