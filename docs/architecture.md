@@ -134,7 +134,7 @@ Rules use standard Sigma field names, so SigmaHQ rules work unchanged. The serve
 | `ParentCommandLine` | `process.parent.command_line` |
 | `OriginalFileName` | `process.pe.original_file_name` |
 | `Product`, `Company`, `Description` | `process.pe.product`, `.company`, `.description` |
-| `User` | `process.user.name` (falls back to `user.name`) |
+| `User`, `ParentUser` | `DOMAIN\name` from `process.user` / `process.parent.user` (name alone without a domain; `User` falls back to `user.name`) |
 | `IntegrityLevel` | `process.integrity_level` |
 | `CurrentDirectory` | `process.working_directory` |
 | `Hashes`, `sha256`, `md5` | `process.hash.*` / `file.hash.*` |
@@ -168,11 +168,15 @@ Sigma `logsource` maps to event filters:
 | `category: image_load` | `library` |
 | `category: ps_script` | `event.code == 4104` |
 | `product: windows` / `linux` / `macos` | `host.os.platform` |
-| `service: security` / `system` / `sysmon` / `powershell` | `event.provider` / channel in `data.Channel` |
+| `category: ps_module` / `ps_classic_start` / `ps_classic_provider_start` / `ps_classic_script` | `event.code` 4103 / 400 / 600 / 800 |
+| `service: <name>` | `event.provider` for the well-known ones, channel in `data.Channel`, or `event.dataset` ending in `.<name>` (the Windows agent sets `windows.<service>`) |
 | `product: opnsense`, `product: suricata` | `event.module` |
 
 Unknown fields fall back to a case-insensitive lookup in `data.*`, so Windows EventData
-fields work in rules without mapping.
+fields work in rules without mapping. For Windows Event Log records (`event.module:
+eventlog`) the verbatim `data.*` value is tried first, even for fields with an ECS
+mapping, because rules for Windows logs mean the raw EventData (`SubjectUserName` on a
+4624 is not the logged-on `user.name`).
 
 ## Updates
 

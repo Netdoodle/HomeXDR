@@ -321,3 +321,60 @@ detection:
 		t.Fatalf("User = %v, want [root]", v)
 	}
 }
+
+// TestEventLogRawFieldsFirst: for Windows Event Log records the verbatim EventData wins
+// over ECS mappings, and a service rule matches through the dataset the agent sets.
+func TestEventLogRawFieldsFirst(t *testing.T) {
+	r := mustRule(t, `
+title: Logon by machine account from network
+id: 33333333-3333-3333-3333-333333333333
+logsource: {product: windows, service: security}
+detection:
+  sel:
+    EventID: 4624
+    LogonType: 3
+    SubjectUserName|endswith: '$'
+  condition: sel
+`)
+	ev := &event.Event{
+		ID:    event.NewID(),
+		Host:  event.Host{ID: "h", Name: "desk", OS: &event.OS{Platform: "windows"}},
+		Event: event.Meta{Kind: "event", Category: []string{"authentication"}, Module: "eventlog", Dataset: "windows.security", Provider: "Microsoft-Windows-Security-Auditing", Code: "4624"},
+		User:  &event.User{Name: "alice", Domain: "DESK"},
+		Data:  map[string]any{"SubjectUserName": "DESK$", "TargetUserName": "alice", "LogonType": "3", "Channel": "Security"},
+	}
+	if !r.Match(NewDoc(ev)) {
+		t.Fatal("rule on raw SubjectUserName did not match")
+	}
+	// Classic PowerShell log: the service matches through dataset windows.powershell-classic.
+	ps := mustRule(t, `
+title: Classic PowerShell engine start with encoded command
+id: 44444444-4444-4444-4444-444444444444
+logsource: {product: windows, category: ps_classic_start}
+detection:
+  sel:
+    Data|contains: 'HostApplication=powershell.exe -enc'
+  condition: sel
+`)
+	ev2 := &event.Event{
+		ID:    event.NewID(),
+		Host:  event.Host{ID: "h", Name: "desk", OS: &event.OS{Platform: "windows"}},
+		Event: event.Meta{Kind: "event", Module: "eventlog", Dataset: "windows.powershell-classic", Provider: "PowerShell", Code: "400"},
+		Data:  map[string]any{"Data": []any{"Available", "None", "NewEngineState=Available\n\tHostApplication=powershell.exe -enc SQBFAFgA"}, "Channel": "Windows PowerShell"},
+	}
+	if !ps.Match(NewDoc(ev2)) {
+		t.Fatal("classic PowerShell rule on Data did not match")
+	}
+	svc := mustRule(t, `
+title: Classic PowerShell service
+id: 55555555-5555-5555-5555-555555555555
+logsource: {product: windows, service: powershell-classic}
+detection:
+  sel:
+    EventID: 400
+  condition: sel
+`)
+	if !svc.Match(NewDoc(ev2)) {
+		t.Fatal("service powershell-classic did not match dataset windows.powershell-classic")
+	}
+}

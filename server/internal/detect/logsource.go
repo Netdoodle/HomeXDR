@@ -77,7 +77,10 @@ var categoryFilters = map[string]func(d *Doc) bool{
 	"ps_script":        codeIs("4104"),
 	"ps_module":        codeIs("4103"),
 	"ps_classic_start": codeIs("400"),
-	"authentication":   func(d *Doc) bool { return d.has(event.CategoryAuthentication) },
+	// The classic "Windows PowerShell" log: provider (600) and pipeline (800) events.
+	"ps_classic_provider_start": codeIs("600"),
+	"ps_classic_script":         codeIs("800"),
+	"authentication":            func(d *Doc) bool { return d.has(event.CategoryAuthentication) },
 }
 
 var serviceProviders = map[string][]string{

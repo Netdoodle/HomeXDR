@@ -50,12 +50,15 @@ func (*Platform) HostInfo(context.Context) api.HostInfo {
 	return info
 }
 
-// Sensors returns the Windows sensors for the enabled kinds. Only the process sensor
-// exists so far; the core reports the other kinds as unavailable.
+// Sensors returns the Windows sensors for the enabled kinds: process and eventlog so
+// far; the core reports the other kinds as unavailable.
 func (*Platform) Sensors(cfg api.SensorsConfig, env platform.Env) []platform.Sensor {
 	var out []platform.Sensor
 	if cfg.Process.Enabled {
 		out = append(out, newProcessSensor(cfg.Process, env))
+	}
+	if cfg.EventLog.Enabled {
+		out = append(out, newEventLogSensor(cfg.EventLog, cfg.Process.Enabled, env))
 	}
 	return out
 }
