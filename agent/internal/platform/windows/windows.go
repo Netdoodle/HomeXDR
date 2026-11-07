@@ -50,8 +50,15 @@ func (*Platform) HostInfo(context.Context) api.HostInfo {
 	return info
 }
 
-// Sensors returns the Windows sensors.
-func (*Platform) Sensors(api.SensorsConfig, platform.Env) []platform.Sensor { return nil }
+// Sensors returns the Windows sensors for the enabled kinds. Only the process sensor
+// exists so far; the core reports the other kinds as unavailable.
+func (*Platform) Sensors(cfg api.SensorsConfig, env platform.Env) []platform.Sensor {
+	var out []platform.Sensor
+	if cfg.Process.Enabled {
+		out = append(out, newProcessSensor(cfg.Process, env))
+	}
+	return out
+}
 
 // Responder returns the Windows responder.
 func (*Platform) Responder(platform.Env) platform.Responder { return platform.UnsupportedResponder{} }
@@ -62,4 +69,4 @@ func (*Platform) Collectors(platform.Env) map[string]platform.Collector {
 }
 
 // Service returns the Windows service integration.
-func (*Platform) Service() platform.Service { return platform.UnsupportedService{} }
+func (*Platform) Service() platform.Service { return winService{} }

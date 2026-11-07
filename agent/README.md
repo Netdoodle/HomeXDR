@@ -61,6 +61,104 @@ when `nft` is missing) that allows loopback, the server's IPs and port, DNS to t
 configured resolvers, DHCP, IPv6 neighbour discovery and the allow lists, and drops
 everything else, including forwarded traffic. Release deletes the table.
 
+### Windows platform
+
+| Sensor | Primary | Fallback |
+|---|---|---|
+| process | Sysmon: `Microsoft-Windows-Sysmon/Operational`, events 1 (create) and 5 (terminate), from standalone Sysmon or the Sysmon feature built into Windows | Security log: events 4688 (create) and 4689 (exit); reported as `degraded` while process creation auditing or command lines are off |
+
+Both sources are Windows Event Log channels (`event.module: eventlog`), read in pure Go
+through `wevtapi.dll`. Events use the same names as on Linux (`event.action` `exec` and
+`exit`, `event.dataset: process`), with `event.provider` and `event.code` set to the
+source's provider and event ID and the record's channel and record ID in
+`data.winlog.channel` and `data.winlog.record_id`. Reading either log needs SYSTEM or
+administrator rights; the service runs as SYSTEM.
+
+What each source needs:
+
+- **Sysmon**: installed, with a configuration that logs events 1 and 5. Sysmon supplies
+  the hashes (per its `HashAlgorithms` setting), version resource fields, integrity level,
+  working directory and the parent's command line itself. The agent adds the user's SID
+  (read from the process while it runs) and, when `hash_executables` is on and Sysmon
+  gave no SHA-256, hashes the executable.
+- **Security log**: "Audit Process Creation" (success) for 4688, "Audit Process
+  Termination" for 4689, and "Include command line in process creation events" for
+  command lines. `homexdr-agent install` turns all three on and prints what it changed;
+  `uninstall` restores the settings from before the first install (saved in
+  `C:\ProgramData\HomeXDR\audit-before-install.json`). To set them by hand, as
+  administrator:
+
+  ```bat
+  auditpol /set /subcategory:{0CCE922B-69AE-11D9-BED3-505054503030} /success:enable
+  auditpol /set /subcategory:{0CCE922C-69AE-11D9-BED3-505054503030} /success:enable
+  reg add HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System\Audit /v ProcessCreationIncludeCmdLine_Enabled /t REG_DWORD /d 1 /f
+  ```
+
+  A domain Group Policy that sets these wins at its next refresh. The agent fills in what
+  4688 lacks: the version resource of the image (`process.pe.*`, read from the file
+  itself rather than its language resource, cached by path, size and modification time),
+  the working directory and session from the live process, the command line from the live
+  process when auditing leaves it out (only for processes still running when the event
+  is read, which is why the sensor stays `degraded` until command lines are on), the
+  SHA-256 when `hash_executables` is on (the same 128 MiB limit as on Linux, computed off
+  the event path), and the parent's command line and user from the process table. No
+  imphash or code signature on this path.
+
+The sensor uses Sysmon when its channel exists and is enabled, and otherwise the
+Security log; it notices Sysmon being installed or removed within a minute. With the
+Security log it reads the audit policy (`AuditQuerySystemPolicy` and the registry value)
+every minute and keeps subscribing whatever it finds, so events flow as soon as the
+policy is turned on; its status message says what is missing. The running agent never
+changes the policy; only `install` and `uninstall` do (`hostsetup.go`, through the
+setters in `audit.go`).
+
+`process.user` carries the SID (`user.id`), name and domain. In 4688 the account is the
+target account when the process was started for another user (`runas`, services), else
+the creator's. LocalSystem, LOCAL SERVICE and NETWORK SERVICE get their canonical names
+(`NT AUTHORITY\SYSTEM`; Security events name LocalSystem after the computer account).
+`process.integrity_level` is `low`, `medium`, `high` or `system` (`untrusted` below
+low). `process.elevated` is true for a full token of a split administrator (4688
+`%%1937`), false for a limited one (`%%1938`), and follows the integrity level otherwise
+(`%%1936`, which covers SYSTEM, services, standard users and UAC turned off; also for
+Sysmon).
+
+Process entity IDs use the creation time as a FILETIME. For a start event the agent reads
+it with `GetProcessTimes` when a process with that PID exists and was created within 5 s
+before the event; anything else is a different process that reused the PID, and then the
+event's time (Sysmon's `UtcTime`, else the record's `TimeCreated`) stands in. The key is
+kept in a process table (filled from a snapshot of the running processes at startup,
+bounded to 65,536 entries, exited processes kept for a minute) so exit events and
+children get the same ID; Sysmon's `ProcessGuid` links children to parents even across
+PID reuse. A parent whose creation time is later than its child's is normally a newer
+process that reused the PID, but a clock set back after boot (a PC that reads the
+hardware clock as local time until NTP corrects it) gives every boot-time process such a
+time. So a parent is still accepted when its executable matches the one the event names,
+or when its creation time is later than now, which only a clock change can produce.
+Like on Linux, processes already running at startup produce no events, and the
+exit of a process the sensor never saw and that is gone is dropped. Once a minute, running
+entries whose process has disappeared are marked exited, for exits that are never logged.
+
+Each subscription keeps a bookmark in `<data dir>\eventlog\process-<channel>.bookmark`,
+saved every 5 s and on stop. After a restart the sensor resumes after the last record it
+handled, so records logged while the agent was stopped are still reported. Without a
+usable bookmark it starts at new records, with the bookmark set to the newest matching
+record already in the log. Switching sources deletes the other source's bookmark, so a
+later fallback does not replay an old backlog. The Event Log reader (`evtlog.go`) is
+meant to be reused by the next Windows sensors.
+
+Not covered yet on Windows: the network, file, registry, DNS, library and eventlog
+sensors, response actions (kill, isolation), the artifact collectors and self-update;
+the core reports those kinds as unavailable.
+
+`homexdr-agent install` (from an elevated prompt) enrolls, sets up auditing as above and
+registers the **HomeXDR Agent** service (`HomeXDRAgent`, LocalSystem, automatic start),
+which runs `<exe> run`. The Service Control Manager restarts it 5 s after an unexpected
+stop. Under the service the log goes to `<data dir>\logs\agent.log` (rotated at 10 MB).
+The config file and data directory get a protected ACL that only SYSTEM and
+Administrators can open, instead of inheriting `C:\ProgramData`'s, which every user can
+read. `uninstall` stops and deletes the service, restores the audit settings, and with
+`--purge` deletes the config and data.
+
 ## Build
 
 Requires Go 1.26+. The eBPF objects are committed, so no clang is needed:
@@ -103,7 +201,13 @@ go test ./...                                           # any OS
 sudo go test ./internal/platform/linux/                 # also runs the live eBPF, DNS, fanotify, kill and journald tests
 sudo HOMEXDR_NETNS_TEST=1 go test -run NFTRulesetInNetns ./internal/platform/linux/
 go test -fuzz FuzzParseDNS -fuzztime 1m ./internal/platform/linux/
+go test ./internal/platform/windows/                    # on Windows: Event Log parsing, process mapping and live Application log tests
 ```
+
+The Windows live tests write records to the Application log as a normal user and check
+that a subscription receives them and that a saved bookmark resumes without duplicates or
+gaps. Run them from an elevated prompt to also run the sensor against the Security log or
+Sysmon; unelevated, those are skipped. No test changes the audit policy.
 
 The live DNS tests answer their own queries with a throwaway server on 127.0.0.77:53
 (and `[::1]:53`); `TestDNSSensorGetent` also resolves example.com with `getent` through

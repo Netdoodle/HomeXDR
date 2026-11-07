@@ -257,6 +257,16 @@ func cmdInstall(p platform.Platform, args []string) error {
 	if err != nil {
 		return err
 	}
+	if hs, ok := p.(platform.HostSetup); ok {
+		lines, err := hs.SetupHost()
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		if err != nil {
+			// Not fatal: the sensors still run and report what is missing.
+			fmt.Printf("warning: %v\n", err)
+		}
+	}
 	if err := p.Service().Install(exe); err != nil {
 		if errors.Is(err, platform.ErrUnsupported) {
 			return fmt.Errorf("service integration is %v; run `%s run` from your own supervisor", err, exe)
@@ -281,6 +291,15 @@ func cmdUninstall(p platform.Platform, args []string) error {
 		fmt.Println("service stopped and removed")
 	} else {
 		fmt.Println("no service installed")
+	}
+	if hs, ok := p.(platform.HostSetup); ok {
+		lines, err := hs.RestoreHost()
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 	local, _ := config.Load(*cfg)
 	dataDir := core.DataDir(local, p)
@@ -317,7 +336,9 @@ func dirHasEntries(dir string) bool {
 	return err == nil && len(ents) > 0
 }
 
-func newLogger(level string) *slog.Logger {
+func newLogger(level string) *slog.Logger { return newLoggerTo(os.Stderr, level) }
+
+func newLoggerTo(w io.Writer, level string) *slog.Logger {
 	var l slog.Level
 	switch strings.ToLower(level) {
 	case "debug":
@@ -329,7 +350,7 @@ func newLogger(level string) *slog.Logger {
 	default:
 		l = slog.LevelInfo
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: l}))
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: l}))
 }
 
 func cmdRun(p platform.Platform, args []string) error {
@@ -341,7 +362,13 @@ func cmdRun(p platform.Platform, args []string) error {
 	if err != nil {
 		return err
 	}
-	log := newLogger(local.LogLevel)
+	var logOut io.Writer = os.Stderr
+	if sl, ok := p.Service().(platform.ServiceLogger); ok {
+		if w, ok := sl.LogOutput(core.DataDir(local, p)); ok {
+			logOut = w
+		}
+	}
+	log := newLoggerTo(logOut, local.LogLevel)
 	slog.SetDefault(log)
 	exe, err := core.Executable()
 	if err != nil {

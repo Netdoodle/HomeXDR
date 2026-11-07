@@ -96,6 +96,20 @@ func (d *Doc) synthesize() {
 	if len(parts) > 0 {
 		d.flat["sigma.hashes"] = []string{strings.Join(parts, ",")}
 	}
+	// Sysmon's User and ParentUser are "DOMAIN\name" (e.g. "NT AUTHORITY\SYSTEM"), and
+	// rules match on either part ("AUTHORI", "\SYSTEM"). Without a domain (Unix) the
+	// name alone is used.
+	for key, prefix := range map[string]string{"sigma.user": "process.user", "sigma.parent_user": "process.parent.user"} {
+		name := d.flat[prefix+".name"]
+		if !nonEmpty(name) {
+			continue
+		}
+		if dom := d.flat[prefix+".domain"]; nonEmpty(dom) {
+			d.flat[key] = []string{dom[0] + `\` + name[0]}
+		} else {
+			d.flat[key] = name
+		}
+	}
 	if ex := d.flat[sigPrefix+".exists"]; len(ex) > 0 {
 		signed := ex[0] == "true"
 		if v := d.flat[sigPrefix+".valid"]; len(v) > 0 && v[0] == "false" {
@@ -132,8 +146,8 @@ var sigmaFields = map[string][]string{
 	"company":             {"process.pe.company"},
 	"description":         {"process.pe.description"},
 	"fileversion":         {"process.pe.file_version"},
-	"user":                {"process.user.name", "user.name"},
-	"parentuser":          {"process.parent.user.name"},
+	"user":                {"sigma.user", "user.name"},
+	"parentuser":          {"sigma.parent_user"},
 	"integritylevel":      {"process.integrity_level"},
 	"currentdirectory":    {"process.working_directory"},
 	"targetfilename":      {"file.path"},
