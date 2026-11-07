@@ -317,7 +317,9 @@ func dirHasEntries(dir string) bool {
 	return err == nil && len(ents) > 0
 }
 
-func newLogger(level string) *slog.Logger {
+func newLogger(level string) *slog.Logger { return newLoggerTo(os.Stderr, level) }
+
+func newLoggerTo(w io.Writer, level string) *slog.Logger {
 	var l slog.Level
 	switch strings.ToLower(level) {
 	case "debug":
@@ -329,7 +331,7 @@ func newLogger(level string) *slog.Logger {
 	default:
 		l = slog.LevelInfo
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: l}))
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: l}))
 }
 
 func cmdRun(p platform.Platform, args []string) error {
@@ -341,7 +343,13 @@ func cmdRun(p platform.Platform, args []string) error {
 	if err != nil {
 		return err
 	}
-	log := newLogger(local.LogLevel)
+	var logOut io.Writer = os.Stderr
+	if sl, ok := p.Service().(platform.ServiceLogger); ok {
+		if w, ok := sl.LogOutput(core.DataDir(local, p)); ok {
+			logOut = w
+		}
+	}
+	log := newLoggerTo(logOut, local.LogLevel)
 	slog.SetDefault(log)
 	exe, err := core.Executable()
 	if err != nil {
