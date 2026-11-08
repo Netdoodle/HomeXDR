@@ -63,7 +63,9 @@ func Parse(b []byte) (Local, error) {
 		Local
 		AllowedActions *[]string `json:"allowed_actions"`
 	}
-	dec := json.NewDecoder(strings.NewReader(string(b)))
+	// Windows editors (Notepad, PowerShell 5's Set-Content -Encoding utf8) may write a
+	// UTF-8 byte order mark; without this the agent would refuse to start.
+	dec := json.NewDecoder(strings.NewReader(strings.TrimPrefix(string(b), string(rune(0xFEFF)))))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&aux); err != nil {
 		return Local{}, fmt.Errorf("config: %w", err)
