@@ -140,3 +140,13 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Fatalf("empty policy became %v", got.AllowedActions)
 	}
 }
+
+func TestParseByteOrderMark(t *testing.T) {
+	c, err := Parse(append([]byte{0xEF, 0xBB, 0xBF}, []byte(`{"server_url":"https://x:8443","allowed_actions":["file.hash"]}`)...))
+	if err != nil {
+		t.Fatalf("config with a UTF-8 BOM: %v", err)
+	}
+	if c.ServerURL != "https://x:8443" || !slices.Equal(c.AllowedActions, []string{"file.hash"}) {
+		t.Fatalf("parsed %+v", c)
+	}
+}
