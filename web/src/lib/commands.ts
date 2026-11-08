@@ -1,6 +1,6 @@
 // Human descriptions of response actions, used by confirm dialogs and command history.
 
-import type { CommandRecord, CommandRequest, CommandType, Host } from '../api/types'
+import type { CommandRecord, CommandRequest, CommandType, DefenderParams, Host } from '../api/types'
 
 export const COMMAND_LABEL: Record<CommandType, string> = {
   'process.kill': 'Kill process',
@@ -11,6 +11,7 @@ export const COMMAND_LABEL: Record<CommandType, string> = {
   'file.get': 'Get file',
   'file.hash': 'Hash file',
   'artifact.collect': 'Run artifact',
+  'defender.action': 'Defender action',
 }
 
 export function commandLabel(type: string): string {
@@ -107,6 +108,45 @@ export function describeCommand(req: CommandRequest, host: Pick<Host, 'hostname'
         danger: false,
       }
     }
+    case 'defender.action':
+      return describeDefender(req.params, h)
+  }
+}
+
+function describeDefender(p: DefenderParams, h: string): CommandDescription {
+  switch (p.action) {
+    case 'status':
+      return { title: `Read Defender status on ${h}?`, effects: ['The agent reports whether protection is on, the signature version and the threats Defender knows. Nothing changes.'], confirmLabel: 'Read status', danger: false }
+    case 'scan':
+      if (p.scan_type === 'path')
+        return { title: `Scan a file with Defender on ${h}?`, effects: [`Defender scans ${p.path ?? ''} and handles anything it finds per its own settings.`], confirmLabel: 'Scan file', danger: false }
+      return {
+        title: `Start a Defender ${p.scan_type} scan on ${h}?`,
+        effects: [`Defender starts a ${p.scan_type} scan in the background${p.scan_type === 'full' ? ' (this can take hours and slows the PC)' : ''}. Detections show up as alerts.`],
+        confirmLabel: `Start ${p.scan_type} scan`,
+        danger: false,
+      }
+    case 'update':
+      return { title: `Update Defender signatures on ${h}?`, effects: ['Defender downloads its latest signatures now.'], confirmLabel: 'Update signatures', danger: false }
+    case 'remove_threats':
+      return { title: `Remove all active threats on ${h}?`, effects: ['Defender cleans every threat it currently lists as active.'], confirmLabel: 'Remove threats', danger: true }
+    case 'allow_threat':
+      return {
+        title: `Allow threat ${p.threat_id} on ${h}?`,
+        effects: [
+          `Defender stops acting on threat ID ${p.threat_id} on this host and restores its files from quarantine.`,
+          'Only do this for a false positive: real malware would be allowed to run.',
+        ],
+        confirmLabel: 'Allow threat',
+        danger: true,
+      }
+    case 'block_threat':
+      return {
+        title: `Block threat ${p.threat_id} again on ${h}?`,
+        effects: [`Defender quarantines threat ID ${p.threat_id} again when it finds it (undoes an earlier allow).`],
+        confirmLabel: 'Block threat',
+        danger: false,
+      }
   }
 }
 
@@ -124,6 +164,8 @@ export function commandParamsSummary(c: Pick<CommandRecord, 'type' | 'params'>):
       return String(p.path ?? '')
     case 'file.restore':
       return `id ${String(p.id ?? '')}`
+    case 'defender.action':
+      return [p.action, p.scan_type, p.path, p.threat_id].filter((x) => x !== undefined && x !== '').map(String).join(' ')
     case 'artifact.collect': {
       const params = p.params && typeof p.params === 'object' ? Object.entries(p.params as Record<string, string>) : []
       return `${String(p.name ?? '')}${params.length ? ' ' + params.map(([k, v]) => `${k}=${v}`).join(' ') : ''}`

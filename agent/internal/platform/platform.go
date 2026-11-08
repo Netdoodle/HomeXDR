@@ -102,6 +102,12 @@ type ServiceLogger interface {
 	LogOutput(dataDir string) (io.Writer, bool)
 }
 
+// Defender is optionally implemented by a Platform that can drive Microsoft Defender
+// Antivirus (Windows) for CmdDefender.
+type Defender interface {
+	Defender(ctx context.Context, p api.DefenderParams) (api.DefenderResult, error)
+}
+
 // HostSetup is optionally implemented by a Platform whose sensors depend on host
 // settings that are off by default (Windows process auditing). `install` calls SetupHost
 // and `uninstall` calls RestoreHost, which puts back the settings from before the first

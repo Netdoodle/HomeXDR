@@ -72,7 +72,8 @@ const DefaultModel = "claude-opus-5-5"
 // EnvAnthropicKey, when set, provides the Claude API key instead of the settings.
 const EnvAnthropicKey = "HOMEXDR_ANTHROPIC_API_KEY"
 
-const settingsKey = "ai_triage_settings"
+// SettingsKey is the kv key of the AI analyst settings (also used by `homexdr-server ai-analyst`).
+const SettingsKey = "ai_triage_settings"
 
 // Settings configure the AI analyst. API keys are write-only through the console API.
 type Settings struct {
@@ -311,7 +312,7 @@ func defaultProvider(s Settings, key string) (provider, error) {
 // Settings returns the stored settings (defaults when none are stored).
 func (s *Service) Settings(ctx context.Context) Settings {
 	set := DefaultSettings()
-	if err := s.st.GetKV(ctx, settingsKey, &set); err != nil && !errors.Is(err, store.ErrNotFound) {
+	if err := s.st.GetKV(ctx, SettingsKey, &set); err != nil && !errors.Is(err, store.ErrNotFound) {
 		s.log.Warn("ai triage: read settings", "err", err)
 	}
 	if set.Engine == "" { // stored by a version without engines
@@ -334,7 +335,7 @@ func (s *Service) SaveSettings(ctx context.Context, set Settings) (Settings, err
 	if err := set.Validate(); err != nil {
 		return set, err
 	}
-	return set, s.st.SetKV(ctx, settingsKey, set)
+	return set, s.st.SetKV(ctx, SettingsKey, set)
 }
 
 // Key returns the API key in effect and where it comes from ("environment",
