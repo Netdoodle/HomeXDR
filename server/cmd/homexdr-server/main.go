@@ -52,9 +52,11 @@ func main() {
 			os.Exit(doctor(os.Args[2:]))
 		case "selfcheck":
 			os.Exit(selfcheck(os.Args[2:]))
+		case "ai-analyst":
+			os.Exit(aiAnalyst(os.Args[2:]))
 		case "serve":
 		default:
-			fmt.Fprintf(os.Stderr, "usage: homexdr-server [serve|version|healthcheck|reset-password|enrollment-token|suppress-apply|release-manifest|doctor|selfcheck]\n")
+			fmt.Fprintf(os.Stderr, "usage: homexdr-server [serve|version|healthcheck|reset-password|enrollment-token|suppress-apply|release-manifest|doctor|selfcheck|ai-analyst]\n")
 			os.Exit(2)
 		}
 	}

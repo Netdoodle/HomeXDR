@@ -166,7 +166,7 @@ func TestProviderSettings(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	// A Claude key stored by the previous version is migrated.
-	if err := f.st.SetKV(ctx, settingsKey, map[string]any{"enabled": true, "provider": "anthropic", "model": "claude-opus-5-5",
+	if err := f.st.SetKV(ctx, SettingsKey, map[string]any{"enabled": true, "provider": "anthropic", "model": "claude-opus-5-5",
 		"api_key": "sk-old-claude-key", "min_severity": "medium", "daily_limit": 5, "max_tool_calls": 5}); err != nil {
 		t.Fatal(err)
 	}

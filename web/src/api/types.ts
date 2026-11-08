@@ -158,6 +158,7 @@ export type CommandType =
   | 'file.get'
   | 'file.hash'
   | 'artifact.collect'
+  | 'defender.action'
 
 export const COMMAND_TYPES: CommandType[] = [
   'process.kill',
@@ -168,6 +169,7 @@ export const COMMAND_TYPES: CommandType[] = [
   'file.get',
   'file.hash',
   'artifact.collect',
+  'defender.action',
 ]
 
 export type CommandStatus = 'queued' | 'delivered' | 'running' | 'completed' | 'failed' | 'rejected' | 'expired'
@@ -196,6 +198,13 @@ export interface FileGetParams {
 export interface FileHashParams {
   path: string
 }
+export type DefenderAction = 'status' | 'scan' | 'update' | 'remove_threats' | 'allow_threat' | 'block_threat'
+export interface DefenderParams {
+  action: DefenderAction
+  scan_type?: 'quick' | 'full' | 'path'
+  path?: string
+  threat_id?: number
+}
 export interface ArtifactParams {
   name: string
   params?: Record<string, string>
@@ -210,6 +219,7 @@ export type CommandRequest =
   | { type: 'file.get'; params: FileGetParams }
   | { type: 'file.hash'; params: FileHashParams }
   | { type: 'artifact.collect'; params: ArtifactParams }
+  | { type: 'defender.action'; params: DefenderParams }
 
 // Result shapes (CommandRecord.output) from shared/api/agent.go.
 export interface KillResult {

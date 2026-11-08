@@ -276,7 +276,61 @@ const (
 	CmdFileGet        = "file.get"
 	CmdFileHash       = "file.hash"
 	CmdArtifact       = "artifact.collect"
+	// CmdDefender drives Microsoft Defender Antivirus on Windows (DefenderParams): a
+	// fixed set of operations, not a way to run commands.
+	CmdDefender = "defender.action"
 )
+
+// Defender operations (DefenderParams.Action).
+const (
+	DefenderStatus        = "status"         // protection state and the threats Defender knows
+	DefenderScan          = "scan"           // ScanType quick or full (started, runs on its own), or path (waits for the result)
+	DefenderUpdate        = "update"         // signature update now
+	DefenderRemoveThreats = "remove_threats" // clean every active threat
+	DefenderAllowThreat   = "allow_threat"   // ThreatID: allow it (false positive) and restore it from quarantine
+	DefenderBlockThreat   = "block_threat"   // ThreatID: undo an allow, quarantine it again when found
+)
+
+// DefenderParams for CmdDefender.
+type DefenderParams struct {
+	Action   string `json:"action"`
+	ScanType string `json:"scan_type,omitempty"` // quick | full | path
+	Path     string `json:"path,omitempty"`      // for scan_type path
+	ThreatID int64  `json:"threat_id,omitempty"` // Defender's threat ID, from detection events ("Threat ID")
+}
+
+// DefenderResult is the output of CmdDefender.
+type DefenderResult struct {
+	Message string `json:"message"`
+	// Found is set by a path scan: true when Defender found a threat in it.
+	Found   *bool                `json:"found,omitempty"`
+	Status  *DefenderStatusInfo  `json:"status,omitempty"`
+	Threats []DefenderThreatInfo `json:"threats,omitempty"`
+}
+
+// DefenderStatusInfo is a subset of Get-MpComputerStatus.
+type DefenderStatusInfo struct {
+	AntivirusEnabled          bool   `json:"antivirus_enabled"`
+	RealTimeProtectionEnabled bool   `json:"real_time_protection_enabled"`
+	BehaviorMonitorEnabled    bool   `json:"behavior_monitor_enabled"`
+	TamperProtected           bool   `json:"tamper_protected"`
+	RunningMode               string `json:"running_mode,omitempty"` // Normal, Passive, ...
+	SignatureVersion          string `json:"signature_version,omitempty"`
+	SignatureUpdated          string `json:"signature_updated,omitempty"`
+	SignatureAgeDays          int    `json:"signature_age_days"`
+	QuickScanEnd              string `json:"quick_scan_end,omitempty"`
+	FullScanEnd               string `json:"full_scan_end,omitempty"`
+}
+
+// DefenderThreatInfo is one entry of Get-MpThreat.
+type DefenderThreatInfo struct {
+	ThreatID   int64    `json:"threat_id"`
+	Name       string   `json:"name"`
+	SeverityID int      `json:"severity_id"`
+	Active     bool     `json:"active"`
+	Resources  []string `json:"resources,omitempty"`
+	Action     string   `json:"action,omitempty"` // a per-threat default action set on this host, e.g. Allow
+}
 
 // There is deliberately no "run arbitrary command" type. Every action is a fixed,
 // typed operation, so the server (or anyone who compromises it) cannot turn the agent
@@ -285,7 +339,7 @@ const (
 // DefaultAllowedActions is the local policy used when the agent config does not set one.
 var DefaultAllowedActions = []string{
 	CmdProcessKill, CmdHostIsolate, CmdHostRelease, CmdFileQuarantine,
-	CmdFileRestore, CmdFileGet, CmdFileHash, CmdArtifact,
+	CmdFileRestore, CmdFileGet, CmdFileHash, CmdArtifact, CmdDefender,
 }
 
 // SignedCommand is what the server hands an agent. Payload is the exact JSON encoding of

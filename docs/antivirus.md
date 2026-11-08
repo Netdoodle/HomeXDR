@@ -50,6 +50,28 @@ Windows Defender (or another real-time antivirus) on. Only Microsoft's antivirus
 can replace Defender in Windows Security, and Defender's detections reach HomeXDR anyway
 through the eventlog sensor (alert "Windows Defender Threat Detected").
 
+## Microsoft Defender actions
+
+On Windows hosts the host page's Actions tab has a **Microsoft Defender** card. It sends
+`defender.action` commands, a fixed set of operations that the agent runs through
+Defender's own PowerShell module and `MpCmdRun.exe`:
+
+| Action | What Defender does |
+|---|---|
+| `status` | Reports real-time protection, Tamper Protection, signature version and age, and the threats it knows (merged by threat ID, with any per-threat action set on the host) |
+| `scan` `quick` / `full` | Starts the scan in the background; detections arrive as alerts (Defender events 1116/1117 through the eventlog sensor) |
+| `scan` `path` | Scans one file and reports whether it found a threat |
+| `update` | Updates signatures now |
+| `remove_threats` | Cleans every active threat (`Remove-MpThreat`) |
+| `allow_threat` | For a false positive: sets the threat ID's action to Allow (`ThreatIDDefaultAction`) and restores its files from Defender's quarantine |
+| `block_threat` | Undoes an allow: the threat is quarantined again when found |
+
+The threat ID is in the Defender alert's event data (`Threat ID`). These work with
+Tamper Protection on (tested on Windows 11 25H2). HomeXDR never turns Defender off. Like
+every action, `defender.action` must be in the agent's `allowed_actions` (it is in the
+default list for new agents; add it to `agent.json` on hosts enrolled earlier) and is
+recorded in the audit log.
+
 ## Setup
 
 `deploy/docker-compose.yml` runs `clamav/clamav` next to the server and sets

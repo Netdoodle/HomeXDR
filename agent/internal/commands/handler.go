@@ -46,7 +46,9 @@ type Handler struct {
 	Isolator   Isolator
 	Collectors map[string]platform.Collector
 	Files      *fileops.Store
-	Log        *slog.Logger
+	// Defender drives Microsoft Defender Antivirus; nil where there is none.
+	Defender platform.Defender
+	Log      *slog.Logger
 	// Platform is the event.Platform* name, used to check the artifact catalog.
 	Platform string
 
@@ -98,6 +100,8 @@ func timeout(typ string) time.Duration {
 		return 30 * time.Minute
 	case api.CmdFileGet:
 		return time.Hour
+	case api.CmdDefender:
+		return 15 * time.Minute // signature updates and path scans of large files
 	}
 	return 5 * time.Minute
 }
@@ -202,6 +206,22 @@ func (h *Handler) prepare(cmd *api.Command) (runFunc, error) {
 		}
 		return func(context.Context) (any, int, error) {
 			r, err := h.Files.Restore(p.ID)
+			if err != nil {
+				return nil, 0, err
+			}
+			return r, 0, nil
+		}, nil
+
+	case api.CmdDefender:
+		var p api.DefenderParams
+		if err := decodeParams(cmd.Params, &p); err != nil {
+			return nil, err
+		}
+		if h.Defender == nil {
+			return nil, errors.New("Microsoft Defender actions are only available on Windows")
+		}
+		return func(ctx context.Context) (any, int, error) {
+			r, err := h.Defender.Defender(ctx, p)
 			if err != nil {
 				return nil, 0, err
 			}

@@ -104,6 +104,38 @@ func validateParams(h *store.Host, typ string, params json.RawMessage) (json.Raw
 			return nil, err
 		}
 		v = p
+	case api.CmdDefender:
+		var p api.DefenderParams
+		if err := decodeStrict(params, &p); err != nil {
+			return nil, err
+		}
+		if h.OS.Platform != "windows" {
+			return nil, invalid("Microsoft Defender actions are only available on Windows hosts")
+		}
+		switch p.Action {
+		case api.DefenderStatus, api.DefenderUpdate, api.DefenderRemoveThreats:
+			p = api.DefenderParams{Action: p.Action}
+		case api.DefenderScan:
+			switch p.ScanType {
+			case "quick", "full":
+				p.Path = ""
+			case "path":
+				if err := checkPath(h, p.Path); err != nil {
+					return nil, err
+				}
+			default:
+				return nil, invalid("scan_type must be quick, full or path")
+			}
+			p.ThreatID = 0
+		case api.DefenderAllowThreat, api.DefenderBlockThreat:
+			if p.ThreatID <= 0 {
+				return nil, invalid("threat_id must be a Defender threat ID (a positive number)")
+			}
+			p = api.DefenderParams{Action: p.Action, ThreatID: p.ThreatID}
+		default:
+			return nil, invalid("unknown Defender action %q", p.Action)
+		}
+		v = p
 	case api.CmdFileGet:
 		var p api.FileGetParams
 		if err := decodeStrict(params, &p); err != nil {

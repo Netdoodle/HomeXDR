@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
-import { api, queryKeys, type CommandRequest, type CommandType, type Host } from '../api'
+import { api, queryKeys, type CommandRequest, type CommandType, type DefenderParams, type Host } from '../api'
 import { ActionConfirmDialog } from '../components/ActionDialog'
 import { ArtifactParamsForm } from '../components/ArtifactParams'
 import { useCan } from '../components/Auth'
@@ -270,9 +270,73 @@ export function HostActions({ host }: { host: Host }) {
         </ActionCard>
 
         <ArtifactCard host={host} onRequest={setRequest} />
+        {host.os.platform === 'windows' ? <DefenderCard host={host} onRequest={setRequest} /> : null}
       </div>
       <ActionConfirmDialog host={host} request={request} onClose={() => setRequest(null)} onDone={done} />
     </div>
+  )
+}
+
+function DefenderCard({ host, onRequest }: { host: Host; onRequest: (r: CommandRequest) => void }) {
+  const [threat, setThreat] = useState('')
+  const [scanPath, setScanPath] = useState('')
+  const id = Number(threat)
+  const idValid = /^\d+$/.test(threat) && id > 0
+  const d = (params: DefenderParams) => onRequest({ type: 'defender.action', params })
+  return (
+    <ActionCard
+      icon="bug"
+      title="Microsoft Defender"
+      type="defender.action"
+      host={host}
+      description="Drive Defender on this PC: status, scans, signature updates, and what Defender does with a threat it detected. The threat ID is in the Defender alert's data (Threat ID)."
+    >
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" className="btn" onClick={() => d({ action: 'status' })}>
+          Status…
+        </button>
+        <button type="button" className="btn" onClick={() => d({ action: 'scan', scan_type: 'quick' })}>
+          Quick scan…
+        </button>
+        <button type="button" className="btn" onClick={() => d({ action: 'scan', scan_type: 'full' })}>
+          Full scan…
+        </button>
+        <button type="button" className="btn" onClick={() => d({ action: 'update' })}>
+          Update signatures…
+        </button>
+        <button type="button" className="btn danger" onClick={() => d({ action: 'remove_threats' })}>
+          Remove active threats…
+        </button>
+      </div>
+      <form
+        className="row"
+        style={{ alignItems: 'flex-end' }}
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (scanPath.trim()) d({ action: 'scan', scan_type: 'path', path: scanPath.trim() })
+        }}
+      >
+        <div className="field grow">
+          <label htmlFor="d-path">Scan one file</label>
+          <input id="d-path" className="input mono" placeholder={PATH_HINT.windows} value={scanPath} onChange={(e) => setScanPath(e.target.value)} />
+        </div>
+        <button type="submit" className="btn" disabled={!scanPath.trim()}>
+          Scan file…
+        </button>
+      </form>
+      <div className="row" style={{ alignItems: 'flex-end' }}>
+        <div className="field grow">
+          <label htmlFor="d-threat">Threat ID</label>
+          <input id="d-threat" className="input mono" inputMode="numeric" placeholder="2147519003" value={threat} onChange={(e) => setThreat(e.target.value.trim())} />
+        </div>
+        <button type="button" className="btn" disabled={!idValid} onClick={() => d({ action: 'allow_threat', threat_id: id })} title="False positive: allow it and restore it from quarantine">
+          Allow…
+        </button>
+        <button type="button" className="btn" disabled={!idValid} onClick={() => d({ action: 'block_threat', threat_id: id })} title="Undo an allow">
+          Block…
+        </button>
+      </div>
+    </ActionCard>
   )
 }
 
