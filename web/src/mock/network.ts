@@ -4,6 +4,7 @@ import type { BehaviorSettingsUpdate, DetectorSettings, DetectorStatus, Device, 
 import type { NetFlowStats, Role } from '../api/types'
 import { adguardRoutes } from './adguard'
 import { antivirusRoutes } from './antivirus'
+import { retentionRoutes } from './retention'
 
 const NOW = Date.now()
 const SEC = 1000
@@ -216,6 +217,7 @@ type Route = (method: string, path: string, handler: (c: Ctx) => unknown, opts?:
 export function networkRoutes(route: Route, fail: (status: number, message: string) => never) {
   adguardRoutes(route, fail)
   antivirusRoutes(route, fail)
+  retentionRoutes(route, fail)
   route('GET', '/api/devices', () => deviceList())
   route(
     'PATCH',

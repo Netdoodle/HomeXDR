@@ -621,6 +621,42 @@ func (s *SQLite) Size(ctx context.Context) (int64, error) {
 	return (pages - free) * pageSize, nil
 }
 
+// Usage counts events per UTC day and spreads the database size over them in proportion
+// (SQLite has no per-day storage figure). The disk is left to the caller.
+func (s *SQLite) Usage(ctx context.Context) (*Usage, error) {
+	size, err := s.Size(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.w.QueryContext(ctx, `SELECT ts / 86400000 AS d, count(*) FROM events GROUP BY d ORDER BY d`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	u := &Usage{}
+	var total int64
+	for rows.Next() {
+		var d, n int64
+		if err := rows.Scan(&d, &n); err != nil {
+			return nil, err
+		}
+		u.Days = append(u.Days, DayUsage{Day: time.UnixMilli(d * 86400000).UTC(), Events: n})
+		total += n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range u.Days {
+		if total > 0 {
+			u.Days[i].Bytes = size * u.Days[i].Events / total
+		}
+	}
+	return u, nil
+}
+
+// SetRetentionDays is a no-op: the server's purge loop applies the time limit.
+func (s *SQLite) SetRetentionDays(context.Context, int) error { return nil }
+
 // TrimToSize deletes the oldest events in steps until the pages in use fit in maxBytes,
 // then returns the freed pages to the file system.
 func (s *SQLite) TrimToSize(ctx context.Context, maxBytes int64) (time.Time, error) {

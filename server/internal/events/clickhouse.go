@@ -532,8 +532,26 @@ func (c *ClickHouse) Scan(ctx context.Context, from, to time.Time, limit int, fn
 	return nil
 }
 
-// Purge is a no-op: the table TTL drops old partitions.
-func (c *ClickHouse) Purge(ctx context.Context, before time.Time) error { return nil }
+// Purge drops the daily partitions that ended before the cutoff.
+func (c *ClickHouse) Purge(ctx context.Context, before time.Time) error {
+	// The table TTL drops expired partitions on its own, but a TTL changed later is not
+	// computed for parts already stored (materialize_ttl_after_modify = 0). Drop whole
+	// days that ended before the cutoff directly.
+	u, err := c.Usage(ctx)
+	if err != nil {
+		return err
+	}
+	for _, d := range u.Days {
+		if d.Day.AddDate(0, 0, 1).After(before) {
+			break
+		}
+		id := d.Day.Format("20060102")
+		if err := c.conn.Exec(ctx, "ALTER TABLE "+c.table+" DROP PARTITION ID '"+id+"' SETTINGS max_partition_size_to_drop = 0"); err != nil {
+			return fmt.Errorf("events: drop partition %s: %w", id, err)
+		}
+	}
+	return nil
+}
 
 // Size returns the compressed size of the events table's active parts.
 func (c *ClickHouse) Size(ctx context.Context) (int64, error) {
@@ -544,6 +562,56 @@ func (c *ClickHouse) Size(ctx context.Context) (int64, error) {
 }
 
 var partitionIDRe = regexp.MustCompile(`^[0-9]{8}$`) // toYYYYMMDD(ts)
+
+// Usage reads the daily partitions and the disk ClickHouse stores them on.
+func (c *ClickHouse) Usage(ctx context.Context) (*Usage, error) {
+	rows, err := c.conn.Query(ctx, `SELECT partition_id, sum(bytes_on_disk), sum(rows) FROM system.parts
+		WHERE database = ? AND table = 'events' AND active GROUP BY partition_id ORDER BY partition_id`, c.db)
+	if err != nil {
+		return nil, err
+	}
+	u := &Usage{}
+	for rows.Next() {
+		var id string
+		var b, n uint64
+		if err := rows.Scan(&id, &b, &n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		day, err := time.Parse("20060102", id)
+		if err != nil || !partitionIDRe.MatchString(id) {
+			continue
+		}
+		u.Days = append(u.Days, DayUsage{Day: day, Bytes: int64(b), Events: int64(n)})
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var free, total uint64
+	if err := c.conn.QueryRow(ctx, `SELECT free_space, total_space FROM system.disks WHERE name = 'default'`).Scan(&free, &total); err == nil {
+		u.DiskFree, u.DiskTotal = int64(free), int64(total)
+	}
+	return u, nil
+}
+
+// SetRetentionDays changes the table TTL. Existing parts are not rewritten
+// (materialize_ttl_after_modify = 0): whole daily partitions drop once they expire.
+func (c *ClickHouse) SetRetentionDays(ctx context.Context, days int) error {
+	alter := "ALTER TABLE " + c.table + " REMOVE TTL"
+	if days > 0 {
+		alter = fmt.Sprintf("ALTER TABLE %s MODIFY TTL toDateTime(ts) + INTERVAL %d DAY SETTINGS materialize_ttl_after_modify = 0", c.table, days)
+	} else {
+		var create string
+		if err := c.conn.QueryRow(ctx, "SELECT create_table_query FROM system.tables WHERE database = ? AND name = 'events'", c.db).Scan(&create); err != nil {
+			return err
+		}
+		if !strings.Contains(create, " TTL ") {
+			return nil
+		}
+	}
+	return c.conn.Exec(ctx, alter)
+}
 
 // TrimToSize drops daily partitions, oldest first, until the table fits in maxBytes.
 // The newest partition (today) is never dropped.
