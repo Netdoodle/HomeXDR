@@ -99,3 +99,56 @@ export function retentionRoutes(route: Route, fail: (status: number, message: st
     { role: 'admin' },
   )
 }
+
+// Mock cloud backup.
+let backup: import('../api/backup').BackupView = {
+  enabled: true,
+  provider: 'b2',
+  endpoint: 'https://s3.us-west-004.backblazeb2.com',
+  region: 'us-west-004',
+  bucket: 'homexdr-archive',
+  prefix: 'homelab',
+  access_key_id: '004a1b2c3d4e5f0000000001',
+  path_style: false,
+  storage_class: '',
+  skip_modules: ['netflow'],
+  backfill: true,
+  run_hour: 3,
+  secret_set: true,
+  last_run: new Date(Date.now() - 5 * 3600_000).toISOString(),
+  last_success: new Date(Date.now() - 5 * 3600_000).toISOString(),
+  archived_days: 99,
+  archived_bytes: 99 * 3.1 * GiB,
+  pending: [],
+  recent: [],
+}
+
+/** Registers the backup routes on the mock server. */
+export function backupRoutes(route: Route, fail: (status: number, message: string) => never) {
+  route('GET', '/api/backup', () => backup, { role: 'admin' })
+  route(
+    'PUT',
+    '/api/settings/backup',
+    ({ body }) => {
+      const b = body as import('../api/backup').BackupInput
+      if (b.enabled && !/^https?:\/\//.test(b.endpoint)) fail(400, 'endpoint must start with https://')
+      const { secret: _s, clear_secret: _c, ...rest } = b
+      backup = { ...backup, ...rest, secret_set: b.clear_secret ? false : backup.secret_set || !!b.secret }
+      return backup
+    },
+    { role: 'admin' },
+  )
+  route('POST', '/api/backup/test', () => ({ ok: true, message: 'Wrote, read back and deleted a test object: the bucket and keys work.' }), { role: 'admin' })
+  route('POST', '/api/backup/run', () => null, { role: 'admin' })
+  route(
+    'GET',
+    '/api/backup/archives',
+    () =>
+      Array.from({ length: 120 }, (_, i) => {
+        const d = new Date(today - (i + 1) * DAY)
+        return { day: d.toISOString().slice(0, 10), key: `homelab/events/${d.toISOString().slice(0, 10)}.ndjson.zst`, events: 8_000_000, bytes: Math.round(3.1 * GiB), in_store: i < 99 }
+      }),
+    { role: 'admin' },
+  )
+  route('POST', '/api/backup/import', () => null, { role: 'admin' })
+}

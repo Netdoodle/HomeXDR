@@ -58,3 +58,50 @@ in the audit log (`settings.retention`).
 | GET | `/api/retention` | viewer | Settings, usage per day, disk, falloff dates |
 | POST | `/api/retention/preview` | admin | `{days, max_bytes}`: what the change would delete, and warnings |
 | PUT | `/api/settings/retention` | admin | `{days, max_bytes, acknowledge, confirm_phrase}` |
+
+## Cloud backup (cold storage)
+
+The **Cloud backup** section on the Data retention page archives events to an
+S3-compatible bucket you own: Amazon S3, Backblaze B2, Wasabi, Cloudflare R2, MinIO, iDrive
+e2, Storj and similar.
+
+- **One archive per completed UTC day.** Today is archived tomorrow, after the chosen
+  local hour.
+  - Archive: `<prefix>/events/YYYY/MM/DD/homexdr-events-YYYYMMDD.ndjson.zst`, the day's
+    events as newline-delimited JSON (the same JSON HomeXDR stores), zstd-compressed and
+    streamed to the bucket with a multipart upload.
+  - Manifest: `....manifest.json` next to it, with the event count, size, SHA-256 and the
+    sources left out.
+- **Leave out sources.** Event modules can be skipped, for example `netflow`, which is
+  often most of the volume.
+- **Storage class.** On AWS, Glacier Instant Retrieval keeps archives cold but directly
+  importable. Glacier Flexible and Deep Archive are cheaper but must be restored in AWS
+  before an import. Manifests always use the default class.
+- **Backfill.** "Also archive the days already stored" uploads existing history too.
+- **No local effect.** Backups never delete anything locally; retention does that. The
+  retention preview and the Next falloff card say whether the days about to be removed
+  have an archive.
+- **Test bucket.** Writes, reads back and deletes a small object, so the key needs
+  read, write, list and delete rights on the bucket.
+- **Credentials.** The secret key is stored on the server and never shown again.
+
+**Archives are cold.** HomeXDR does not search the bucket. To work with an archived day,
+**Import** it from **Archived days**. Its events go back into the event store as they
+were, without running detection rules on them again (no new alerts), and search, hunts,
+process trees and investigations see them. Import rules:
+
+- A day the store still has events for can't be imported (no duplicates).
+- A day older than the time limit is refused, because it would be purged again.
+- Imported days count against the size cap.
+
+The archive format is plain NDJSON, so it can also be read without HomeXDR:
+`zstd -dc homexdr-events-20261108.ndjson.zst | jq`.
+
+| Method | Path | Role | |
+|---|---|---|---|
+| GET | `/api/backup` | admin | Settings (without the secret), archive counts, waiting days, last run, errors |
+| PUT | `/api/settings/backup` | admin | Settings; an empty `secret` keeps the saved one, `clear_secret` removes it |
+| POST | `/api/backup/test` | admin | Write, read and delete a test object |
+| POST | `/api/backup/run` | admin | Archive every waiting day now |
+| GET | `/api/backup/archives` | admin | Archives in the bucket and whether each day is in HomeXDR |
+| POST | `/api/backup/import` | admin | `{day}`: import an archived day in the background |

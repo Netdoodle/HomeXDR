@@ -11,6 +11,7 @@ import (
 
 	"github.com/Netdoodle/homexdr/server/internal/adguard"
 	"github.com/Netdoodle/homexdr/server/internal/av"
+	"github.com/Netdoodle/homexdr/server/internal/backup"
 	"github.com/Netdoodle/homexdr/server/internal/behavior"
 	"github.com/Netdoodle/homexdr/server/internal/config"
 	"github.com/Netdoodle/homexdr/server/internal/detect"
@@ -60,6 +61,8 @@ type Core struct {
 	AdGuard *adguard.Poller
 	// AV is the antivirus (feature_av.go).
 	AV *av.Service
+	// Backup archives events to object storage (feature_backup.go).
+	Backup *backup.Service
 	// Health is feed health, the offline lists and vulnerability matching.
 	Health *Health
 }
@@ -91,6 +94,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 	c.initHealth(ctx)
 	c.initNetwork(ctx)
 	c.initAV(ctx)
+	c.initBackup(ctx)
 	return c, nil
 }
 

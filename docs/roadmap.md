@@ -81,6 +81,7 @@ marked confirmed or likely.
 
 - Data retention page: usage, disk, next falloff, changes behind two confirmation steps:
   [retention.md](retention.md)
+- Cloud backup to S3-compatible storage (cold archives, import back): [retention.md](retention.md)
 - Windows process sensor, service install, audit setup (2676a77): `agent/README.md`
 - Windows eventlog sensor: Security, PowerShell, Defender and more (cdfd6ca)
 - Antivirus: hash reputation + ClamAV, automatic kill and quarantine (e962f3d):
