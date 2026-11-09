@@ -654,6 +654,35 @@ func (s *SQLite) Usage(ctx context.Context) (*Usage, error) {
 	return u, nil
 }
 
+// ExportRaw streams the raw JSON of a time range.
+func (s *SQLite) ExportRaw(ctx context.Context, from, to time.Time, skipModules []string, fn func(string) error) (int64, error) {
+	q := `SELECT raw FROM events WHERE ts >= ? AND ts < ?`
+	args := []any{from.UnixMilli(), to.UnixMilli()}
+	if len(skipModules) > 0 {
+		q += ` AND module NOT IN (?` + strings.Repeat(`,?`, len(skipModules)-1) + `)`
+		for _, m := range skipModules {
+			args = append(args, m)
+		}
+	}
+	rows, err := s.r.QueryContext(ctx, q, args...)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var n int64
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return n, err
+		}
+		if err := fn(raw); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, rows.Err()
+}
+
 // SetRetentionDays is a no-op: the server's purge loop applies the time limit.
 func (s *SQLite) SetRetentionDays(context.Context, int) error { return nil }
 

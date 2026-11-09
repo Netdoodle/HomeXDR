@@ -29,6 +29,7 @@ export interface RetentionStatus {
   next_falloff?: string
   next_reason?: 'time' | 'size'
   next_removes_day?: string
+  next_removes_archived?: boolean
   days: DayUsage[]
 }
 

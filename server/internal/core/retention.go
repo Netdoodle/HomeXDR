@@ -88,12 +88,14 @@ type RetentionStatus struct {
 	CoverageDays float64 `json:"coverage_days,omitempty"`
 	// TimeFalloff / SizeFalloff are when each rule next removes events; NextFalloff is
 	// the earlier one, NextReason which rule it is, NextRemovesDay the day that goes.
-	TimeFalloff    *time.Time        `json:"time_falloff,omitempty"`
-	SizeFalloff    *time.Time        `json:"size_falloff,omitempty"`
-	NextFalloff    *time.Time        `json:"next_falloff,omitempty"`
-	NextReason     string            `json:"next_reason,omitempty"` // time | size
-	NextRemovesDay *time.Time        `json:"next_removes_day,omitempty"`
-	Days           []events.DayUsage `json:"days"`
+	TimeFalloff    *time.Time `json:"time_falloff,omitempty"`
+	SizeFalloff    *time.Time `json:"size_falloff,omitempty"`
+	NextFalloff    *time.Time `json:"next_falloff,omitempty"`
+	NextReason     string     `json:"next_reason,omitempty"` // time | size
+	NextRemovesDay *time.Time `json:"next_removes_day,omitempty"`
+	// NextRemovesArchived is set when backups are on: whether that day has an archive.
+	NextRemovesArchived *bool             `json:"next_removes_archived,omitempty"`
+	Days                []events.DayUsage `json:"days"`
 }
 
 func (c *Core) usage(ctx context.Context) (*events.Usage, error) {
@@ -120,6 +122,10 @@ func (c *Core) RetentionStatus(ctx context.Context) (*RetentionStatus, error) {
 		st.Days = []events.DayUsage{}
 	}
 	projectRetention(st, time.Now().UTC())
+	if st.NextRemovesDay != nil && c.Backup != nil && c.Backup.Enabled() {
+		a := c.Backup.IsArchived(*st.NextRemovesDay)
+		st.NextRemovesArchived = &a
+	}
 	return st, nil
 }
 
@@ -204,7 +210,31 @@ func (c *Core) PreviewRetention(ctx context.Context, p RetentionSettings) (*Rete
 	if err != nil {
 		return nil, err
 	}
-	return previewRetention(c.Retention(), p, u, time.Now().UTC()), nil
+	pv := previewRetention(c.Retention(), p, u, time.Now().UTC())
+	if pv.RemovesEvents > 0 {
+		pv.Warnings = append(pv.Warnings, c.archiveWarning(u.Days, pv.RemovesUntil))
+	}
+	return pv, nil
+}
+
+// archiveWarning says whether the days about to be deleted have a cold archive.
+func (c *Core) archiveWarning(days []events.DayUsage, until *time.Time) string {
+	if c.Backup == nil || !c.Backup.Enabled() {
+		return "Cloud backup is off: deleted events cannot be imported back later."
+	}
+	missing := 0
+	for _, d := range days {
+		if until != nil && !d.Day.Before(*until) {
+			break
+		}
+		if !c.Backup.IsArchived(d.Day) {
+			missing++
+		}
+	}
+	if missing == 0 {
+		return "Every day being deleted has a cloud archive and can be imported back later."
+	}
+	return fmt.Sprintf("%d of the days being deleted have no cloud archive yet: they cannot be imported back later. Run a backup first.", missing)
 }
 
 func previewRetention(cur, p RetentionSettings, u *events.Usage, now time.Time) *RetentionPreview {

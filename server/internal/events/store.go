@@ -57,6 +57,9 @@ type Store interface {
 	// SetRetentionDays applies a new time limit where the backend enforces it itself
 	// (ClickHouse's table TTL); 0 removes the limit. Others no-op: the server purges.
 	SetRetentionDays(ctx context.Context, days int) error
+	// ExportRaw streams the stored JSON of every event in [from, to), skipping the
+	// modules listed, and returns how many it passed to fn. Order is unspecified.
+	ExportRaw(ctx context.Context, from, to time.Time, skipModules []string, fn func(raw string) error) (int64, error)
 	Ping(ctx context.Context) error
 	Close() error
 }

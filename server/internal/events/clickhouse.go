@@ -595,6 +595,34 @@ func (c *ClickHouse) Usage(ctx context.Context) (*Usage, error) {
 	return u, nil
 }
 
+// ExportRaw streams the raw JSON of a time range; ClickHouse sends it in blocks, so a day
+// of events never sits in memory at once.
+func (c *ClickHouse) ExportRaw(ctx context.Context, from, to time.Time, skipModules []string, fn func(string) error) (int64, error) {
+	q := "SELECT raw FROM " + c.table + " WHERE ts >= ? AND ts < ?"
+	args := []any{from, to}
+	if len(skipModules) > 0 {
+		q += " AND module NOT IN ?"
+		args = append(args, skipModules)
+	}
+	rows, err := c.conn.Query(ctx, q, args...)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var n int64
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return n, err
+		}
+		if err := fn(raw); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, rows.Err()
+}
+
 // SetRetentionDays changes the table TTL. Existing parts are not rewritten
 // (materialize_ttl_after_modify = 0): whole daily partitions drop once they expire.
 func (c *ClickHouse) SetRetentionDays(ctx context.Context, days int) error {

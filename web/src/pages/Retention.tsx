@@ -22,6 +22,7 @@ import { ErrorState, Loading } from '../components/States'
 import { useToast } from '../components/Toast'
 import { formatBytes, formatNumber } from '../lib/format'
 import { useDocumentTitle } from '../lib/hooks'
+import { BackupSection } from './RetentionBackup'
 
 const GiB = 1024 ** 3
 const TiB = 1024 ** 4
@@ -80,6 +81,11 @@ function Body({ st }: { st: RetentionStatus }) {
                     ? `when they pass the ${s.days}-day limit.`
                     : `when the store reaches its ${formatBytes(s.max_bytes)} cap at the current rate of ${formatBytes(st.daily_avg_bytes)} a day (an estimate).`}
                 </p>
+                {st.next_removes_archived === false ? (
+                  <div className="callout warn small">That day has no cloud archive yet: once removed it cannot be imported back.</div>
+                ) : st.next_removes_archived ? (
+                  <div className="callout ok small">That day is archived in cloud storage and can be imported back.</div>
+                ) : null}
               </>
             ) : (
               <p className="muted" style={{ margin: 0 }}>
@@ -118,6 +124,7 @@ function Body({ st }: { st: RetentionStatus }) {
         </section>
       </div>
       <Settings st={st} />
+      <BackupSection retention={st} />
     </div>
   )
 }
