@@ -51,8 +51,29 @@ type Store interface {
 	// TrimToSize deletes the oldest events until the store uses at most maxBytes. It
 	// returns the time before which events were deleted (zero when nothing was).
 	TrimToSize(ctx context.Context, maxBytes int64) (time.Time, error)
+	// Usage reports the stored bytes and events per day (UTC), oldest first, and the
+	// space on the disk the events live on where the backend knows it.
+	Usage(ctx context.Context) (*Usage, error)
+	// SetRetentionDays applies a new time limit where the backend enforces it itself
+	// (ClickHouse's table TTL); 0 removes the limit. Others no-op: the server purges.
+	SetRetentionDays(ctx context.Context, days int) error
 	Ping(ctx context.Context) error
 	Close() error
+}
+
+// DayUsage is what one UTC day of events occupies.
+type DayUsage struct {
+	Day    time.Time `json:"day"`
+	Bytes  int64     `json:"bytes"`
+	Events int64     `json:"events"`
+}
+
+// Usage is the event store's footprint.
+type Usage struct {
+	Days []DayUsage `json:"days"`
+	// DiskTotal and DiskFree describe the disk holding the events; zero when unknown.
+	DiskTotal int64 `json:"disk_total"`
+	DiskFree  int64 `json:"disk_free"`
 }
 
 // SearchQuery is a search request.

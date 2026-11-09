@@ -198,7 +198,7 @@ func checkDisk(ctx context.Context, c *Core) CheckResult {
 		parts = append(parts, "the size of the event store could not be read")
 	} else {
 		cap := "no size cap"
-		if m := c.Cfg.RetentionMaxBytes; m > 0 {
+		if m := c.Retention().MaxBytes; m > 0 {
 			cap = "a cap of " + formatBytes(uint64(m))
 			if float64(size) >= 0.95*float64(m) {
 				parts = append(parts, "the event store is at its size cap, so the oldest events are being removed")
@@ -206,8 +206,8 @@ func checkDisk(ctx context.Context, c *Core) CheckResult {
 		}
 		parts = append(parts, fmt.Sprintf("events use %s with %s", formatBytes(uint64(max(size, 0))), cap))
 	}
-	if c.Cfg.RetentionDays > 0 {
-		parts = append(parts, fmt.Sprintf("events are kept for %d days", c.Cfg.RetentionDays))
+	if d := c.Retention().Days; d > 0 {
+		parts = append(parts, fmt.Sprintf("events are kept for %d days", d))
 	} else {
 		parts = append(parts, "events are kept with no time limit")
 	}

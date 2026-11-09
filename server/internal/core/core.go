@@ -26,13 +26,14 @@ import (
 
 // Core wires the server's components together.
 type Core struct {
-	Cfg    config.Config
-	Log    *slog.Logger
-	State  *store.Store
-	Events events.Store
-	PKI    *pki.PKI
-	Engine *detect.Engine
-	Rules  *RuleSet
+	Cfg       config.Config
+	Log       *slog.Logger
+	State     *store.Store
+	Events    events.Store
+	retention retentionState
+	PKI       *pki.PKI
+	Engine    *detect.Engine
+	Rules     *RuleSet
 	// RuleRepos downloads and updates rule repositories (rulerepos.go).
 	RuleRepos *RuleRepos
 	Broker    *Broker
@@ -85,6 +86,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 	if err := c.Rules.Reload(ctx); err != nil {
 		return nil, err
 	}
+	c.initRetention(ctx)
 	c.initNoise(ctx)
 	c.initHealth(ctx)
 	c.initNetwork(ctx)
@@ -148,8 +150,8 @@ func (c *Core) RunMaintenance(ctx context.Context) {
 		if _, err := c.Rules.ReloadIfChanged(ctx); err != nil {
 			c.Log.Warn("reload rules", "err", err)
 		}
-		if c.Cfg.RetentionDays > 0 && time.Since(lastPurge) > 6*time.Hour {
-			before := time.Now().AddDate(0, 0, -c.Cfg.RetentionDays)
+		if ret := c.Retention(); ret.Days > 0 && time.Since(lastPurge) > 6*time.Hour {
+			before := time.Now().AddDate(0, 0, -ret.Days)
 			if err := c.Events.Purge(ctx, before); err != nil {
 				c.Log.Warn("event retention purge", "err", err)
 			}
@@ -159,7 +161,7 @@ func (c *Core) RunMaintenance(ctx context.Context) {
 			c.decommissionInactive(ctx)
 			lastDecommission = time.Now()
 		}
-		if c.Cfg.RetentionMaxBytes > 0 && time.Since(lastTrim) > 10*time.Minute {
+		if c.Retention().MaxBytes > 0 && time.Since(lastTrim) > 10*time.Minute {
 			c.trimEvents(ctx)
 			lastTrim = time.Now()
 		}
@@ -173,10 +175,11 @@ func (c *Core) RunMaintenance(ctx context.Context) {
 
 // trimEvents enforces the event store's size cap.
 func (c *Core) trimEvents(ctx context.Context) {
-	cutoff, err := c.Events.TrimToSize(ctx, c.Cfg.RetentionMaxBytes)
+	maxBytes := c.Retention().MaxBytes
+	cutoff, err := c.Events.TrimToSize(ctx, maxBytes)
 	if !cutoff.IsZero() {
 		c.Log.Info("event store reached its size cap; removed the oldest events",
-			"cap_bytes", c.Cfg.RetentionMaxBytes, "removed_before", cutoff.Format(time.RFC3339))
+			"cap_bytes", maxBytes, "removed_before", cutoff.Format(time.RFC3339))
 	}
 	if err != nil {
 		c.Log.Warn("event retention size cap", "err", err)

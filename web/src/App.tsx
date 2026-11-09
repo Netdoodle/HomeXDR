@@ -26,6 +26,7 @@ import { RuleReposPage } from './pages/RuleRepos'
 import { RulesPage } from './pages/Rules'
 import { SearchPage } from './pages/Search'
 import { HealthPage } from './pages/Health'
+import { RetentionPage } from './pages/Retention'
 import { SettingsPage } from './pages/Settings'
 import { VulnerabilitiesPage } from './pages/Vulnerabilities'
 
@@ -94,6 +95,7 @@ export function App() {
                 <Route path="hunts/:id" element={<HuntDetailPage />} />
                 <Route path="vulnerabilities" element={<VulnerabilitiesPage />} />
                 <Route path="health" element={<HealthPage />} />
+                <Route path="retention" element={<RetentionPage />} />
                 <Route path="health/:tab" element={<HealthPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="settings/:tab" element={<SettingsPage />} />

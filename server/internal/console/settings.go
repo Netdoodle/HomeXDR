@@ -16,8 +16,8 @@ func (h *Handler) serverSettings(w http.ResponseWriter, r *http.Request, _ *stor
 	rel := h.c.Release.Status()
 	out := map[string]any{
 		"version": version.Version, "agent_url": cfg.AgentURL, "ca_pin": h.c.PKI.CAPin(),
-		"server_names": cfg.ServerNames, "event_store": cfg.EventStore, "retention_days": cfg.RetentionDays,
-		"retention_max_bytes": cfg.RetentionMaxBytes, "syslog_addr": cfg.SyslogAddr,
+		"server_names": cfg.ServerNames, "event_store": cfg.EventStore, "retention_days": h.c.Retention().Days,
+		"retention_max_bytes": h.c.Retention().MaxBytes, "syslog_addr": cfg.SyslogAddr,
 		"update_key": rel.UpdateKey, "agent_release": rel,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
