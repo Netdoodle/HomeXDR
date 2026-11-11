@@ -23,6 +23,8 @@ export interface AdGuardSettings {
   pin_sha256?: string
   interval_sec: number
   status: AdGuardStatus
+  /** One-time import of the history from before live importing began. */
+  backfill?: { state: '' | 'running' | 'done' | 'error'; imported: number; oldest?: string; error?: string }
 }
 
 /** What the console sends. An empty password keeps the saved one unless clear_password is set. */
@@ -57,4 +59,5 @@ export const adguardKeys = { settings: ['settings', 'adguard'] as const }
 
 export const getAdGuardSettings = () => http.get<AdGuardSettings>('/api/settings/adguard')
 export const putAdGuardSettings = (s: AdGuardInput) => http.put<AdGuardSettings>('/api/settings/adguard', s)
-export const testAdGuardSettings = (s: AdGuardInput) => http.post<AdGuardTestResult>('/api/settings/adguard/test', s)
+export const backfillAdGuard = () => http.post<void>('/api/settings/adguard/backfill')
+export const testAdGuardSettings =(s: AdGuardInput) => http.post<AdGuardTestResult>('/api/settings/adguard/test', s)

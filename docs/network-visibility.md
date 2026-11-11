@@ -69,6 +69,13 @@ Check it works: the panel shows **Reading** and a count of new lookups, and a se
 If more lookups arrive between two reads than HomeXDR reads at once (20,000), it keeps the newest and counts
 the miss under **Fell behind**. Check more often if that happens.
 
+**Import older history** (once the first read has succeeded) brings in the lookups AdGuard
+Home still keeps from before live importing began, as far back as its own query log
+retention. It runs once, in the background, and the panel shows its progress. Those lookups
+are stored as history: detection rules and behaviour detectors are not run on them, so they
+raise no alerts. They are searchable like any other DNS event, and the event retention
+limits apply to them as usual.
+
 ## DHCP logs
 
 First find out which DHCP server you run. It is whichever of these pages has your subnets on it:

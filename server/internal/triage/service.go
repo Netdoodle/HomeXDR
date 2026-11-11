@@ -89,6 +89,9 @@ type Settings struct {
 	MinSeverity  string `json:"min_severity"` // informational | low | medium | high | critical
 	DailyLimit   int    `json:"daily_limit"`  // automatic investigations per day
 	MaxToolCalls int    `json:"max_tool_calls"`
+	// SkipLabels: alerts on hosts with any of these labels are never investigated
+	// automatically (test machines, labs). Manual investigations still work.
+	SkipLabels []string `json:"skip_labels,omitempty"`
 	// Engine runs investigations: "api" (the server, through Provider) or "mcp" (an
 	// MCP client such as Claude Code claims them with next_investigation).
 	Engine string `json:"engine"`
@@ -108,6 +111,13 @@ func (s *Settings) normalize() {
 		s.APIKeys[s.Provider] = k
 	}
 	s.APIKey = ""
+	var labels []string
+	for _, l := range s.SkipLabels {
+		if l = strings.ToLower(strings.TrimSpace(l)); l != "" {
+			labels = append(labels, l)
+		}
+	}
+	s.SkipLabels = labels
 	for id, k := range s.APIKeys {
 		if strings.TrimSpace(k) == "" {
 			delete(s.APIKeys, id)
@@ -124,10 +134,11 @@ func (s Settings) EndpointURL() string {
 	return info.DefaultBaseURL
 }
 
-// DefaultSettings: on (it does nothing until an API key is set), Claude, medium and above.
+// DefaultSettings: on (it does nothing until an API key is set), Claude, high and above,
+// 20 automatic investigations a day, hosts labelled "test" skipped.
 func DefaultSettings() Settings {
-	return Settings{Enabled: true, Provider: ProviderAnthropic, Model: DefaultModel, MinSeverity: store.SevMedium,
-		DailyLimit: 50, MaxToolCalls: 20, Engine: store.EngineAPI}
+	return Settings{Enabled: true, Provider: ProviderAnthropic, Model: DefaultModel, MinSeverity: store.SevHigh,
+		DailyLimit: 20, MaxToolCalls: 20, Engine: store.EngineAPI, SkipLabels: []string{"test"}}
 }
 
 func severityRank(s string) int {
@@ -423,6 +434,9 @@ func (s *Service) AlertCreated(ctx context.Context, a *store.Alert) {
 	if s.reuseVerdict(ctx, a) {
 		return
 	}
+	if s.skipHost(ctx, a.HostID, set.SkipLabels) {
+		return
+	}
 	if set.Engine == store.EngineMCP && !set.MCPAutoTrigger {
 		return // MCP investigations run on request only
 	}
@@ -698,4 +712,24 @@ func (s *Service) Running() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.running
+}
+
+// skipHost reports whether an alert's host carries one of the labels the AI analyst
+// leaves alone (test machines, labs).
+func (s *Service) skipHost(ctx context.Context, hostID string, labels []string) bool {
+	if len(labels) == 0 || hostID == "" {
+		return false
+	}
+	h, err := s.st.GetHost(ctx, hostID)
+	if err != nil {
+		return false
+	}
+	for _, l := range h.Labels {
+		for _, skip := range labels {
+			if strings.EqualFold(strings.TrimSpace(l), strings.TrimSpace(skip)) {
+				return true
+			}
+		}
+	}
+	return false
 }

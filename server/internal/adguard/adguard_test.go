@@ -268,3 +268,48 @@ func TestCertificateTrustByFingerprint(t *testing.T) {
 		t.Fatalf("wrong pin test = %+v, %v", res, err)
 	}
 }
+
+func TestBackfillImportsHistoryOnce(t *testing.T) {
+	fake := &fakeAdGuard{}
+	base := time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)
+	for i := 0; i < 1200; i++ { // older than turning the integration on: three pages
+		fake.add(base.Add(time.Duration(i)*time.Second), "192.168.20.5", fmt.Sprintf("old%d.example", i), "NotFilteredNotFound")
+	}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	p, live := newTestPoller(t)
+	var mu sync.Mutex
+	var hist []*event.Event
+	p.SetHistory(func(_ context.Context, evs []*event.Event) error {
+		mu.Lock()
+		hist = append(hist, evs...)
+		mu.Unlock()
+		return nil
+	})
+	ctx := context.Background()
+	if err := p.Backfill(ctx); err == nil {
+		t.Fatal("backfill accepted while the integration is off")
+	}
+	if _, err := p.Save(ctx, Input{Settings: Settings{Enabled: true, URL: srv.URL, Username: "admin", Password: testPassword}}); err != nil {
+		t.Fatal(err)
+	}
+	p.pollOnce(ctx, p.settings()) // marks where live importing begins
+	if err := p.Backfill(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); p.BackfillState(ctx).State == "running"; time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("backfill did not finish")
+		}
+	}
+	st := p.BackfillState(ctx)
+	if st.State != "done" || st.Imported != 1200 || len(hist) != 1200 || len(*live) != 0 {
+		t.Fatalf("status %+v, history %d, live %d", st, len(hist), len(*live))
+	}
+	if st.Oldest == nil || !st.Oldest.Equal(base) {
+		t.Errorf("oldest = %v, want %v", st.Oldest, base)
+	}
+	if err := p.Backfill(ctx); err == nil {
+		t.Fatal("second backfill accepted")
+	}
+}

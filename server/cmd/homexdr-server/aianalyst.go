@@ -15,14 +15,14 @@ import (
 // aiAnalyst turns the AI analyst on or off from the command line (for example when
 // provider charges run up), without signing in to the console:
 //
-//	homexdr-server ai-analyst off|on|status
+//	homexdr-server ai-analyst off|on|status|frugal
 //
 // Only the "enabled" switch changes; the provider, model, limits and stored API keys
 // stay as they are, and no key is ever printed. The running server reads the setting on
 // every investigation, so the change applies at once.
 func aiAnalyst(args []string) int {
-	if len(args) != 1 || (args[0] != "on" && args[0] != "off" && args[0] != "status") {
-		fmt.Fprintln(os.Stderr, "usage: homexdr-server ai-analyst on|off|status")
+	if len(args) != 1 || (args[0] != "on" && args[0] != "off" && args[0] != "status" && args[0] != "frugal") {
+		fmt.Fprintln(os.Stderr, "usage: homexdr-server ai-analyst on|off|status|frugal")
 		return 2
 	}
 	cfg, err := config.Load()
@@ -53,6 +53,17 @@ func aiAnalyst(args []string) int {
 	was, _ := raw["enabled"].(bool)
 	fmt.Printf("AI analyst: %s (engine %v, provider %v, daily limit %v)\n", onOff(was), raw["engine"], raw["provider"], raw["daily_limit"])
 	if args[0] == "status" {
+		return 0
+	}
+	if args[0] == "frugal" {
+		// Cost controls without changing on/off: high and critical only, 20 a day, test hosts skipped.
+		raw["min_severity"], raw["daily_limit"], raw["skip_labels"] = "high", 20, []string{"test"}
+		if err := st.SetKV(ctx, triage.SettingsKey, raw); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		_ = st.Audit(ctx, "cli", "settings.ai", "", "ai-analyst frugal")
+		fmt.Println("AI analyst limits: high and critical alerts only, 20 automatic investigations a day, hosts labelled test skipped")
 		return 0
 	}
 	want := args[0] == "on"

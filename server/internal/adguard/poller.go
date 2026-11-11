@@ -46,14 +46,16 @@ type Input struct {
 
 // View is the settings as the console sees them, with the poller's status.
 type View struct {
-	Enabled     bool   `json:"enabled"`
-	URL         string `json:"url"`
-	Username    string `json:"username"`
-	PasswordSet bool   `json:"password_set"`
-	ServerName  string `json:"server_name,omitempty"`
-	PinSHA256   string `json:"pin_sha256,omitempty"`
-	IntervalSec int    `json:"interval_sec"`
-	Status      Stats  `json:"status"`
+	// Backfill is the history import's progress (filled in by the console handler).
+	Backfill    BackfillStatus `json:"backfill"`
+	Enabled     bool           `json:"enabled"`
+	URL         string         `json:"url"`
+	Username    string         `json:"username"`
+	PasswordSet bool           `json:"password_set"`
+	ServerName  string         `json:"server_name,omitempty"`
+	PinSHA256   string         `json:"pin_sha256,omitempty"`
+	IntervalSec int            `json:"interval_sec"`
+	Status      Stats          `json:"status"`
 }
 
 // Stats is how polling is going.
@@ -77,6 +79,8 @@ type state struct {
 	Seen   []string `json:"seen"`
 	// Since is when importing started; older history is not imported.
 	Since time.Time `json:"since"`
+	// Backfilled is set once the history from before Since has been imported.
+	Backfilled bool `json:"backfilled,omitempty"`
 }
 
 // Ingest stores a batch of events as coming from AdGuard Home's host.
@@ -92,6 +96,9 @@ type Poller struct {
 	set   Settings
 	stats Stats
 	wake  chan struct{}
+	// history stores backfilled lookups without detection (SetHistory).
+	history  Ingest
+	backfill BackfillStatus
 }
 
 // New returns a poller. Call Load before Run.

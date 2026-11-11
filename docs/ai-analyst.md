@@ -169,3 +169,20 @@ HTTP, so use MCP on your LAN or over a VPN.
 
 See [api.md](api.md#ai-analyst). Alerts carry `ai_triage: {status, verdict, confidence}`
 when they have an investigation.
+
+## Cost controls
+
+Defaults since 2026-11-11, chosen so the analyst doesn't spend money on noise:
+
+- **Minimum severity:** high.
+- **Daily limit:** 20 automatic investigations.
+- **Skip hosts labelled:** `test`. Alerts on hosts with any listed label are never
+  investigated automatically, though they can still be investigated by hand. Use it for
+  test machines and labs.
+
+All three are on the AI analyst settings page. From the command line on the server:
+
+    homexdr-server ai-analyst status|on|off|frugal
+
+`frugal` applies these limits to existing settings without switching the analyst on or
+off. `on` and `off` change only the switch.
