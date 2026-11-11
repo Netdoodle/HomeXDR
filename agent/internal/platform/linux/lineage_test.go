@@ -58,16 +58,16 @@ func TestSSHKeyFromLogs(t *testing.T) {
 	defer func() { sshLogFiles = old }()
 
 	r := &sshLoginRegistry{m: map[int64]sshLogin{}, miss: map[int64]time.Time{}}
-	if k := r.lookup(3078858); k != "SHA256:WaETwa68OJhBShgClfIkGSkFhB7ppvxZJJ03HcZ4zoI" {
+	if k := r.lookup(3078858, true); k != "SHA256:WaETwa68OJhBShgClfIkGSkFhB7ppvxZJJ03HcZ4zoI" {
 		t.Fatalf("key = %q", k)
 	}
-	if k := r.lookup(3078900); k != "" {
+	if k := r.lookup(3078900, true); k != "" {
 		t.Fatalf("password login key = %q", k)
 	}
 	if _, ok := r.m[3078900]; !ok {
 		t.Fatal("password login not remembered")
 	}
-	if k := r.lookup(42); k != "" || r.miss[42].IsZero() {
+	if k := r.lookup(42, true); k != "" || r.miss[42].IsZero() {
 		t.Fatalf("unknown pid: key %q, miss %v", k, r.miss[42])
 	}
 

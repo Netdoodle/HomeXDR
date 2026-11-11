@@ -110,7 +110,7 @@ func (en *enricher) labelLineage(ev *event.Event, pi *procInfo) {
 	}
 	if o.sshSession > 0 {
 		ev.Labels["ssh_session"] = strconv.FormatInt(o.sshSession, 10)
-		if fp := sshLogins.lookup(o.sshSession); fp != "" {
+		if fp := sshLogins.lookup(o.sshSession, !o.sshd); fp != "" {
 			ev.Labels["ssh_key"] = fp
 		}
 	}
@@ -156,7 +156,9 @@ func (r *sshLoginRegistry) note(pid int64, key string) {
 // lookup returns the key of a session. When the auth sensor has not reported the login
 // yet (it reads the log on a timer, and the first command of a session can start
 // sooner), it reads the end of the log files itself.
-func (r *sshLoginRegistry) lookup(pid int64) string {
+// A miss is remembered only when cacheMiss is set: sshd's own processes start before the
+// login is logged, and the shell right after them must still look.
+func (r *sshLoginRegistry) lookup(pid int64, cacheMiss bool) string {
 	r.mu.Lock()
 	l, ok := r.m[pid]
 	missed, recently := r.miss[pid]
@@ -170,6 +172,9 @@ func (r *sshLoginRegistry) lookup(pid int64) string {
 	if key, found := scanLoginInLogs(pid); found {
 		r.note(pid, key)
 		return key
+	}
+	if !cacheMiss {
+		return ""
 	}
 	r.mu.Lock()
 	if len(r.miss) > 1024 {
