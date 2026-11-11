@@ -172,9 +172,17 @@ function AlertView({ alert: a }: { alert: Alert }) {
           <section className="panel">
             <div className="panel-header">
               <h2>Rule</h2>
-              <Link to={`/rules/${encodeURIComponent(a.rule.id)}`} className="small">
-                Open rule
-              </Link>
+              <span className="row" style={{ gap: 12 }}>
+                <Link to={`/alerts?rule=${encodeURIComponent(a.rule.id)}&status=all`} className="small">
+                  All alerts from this rule
+                </Link>
+                {/* Findings the server makes itself (behaviour, health, antivirus: ids like "av:malware") have no rule page. */}
+                {a.rule.id.includes(':') ? null : (
+                  <Link to={`/rules/${encodeURIComponent(a.rule.id)}`} className="small">
+                    Open rule
+                  </Link>
+                )}
+              </span>
             </div>
             <div className="panel-body stack" style={{ gap: 10 }}>
               {a.rule.description ? <p style={{ margin: 0 }}>{a.rule.description}</p> : null}
