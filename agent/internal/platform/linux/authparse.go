@@ -83,6 +83,11 @@ func parseAuth(m authMsg) *event.Event {
 			e.User = &event.User{Name: g[2]}
 			withSource(e, g[3], g[4])
 			e.Data = map[string]any{"auth_method": g[1]}
+			if k := reSSHKeyTail.FindStringSubmatch(msg); k != nil {
+				// "ssh2: ED25519 SHA256:..." with LogLevel VERBOSE or newer OpenSSH.
+				e.Data["ssh_key_type"] = k[1]
+				e.Labels = map[string]string{"ssh_key": k[2]}
+			}
 			return e
 		}
 		if g := reSSHFailed.FindStringSubmatch(msg); g != nil {

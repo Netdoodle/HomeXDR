@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Netdoodle/homexdr/agent/internal/platform"
@@ -46,10 +47,14 @@ type procMapper struct {
 	now       func() time.Time
 	lastSweep time.Time
 	lastReap  time.Time
+
+	// origins caches each process's lineage (lineage.go), by entity ID.
+	lineMu  sync.Mutex
+	origins map[string]origin
 }
 
 func newProcMapper(env platform.Env, src procSource, pe func(string) *event.PE) *procMapper {
-	return &procMapper{env: env, src: src, table: newProcTable(procTableMax), users: newUserCache(), pe: pe, now: time.Now}
+	return &procMapper{env: env, src: src, table: newProcTable(procTableMax), users: newUserCache(), pe: pe, now: time.Now, origins: map[string]origin{}}
 }
 
 // loadSnapshot fills the table with the running processes and returns how many it
@@ -107,14 +112,18 @@ func (m *procMapper) handle(r *Record) *event.Event {
 	case isSysmon(r):
 		switch r.EventID {
 		case 1:
-			return m.sysmonStart(r)
+			ev := m.sysmonStart(r)
+			m.labelLineage(ev)
+			return ev
 		case 5:
 			return m.sysmonExit(r)
 		}
 	case isSecurity(r):
 		switch r.EventID {
 		case 4688:
-			return m.securityStart(r)
+			ev := m.securityStart(r)
+			m.labelLineage(ev)
+			return ev
 		case 4689:
 			return m.securityExit(r)
 		}

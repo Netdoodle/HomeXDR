@@ -10,6 +10,10 @@ import (
 // initNoise sets up suppressions and notifications.
 func (c *Core) initNoise(ctx context.Context) {
 	c.Suppress = NewSuppressor(c.State, c.Log)
+	c.Maint = newMaintTracker()
+	if err := c.LoadMaintenance(ctx); err != nil {
+		c.Log.Error("load maintenance settings", "err", err)
+	}
 	c.Notify = notify.New(c.State, c.Log)
 	c.Notify.AddDigestSection("Data health", func(ctx context.Context, _ time.Time) ([]string, error) {
 		_, lines := c.FeedHealthDigest(ctx)

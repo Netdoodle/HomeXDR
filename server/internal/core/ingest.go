@@ -69,6 +69,9 @@ func (c *Core) normalize(e *event.Event, h *store.Host, now time.Time) {
 		e.Network.CommunityID = communityid.ComputeStrings(
 			e.Source.IP, e.Destination.IP, e.Network.Transport, e.Source.Port, e.Destination.Port)
 	}
+	if c.Maint != nil {
+		c.Maint.label(e, h.ID, now)
+	}
 }
 
 func (c *Core) detect(ctx context.Context, e *event.Event) {

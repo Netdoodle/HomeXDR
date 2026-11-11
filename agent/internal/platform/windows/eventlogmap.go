@@ -157,6 +157,9 @@ func mapEventLogRecord(r *Record) *event.Event {
 		desc = r.Channel + " event " + code
 	}
 	e.Message = desc
+	if code == "4" && strings.EqualFold(r.Channel, "OpenSSH/Operational") {
+		mapOpenSSH(e, r)
+	}
 	switch svc {
 	case "security":
 		mapSecurityRecord(e, r, code)

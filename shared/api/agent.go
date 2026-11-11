@@ -254,6 +254,7 @@ func DefaultAgentConfig() AgentConfig {
 				"Microsoft-Windows-WMI-Activity/Operational",
 				"Microsoft-Windows-Bits-Client/Operational",
 				"Microsoft-Windows-CodeIntegrity/Operational",
+				"OpenSSH/Operational",
 			}},
 		},
 		FIM: FIMConfig{
