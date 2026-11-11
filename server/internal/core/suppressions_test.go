@@ -145,6 +145,28 @@ func TestSuppressionMatching(t *testing.T) {
 			t.Errorf("%s: got %v", c.name, got)
 		}
 	}
+	// Container fields from the agent can scope a suppression to an image.
+	inCtr := wgetHit("h1")
+	inCtr.Container = &event.Container{ID: "3f9c", Name: "binhex-sonarr", Runtime: "docker",
+		Image: &event.ContainerImage{Name: "binhex/arch-sonarr", Tag: "latest"}}
+	ctrHit := &hitView{ruleID: "r1", hostID: "h1", ev: inCtr}
+	for _, c := range []struct {
+		field, op, value string
+		inCtr, onHost    bool
+	}{
+		{"container.image.name", "startswith", "binhex/", true, false},
+		{"container.name", "equals", "binhex-sonarr", true, false},
+		{"container.image.name", "equals", "binhex/arch-radarr", false, false},
+	} {
+		sp := cond(c.field, c.op, c.value)
+		if got := ctrHit.matches(&sp); got != c.inCtr {
+			t.Errorf("%s %s %s in a container: got %v", c.field, c.op, c.value, got)
+		}
+		if got := h.matches(&sp); got != c.onHost {
+			t.Errorf("%s %s %s on the host: got %v", c.field, c.op, c.value, got)
+		}
+	}
+
 	// An event with no process has nothing for a condition to match.
 	noProc := &hitView{ruleID: "r1", hostID: "h1", ev: &event.Event{Host: event.Host{ID: "h1"}}}
 	sp := cond("process.executable", "contains", "wget")

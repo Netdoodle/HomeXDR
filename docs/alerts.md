@@ -69,6 +69,22 @@ Fields use the same names as Sigma rules and search: `process.executable`,
 `process.command_line`, `process.parent.executable`, `process.parent.command_line`,
 `file.path`, `destination.ip` and so on.
 
+### Containers
+
+On Linux the agent records which container an event's process runs in: `container.id`,
+`container.name`, `container.runtime` and `container.image.name` / `container.image.tag`. It
+reads the container from `/proc/<pid>/cgroup` (Docker, containerd, CRI-O, Podman and LXC
+layouts) and asks Docker for the name and image, from the container's `config.v2.json` or the
+Docker socket. Name and image lookups are Docker only; other runtimes give the ID alone.
+Processes on the host itself have no `container` fields, so a condition on them never matches
+the host.
+
+To quiet what a container image does every time it starts, scope a suppression to the image
+and keep a process condition, for example `container.image.name` equals `binhex/arch-sonarr`
+with `process.command_line` starts with `sed -i -e "s~umask`. The image alone would also hide
+a real attack inside that container for this rule. **Suppress similar** adds the image
+(without its tag, so updates keep matching) when the alert has one.
+
 **Conditions on `process.parent.*` never match Linux file or network events**, because those
 events have no parent. For a rule on file events, use `process.command_line` instead. The
 preview count shows you whether your conditions match.

@@ -67,6 +67,9 @@ type countingEmitter struct {
 
 func (c countingEmitter) Emit(e *event.Event) {
 	c.s.count()
+	if e.Container == nil && e.Process != nil {
+		e.Container = containers.forProcess(e.Process)
+	}
 	c.out.Emit(e)
 }
 

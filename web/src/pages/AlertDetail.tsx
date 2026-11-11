@@ -330,6 +330,15 @@ function AlertView({ alert: a }: { alert: Alert }) {
                     ['Name', <span key="n" className="mono">{a.process_name ?? ev?.process?.name}</span>],
                     ['PID', ev?.process?.pid],
                     ['User', a.user ?? ev?.process?.user?.name],
+                    [
+                      'Container',
+                      ev?.container ? (
+                        <span key="ctr" className="mono">
+                          {ev.container.name || ev.container.id?.slice(0, 12)}
+                          {ev.container.image?.name ? <span className="muted"> ({ev.container.image.name}{ev.container.image.tag ? ':' + ev.container.image.tag : ''})</span> : null}
+                        </span>
+                      ) : undefined,
+                    ],
                     ['Parent', ev?.process?.parent?.name ? <span className="mono">{ev.process.parent.name} ({ev.process.parent.pid})</span> : undefined],
                     ['Started', ev?.process?.start ? formatDateTime(ev.process.start) : undefined],
                     ['Command line', <ExpandableText key="c" text={a.command_line ?? ev?.process?.command_line} max={220} />],

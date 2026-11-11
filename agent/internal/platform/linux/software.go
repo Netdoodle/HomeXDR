@@ -212,11 +212,7 @@ func parseDockerContainers(b []byte) []pkg {
 			continue
 		}
 		seen[img] = true
-		img, _, _ = strings.Cut(img, "@") // drop a digest
-		name, tag := img, "latest"
-		if i := strings.LastIndex(img, ":"); i > strings.LastIndex(img, "/") {
-			name, tag = img[:i], img[i+1:]
-		}
+		name, tag := splitImage(img)
 		out = append(out, pkg{Name: name, Version: tag, Type: "docker"})
 	}
 	return out

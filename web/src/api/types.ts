@@ -372,6 +372,8 @@ export interface Event {
   tags?: string[]
   labels?: Record<string, string>
   process?: EventProcess
+  /** The container the process runs in; absent for processes on the host. */
+  container?: { id?: string; name?: string; runtime?: string; image?: { name?: string; tag?: string } }
   file?: EventFile
   dll?: { path?: string; name?: string; hash?: EventHash; code_signature?: EventCodeSignature; pe?: EventPE }
   registry?: {

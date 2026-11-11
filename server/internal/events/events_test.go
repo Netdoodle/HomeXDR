@@ -102,6 +102,8 @@ func testStore(t *testing.T, s Store, h1, h2 string, purges bool) {
 	who := sample(h1, "e-who", "e-ps", "whoami.exe", "whoami /all", []string{"process"}, "start", now.Add(-28*time.Minute))
 	other := sample(h2, "e-x", "", "bash", "bash -c id", []string{"process"}, "start", now.Add(-10*time.Minute))
 	other.Host.OS.Platform = "linux"
+	other.Container = &event.Container{ID: "3f9c", Name: "binhex-sonarr", Runtime: "docker",
+		Image: &event.ContainerImage{Name: "binhex/arch-sonarr", Tag: "latest"}}
 	old := sample(h1, "e-old", "", "old.exe", "", []string{"process"}, "start", now.Add(-48*time.Hour))
 	if err := s.Insert(ctx, []*event.Event{root, ps, conn, who, other, old}); err != nil {
 		t.Fatal(err)
@@ -135,6 +137,9 @@ func testStore(t *testing.T, s Store, h1, h2 string, purges bool) {
 		`data.LogonType:10`:             5,
 		`process.parent.entity_id:e-ps`: 1,
 		`network.community_id:*`:        1,
+		`container.name:binhex-sonarr`:  1,
+		`container.image.name:binhex/*`: 1,
+		`NOT container.id:*`:            4,
 		`(process.name:bash OR process.name:whoami.exe) AND host.name:` + h1: 1,
 	}
 	for q, want := range cases {
