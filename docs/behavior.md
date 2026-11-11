@@ -75,7 +75,7 @@ constantly, and replies from a service on your network, recognised by the source
 
 ### Internal scan
 
-Reaching 30 other home addresses, or 30 ports on one address, in 30 minutes. Traffic on discovery ports is left out, and so are replies. **Traffic inside one VLAN never reaches the firewall, so only
+Reaching 30 other home addresses, or 30 ports on one address, in 30 minutes. Traffic on discovery ports is left out, and so are replies. A reply is recognised by the source port being lower than the destination port and, with NetFlow, also by the conversation itself: when both directions of a TCP connection are recorded, a record carrying an ACK from a port that answers several of its peers' ports is a service replying, such as a printer or a game server on a high port. A bare SYN always counts, so SYN scans are still seen when the target answers with resets, and so are connect scans, which use a new source port for each probe. **Traffic inside one VLAN never reaches the firewall, so only
 scans crossing VLANs are seen**, unless an agent runs on the scanning device. Add monitoring tools under **Devices to leave out**.
 
 ### Rogue DHCP server

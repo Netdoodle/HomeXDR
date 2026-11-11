@@ -705,13 +705,13 @@ func runInternalScan(rc *runCtx) error {
 		filter += " NOT destination.port:" + strconv.Itoa(p)
 	}
 	allowed := rc.listOf("allowed_scanners")
-	// Across hosts.
+	// Across hosts. The counts below are a first cut: a source over the threshold is looked at
+	// again with its replies taken out.
 	rows, err := rc.table(filter+" "+initiated+" | stats count as n by source.ip, destination.ip", from, to)
 	if err != nil {
 		return err
 	}
 	hosts := map[string]map[string]bool{}
-	conns := map[string]float64{}
 	for _, r := range rows {
 		s, d := r.str("source.ip"), r.str("destination.ip")
 		src, ok := rc.home(s)
@@ -723,7 +723,6 @@ func runInternalScan(rc *runCtx) error {
 			hosts[s] = map[string]bool{}
 		}
 		hosts[s][d] = true
-		conns[s] += r.num("n")
 	}
 	sources := make([]string, 0, len(hosts))
 	for s := range hosts {
@@ -735,13 +734,27 @@ func runInternalScan(rc *runCtx) error {
 		if float64(len(hosts[s])) < rc.value("min_hosts") {
 			continue
 		}
+		opened, err := rc.openedFlows(filter, s, "", from, to)
+		if err != nil {
+			return err
+		}
+		reached, conns := 0, 0.0
+		for d, o := range opened {
+			if dst, ok := rc.home(d); ok && dst.String() != s {
+				reached++
+				conns += o.conns
+			}
+		}
+		if float64(reached) < rc.value("min_hosts") {
+			continue
+		}
 		key, label := rc.label(s)
 		text := fmt.Sprintf("%s reached %d other addresses on your network in %s, %.0f connections in all. Scanners and spreading malware do this; so do monitoring tools and network apps. Only traffic crossing the firewall is counted, so the real number can be higher.",
-			label, len(hosts[s]), minutes, conns[s])
+			label, reached, minutes, conns)
 		rc.raise(Finding{
 			Title: "Internal scan from " + label, Description: text, Severity: store.SevMedium, Entity: key + "|hosts",
 			Source: &event.Endpoint{IP: s},
-			Data:   map[string]any{"hosts": len(hosts[s]), "connections": conns[s], "window_minutes": rc.value("window_minutes")},
+			Data:   map[string]any{"hosts": reached, "connections": conns, "window_minutes": rc.value("window_minutes")},
 		})
 	}
 	// Across the ports of one host.
@@ -756,17 +769,101 @@ func runInternalScan(rc *runCtx) error {
 		if !ok || !ok2 || src == dst || contains(allowed, src.String()) || r.num("ports") < rc.value("min_ports") {
 			continue
 		}
+		opened, err := rc.openedFlows(filter, s, d, from, to)
+		if err != nil {
+			return err
+		}
+		o := opened[d]
+		if o == nil || float64(len(o.ports)) < rc.value("min_ports") {
+			continue
+		}
 		key, label := rc.label(s)
 		_, target := rc.label(d)
-		text := fmt.Sprintf("%s tried %.0f different ports on %s in %s, %.0f connections in all. That is what a port scan looks like; some monitoring tools do it too.",
-			label, r.num("ports"), target, minutes, r.num("n"))
+		text := fmt.Sprintf("%s tried %d different ports on %s in %s, %.0f connections in all. That is what a port scan looks like; some monitoring tools do it too.",
+			label, len(o.ports), target, minutes, o.conns)
 		rc.raise(Finding{
 			Title: "Port scan from " + label, Description: text, Severity: store.SevMedium, Entity: key + "|ports|" + d,
 			Source: &event.Endpoint{IP: s}, Destination: &event.Endpoint{IP: d},
-			Data: map[string]any{"ports": r.num("ports"), "connections": r.num("n"), "window_minutes": rc.value("window_minutes")},
+			Data: map[string]any{"ports": float64(len(o.ports)), "connections": o.conns, "window_minutes": rc.value("window_minutes")},
 		})
 	}
 	return nil
+}
+
+// opened is what one source started toward one destination.
+type opened struct {
+	ports map[int]bool
+	conns float64
+}
+
+// serviceFanOut is how many different ports of its peers one local port must answer before
+// it counts as a service port.
+const serviceFanOut = 3
+
+// openedFlows returns the connections source s opened, per destination (only d when it is
+// set), with replies taken out. The port rule in initiated misses a service whose own port is
+// high: its answers to a client's lower ephemeral ports look like connections it started.
+// NetFlow records each direction of a conversation, so a TCP record whose reverse record is
+// also there is a reply when it carries an ACK and its source port talks to several of the
+// peers' ports, the way a service port does. A bare SYN (SYN without ACK) always counts, so
+// SYN scans still do whether the target answers or not, and so does a connect scan, which
+// uses a new source port for each probe. Firewall rows log the opening packet and are always
+// kept, and so are records without flags.
+func (rc *runCtx) openedFlows(filter, s, d string, from, to time.Time) (map[string]*opened, error) {
+	pair := fmt.Sprintf(" source.ip:%q", s)
+	back := fmt.Sprintf("event.module:netflow network.transport:tcp destination.ip:%q ", s)
+	if d != "" {
+		pair += fmt.Sprintf(" destination.ip:%q", d)
+		back += fmt.Sprintf("source.ip:%q", d)
+	} else {
+		back += internalSources
+	}
+	rows, err := rc.table(filter+pair+" "+initiated+
+		` | eval flags=coalesce(tcp_flags, "-"), proto=coalesce(network.transport, "-")`+
+		` | stats count as n by destination.ip, event.module, proto, source.port, destination.port, flags`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	reverse := map[string]bool{}
+	if len(rows) > 0 {
+		revRows, err := rc.table(back+" | stats count as n by source.ip, source.port, destination.port", from, to)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range revRows {
+			reverse[fmt.Sprintf("%s|%.0f|%.0f", r.str("source.ip"), r.num("source.port"), r.num("destination.port"))] = true
+		}
+	}
+	isFlow := func(r row) bool { return r.str("event.module") == event.ModuleNetFlow && r.str("proto") == "tcp" }
+	fanOut := map[float64]map[string]bool{} // source port -> peer ip|port
+	for _, r := range rows {
+		if isFlow(r) {
+			sp := r.num("source.port")
+			if fanOut[sp] == nil {
+				fanOut[sp] = map[string]bool{}
+			}
+			fanOut[sp][fmt.Sprintf("%s|%.0f", r.str("destination.ip"), r.num("destination.port"))] = true
+		}
+	}
+	out := map[string]*opened{}
+	for _, r := range rows {
+		dst, sport, dport := r.str("destination.ip"), r.num("source.port"), r.num("destination.port")
+		if isFlow(r) && reverse[fmt.Sprintf("%s|%.0f|%.0f", dst, dport, sport)] {
+			f := strings.TrimPrefix(r.str("flags"), "-")
+			bareSYN := strings.Contains(f, "S") && !strings.Contains(f, "A")
+			if f != "" && !bareSYN && len(fanOut[sport]) >= serviceFanOut {
+				continue // a service answering clients it did not call
+			}
+		}
+		o := out[dst]
+		if o == nil {
+			o = &opened{ports: map[int]bool{}}
+			out[dst] = o
+		}
+		o.ports[int(dport)] = true
+		o.conns += r.num("n")
+	}
+	return out, nil
 }
 
 // --- rogue DHCP ---------------------------------------------------------------------------
