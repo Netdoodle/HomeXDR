@@ -231,7 +231,9 @@ type EventFilter struct {
 // DefaultAgentConfig is the configuration a freshly enrolled agent receives.
 func DefaultAgentConfig() AgentConfig {
 	return AgentConfig{
-		Version:              1,
+		// Raise Version whenever these defaults change, so agents running on the
+		// default (no config saved on the server) pick the change up. 2: OpenSSH channel.
+		Version:              2,
 		HeartbeatIntervalSec: 30,
 		InventoryIntervalSec: 6 * 3600,
 		Batch:                BatchConfig{MaxEvents: 500, FlushIntervalMs: 2000},
