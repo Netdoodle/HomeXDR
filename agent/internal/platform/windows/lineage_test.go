@@ -18,9 +18,14 @@ func TestWindowsSSHLineage(t *testing.T) {
 		return e
 	}
 	add(924, 776, "services.exe")
-	add(3724, 924, "sshd.exe")
-	add(2140, 3724, "sshd.exe")
-	add(6628, 2140, "sshd.exe")
+	listener := add(3724, 924, "sshd.exe")
+	// The VM case: the service started at boot reads as hours in the future after NTP
+	// sets the clock back, so only the recorded parent links the session to it.
+	listener.Start = at.Add(8 * time.Hour)
+	r := add(2140, 3724, "sshd.exe")
+	r.ParentEntityID = listener.EntityID
+	add(4268, 2140, "sshd.exe") // -y, pre-auth
+	add(6628, 2140, "sshd.exe") // -z
 	ps := add(6344, 6628, "powershell.exe")
 	other := add(100, 924, "svchost.exe")
 

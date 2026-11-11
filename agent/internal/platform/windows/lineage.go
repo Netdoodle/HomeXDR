@@ -51,7 +51,7 @@ func (m *procMapper) originOf(e *procEntry, depth int) origin {
 	}
 	var parent origin
 	if e.PPID > 4 && depth < maxLineage {
-		if p := m.table.get(e.PPID, e.Start); p != nil && p != e {
+		if p := m.parentEntry(e); p != nil && p != e {
 			parent = m.originOf(p, depth+1)
 		}
 	}
@@ -63,6 +63,19 @@ func (m *procMapper) originOf(e *procEntry, depth int) origin {
 	m.origins[e.EntityID] = o
 	m.lineMu.Unlock()
 	return o
+}
+
+// parentEntry finds an entry's parent. The parent the mapper recorded (ParentEntityID)
+// wins: it already allows for a clock set back after boot, where a service started at
+// boot can look younger than its children. Otherwise the PID's process at the child's
+// start.
+func (m *procMapper) parentEntry(e *procEntry) *procEntry {
+	if e.ParentEntityID != "" {
+		if p := m.table.get(e.PPID, time.Time{}); p != nil && p.EntityID == e.ParentEntityID {
+			return p
+		}
+	}
+	return m.table.get(e.PPID, e.Start)
 }
 
 // labelLineage adds the lineage labels to a process start event, once its process is in
