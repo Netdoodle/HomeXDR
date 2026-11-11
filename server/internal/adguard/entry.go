@@ -40,6 +40,11 @@ type Entry struct {
 	Status      string `json:"status"`
 	Time        string `json:"time"`
 	Upstream    string `json:"upstream"`
+
+	// kind is the resolver the entry came from (empty: AdGuard Home), and block whether
+	// it blocked the lookup, for resolvers other than AdGuard Home.
+	kind  string
+	block bool
 }
 
 // When parses the entry's time.
@@ -54,9 +59,26 @@ func (e *Entry) key() string {
 }
 
 // Blocked reports whether AdGuard Home filtered the lookup rather than answering it.
-func (e *Entry) Blocked() bool { return strings.HasPrefix(e.Reason, "Filtered") }
+func (e *Entry) Blocked() bool {
+	if normalKind(e.kind) != KindAdGuard {
+		return e.block
+	}
+	return strings.HasPrefix(e.Reason, "Filtered")
+}
 
-// Event turns an entry into a DNS event. It returns nil for entries without a client address
+// observer names the resolver on the event.
+func observer(kind string) *event.Observer {
+	switch normalKind(kind) {
+	case KindPiHole:
+		return &event.Observer{Type: "dns", Vendor: "Pi-hole", Product: "Pi-hole"}
+	case KindTechnitium:
+		return &event.Observer{Type: "dns", Vendor: "Technitium", Product: "Technitium DNS Server"}
+	}
+	return &event.Observer{Type: "dns", Vendor: "AdGuard", Product: "AdGuard Home"}
+}
+
+// Event turns an entry into a DNS event. Every resolver's lookups get the same shape; only
+// the dataset, the observer and the key under data (data.adguard, data.pihole, ...) differ. It returns nil for entries without a client address
 // or a name, which say nothing about a device.
 func (e *Entry) Event() *event.Event {
 	at, ok := e.When()
@@ -81,11 +103,11 @@ func (e *Entry) Event() *event.Event {
 		ID:        event.NewID(),
 		Timestamp: at.UTC(),
 		Event: event.Meta{
-			Kind: event.KindEvent, Module: event.ModuleDNS, Dataset: Dataset,
+			Kind: event.KindEvent, Module: event.ModuleDNS, Dataset: DatasetFor(e.kind),
 			Category: []string{event.CategoryNetwork}, Type: []string{event.TypeProtocol},
 			Action: "dns-answer", Outcome: event.OutcomeSuccess,
 		},
-		Observer: &event.Observer{Type: "dns", Vendor: "AdGuard", Product: "AdGuard Home"},
+		Observer: observer(e.kind),
 		Source:   &event.Endpoint{IP: addr.String()},
 		Network:  &event.Network{Protocol: "dns", Type: netType},
 		DNS: &event.DNS{
@@ -120,7 +142,7 @@ func (e *Entry) Event() *event.Event {
 	if e.ServiceName != "" {
 		data["blocked_service"] = e.ServiceName
 	}
-	if ms, ok := elapsedMs(e.Elapsed); ok {
+	if ms, ok := elapsedMs(e.Elapsed); ok && ms >= 0 {
 		data["response_time_ms"] = ms
 	}
 	var rules []string
@@ -132,7 +154,7 @@ func (e *Entry) Event() *event.Event {
 	if len(rules) > 0 {
 		data["rules"] = rules
 	}
-	ev.Data = map[string]any{"adguard": data}
+	ev.Data = map[string]any{normalKind(e.kind): data}
 	verb := "answer " + ev.DNS.ResponseCode
 	if e.Blocked() {
 		ev.Event.Action = "dns-blocked"

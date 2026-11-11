@@ -67,6 +67,8 @@ marked confirmed or likely.
 - **Linux:** flag programs running from memory (memfd) or from deleted files. The agent
   currently strips the "(deleted)" marker.
 - **Full PowerShell script block logging** as an install option.
+- **More DNS resolvers.** NextDNS (cloud, API key) for devices away from home, and
+  reading two resolvers at once (for example two Pi-holes).
 
 ## Not planned (needs Microsoft partnership or signing)
 
@@ -79,6 +81,8 @@ marked confirmed or likely.
 
 - Defender health alerts (protection off, signatures more than 3 days old) from Defender's own health reports
 - AI analyst cost controls: high and above, 20 a day, test hosts skipped; `ai-analyst frugal`
+- DNS resolver query log for Pi-hole v6 and Technitium DNS Server, beside AdGuard Home:
+  [network-visibility.md](network-visibility.md)
 - AdGuard Home history import: [network-visibility.md](network-visibility.md)
 - Dashboard top rules open their alerts
 - Data retention page: usage, disk, next falloff, changes behind two confirmation steps:
