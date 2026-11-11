@@ -5,7 +5,7 @@ import { api, queryKeys, type HostFilter } from '../api'
 import { AlertCount, OsLabel, StatusDot, Tags, UpdateBadge } from '../components/Badges'
 import { shortVersion } from '../lib/agents'
 import { PageHeader } from '../components/Layout'
-import { RelTime } from '../components/Misc'
+import { CopyIcon, RelTime } from '../components/Misc'
 import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
 import { plural } from '../lib/format'
 import { useDebounced, useDocumentTitle, useUrlState } from '../lib/hooks'
@@ -124,22 +124,27 @@ export function HostsPage() {
                     <td>
                       <StatusDot status={h.status} label />
                     </td>
-                    <td className="truncate">
+                    <td className="truncate copy-cell">
+                      <CopyIcon text={h.hostname} label="Host name" />
                       <Link to={`/hosts/${encodeURIComponent(h.id)}`} onClick={(e) => e.stopPropagation()}>
                         {h.hostname}
                       </Link>
                       {h.kind === 'network' ? <div className="xsmall muted">syslog source</div> : null}
                     </td>
-                    <td className="truncate">
+                    <td className="truncate copy-cell">
+                      <CopyIcon text={[h.os.name, h.os.version].filter(Boolean).join(' ')} label="Operating system" />
                       <OsLabel os={h.os} />
                     </td>
-                    <td className="truncate mono" title={h.ips.join(', ')}>
+                    <td className="truncate mono copy-cell" title={h.ips.join(', ')}>
+                      <CopyIcon text={h.ips.join(', ')} label="IP addresses" />
                       {h.ips.join(', ') || '—'}
                     </td>
-                    <td className="truncate">
+                    <td className="truncate copy-cell">
+                      <CopyIcon text={(h.labels ?? []).join(', ')} label="Labels" />
                       <Tags tags={h.labels} max={4} />
                     </td>
-                    <td className="truncate small" title={h.agent_version}>
+                    <td className="truncate small copy-cell" title={h.agent_version}>
+                      <CopyIcon text={h.kind === 'network' ? '' : h.agent_version} label="Agent version" />
                       <span className="mono">{h.kind === 'network' ? '—' : shortVersion(h.agent_version) || '?'}</span>
                       {h.update && h.update.state !== 'current' ? (
                         <>

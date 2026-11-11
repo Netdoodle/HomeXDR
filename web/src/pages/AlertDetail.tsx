@@ -8,7 +8,7 @@ import { AlertStatusBadge, MitreTag, OsLabel, RiskScore, SeverityBadge, StatusDo
 import { EventTable } from '../components/EventTable'
 import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
-import { ExpandableText, KV, RelTime } from '../components/Misc'
+import { CopyIcon, ExpandableText, KV, RelTime } from '../components/Misc'
 import { IndicatorFacts } from '../components/OfflineFacts'
 import { ResponseButtons } from '../components/ResponseButtons'
 import { SuppressDialog } from '../components/SuppressDialog'
@@ -75,7 +75,10 @@ function AlertView({ alert: a }: { alert: Alert }) {
         title={
           <span className="row" style={{ gap: 10 }}>
             <SeverityBadge severity={a.severity} />
-            <span>{a.rule.title}</span>
+            <span className="copy-line">
+              {a.rule.title}
+              <CopyIcon text={a.rule.title} label="Alert title" />
+            </span>
           </span>
         }
         subtitle={
@@ -301,12 +304,13 @@ function AlertView({ alert: a }: { alert: Alert }) {
                 <ErrorState error={hostQ.error} compact />
               ) : (
                 <KV
+                  copyable
                   items={[
                     ['Hostname', hostQ.data.hostname],
                     ['Status', <StatusDot key="s" status={hostQ.data.status} label />],
-                    ['OS', <OsLabel key="o" os={hostQ.data.os} />],
+                    ['OS', <OsLabel key="o" os={hostQ.data.os} />, [hostQ.data.os.name, hostQ.data.os.version].filter(Boolean).join(' ')],
                     ['IPs', hostQ.data.ips.join(', ')],
-                    ['Labels', <Tags key="l" tags={hostQ.data.labels} />],
+                    ['Labels', <Tags key="l" tags={hostQ.data.labels} />, (hostQ.data.labels ?? []).join(', ')],
                     ['Last seen', <RelTime key="ls" iso={hostQ.data.last_seen} />],
                   ]}
                 />
@@ -326,8 +330,9 @@ function AlertView({ alert: a }: { alert: Alert }) {
             <div className="panel-body">
               {a.process_name || ev?.process ? (
                 <KV
+                  copyable
                   items={[
-                    ['Name', <span key="n" className="mono">{a.process_name ?? ev?.process?.name}</span>],
+                    ['Name', <span key="n" className="mono">{a.process_name ?? ev?.process?.name}</span>, a.process_name ?? ev?.process?.name],
                     ['PID', ev?.process?.pid],
                     ['User', a.user ?? ev?.process?.user?.name],
                     [
@@ -338,11 +343,20 @@ function AlertView({ alert: a }: { alert: Alert }) {
                           {ev.container.image?.name ? <span className="muted"> ({ev.container.image.name}{ev.container.image.tag ? ':' + ev.container.image.tag : ''})</span> : null}
                         </span>
                       ) : undefined,
+                      ev?.container ? ev.container.name || ev.container.id : undefined,
                     ],
-                    ['Parent', ev?.process?.parent?.name ? <span className="mono">{ev.process.parent.name} ({ev.process.parent.pid})</span> : undefined],
+                    [
+                      'Parent',
+                      ev?.process?.parent?.name ? <span className="mono">{ev.process.parent.name} ({ev.process.parent.pid})</span> : undefined,
+                      ev?.process?.parent?.command_line || ev?.process?.parent?.name,
+                    ],
                     ['Started', ev?.process?.start ? formatDateTime(ev.process.start) : undefined],
-                    ['Command line', <ExpandableText key="c" text={a.command_line ?? ev?.process?.command_line} max={220} />],
-                    ['SHA-256', ev?.process?.hash?.sha256 ? <span className="mono xsmall" style={{ overflowWrap: 'anywhere' }}>{ev.process.hash.sha256}</span> : undefined],
+                    ['Command line', <ExpandableText key="c" text={a.command_line ?? ev?.process?.command_line} max={220} />, a.command_line ?? ev?.process?.command_line],
+                    [
+                      'SHA-256',
+                      ev?.process?.hash?.sha256 ? <span className="mono xsmall" style={{ overflowWrap: 'anywhere' }}>{ev.process.hash.sha256}</span> : undefined,
+                      ev?.process?.hash?.sha256,
+                    ],
                   ]}
                 />
               ) : (

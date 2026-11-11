@@ -7,7 +7,7 @@ import { AlertCount, AlertStatusBadge, OsLabel, SeverityBadge, StatusDot, Tags, 
 import { EventTable } from '../components/EventTable'
 import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
-import { KV, LabelEditor, LinkTabs, RelTime } from '../components/Misc'
+import { CopyIcon, KV, LabelEditor, LinkTabs, RelTime } from '../components/Misc'
 import { ConfirmDialog } from '../components/Modal'
 import { EmptyState, ErrorState, Loading, QueryView, Spinner } from '../components/States'
 import { TimeRangePicker } from '../components/TimeRangePicker'
@@ -63,7 +63,10 @@ export function HostDetailPage() {
         title={
           <span className="row" style={{ gap: 10 }}>
             <StatusDot status={h.status} />
-            {h.hostname}
+            <span className="copy-line">
+              {h.hostname}
+              <CopyIcon text={h.hostname} label="Host name" />
+            </span>
             {h.isolated ? <span className="badge" style={{ borderColor: 'var(--status-isolated)' }}>Isolated</span> : null}
           </span>
         }
@@ -120,15 +123,16 @@ function Overview({ host: h }: { host: Host }) {
           </div>
           <div className="panel-body">
             <KV
+              copyable
               items={[
                 ['Hostname', h.hostname],
-                ['Agent ID', <span key="id" className="mono small">{h.id}</span>],
+                ['Agent ID', <span key="id" className="mono small">{h.id}</span>, h.id],
                 ['Kind', h.kind === 'network' ? 'Network device (syslog source)' : 'Endpoint agent'],
-                ['Operating system', <OsLabel key="os" os={h.os} />],
+                ['Operating system', <OsLabel key="os" os={h.os} />, [h.os.name, h.os.version].filter(Boolean).join(' ')],
                 ['Kernel', h.os.kernel],
                 ['Architecture', h.arch],
-                ['IP addresses', h.ips.length ? <span className="mono">{h.ips.join(', ')}</span> : undefined],
-                ['MAC addresses', h.macs?.length ? <span className="mono">{h.macs.join(', ')}</span> : undefined],
+                ['IP addresses', h.ips.length ? <span className="mono">{h.ips.join(', ')}</span> : undefined, h.ips.join(', ')],
+                ['MAC addresses', h.macs?.length ? <span className="mono">{h.macs.join(', ')}</span> : undefined, h.macs?.join(', ')],
                 ['Agent version', h.agent_version],
                 ['CPUs / memory', h.cpus ? `${h.cpus} CPUs · ${formatBytes(h.memory_bytes)}` : undefined],
                 ['Booted', h.boot_time ? `${formatDateTime(h.boot_time)} (up ${formatDurationSec(uptime!)})` : undefined],
