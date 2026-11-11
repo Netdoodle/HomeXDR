@@ -9,7 +9,18 @@ import (
 )
 
 func (h *Handler) getAdGuardSettings(w http.ResponseWriter, r *http.Request, _ *store.User) {
-	writeJSON(w, http.StatusOK, h.c.AdGuard.View())
+	v := h.c.AdGuard.View()
+	v.Backfill = h.c.AdGuard.BackfillState(r.Context())
+	writeJSON(w, http.StatusOK, v)
+}
+
+// backfillAdGuard imports AdGuard Home's query log from before live importing began.
+func (h *Handler) backfillAdGuard(w http.ResponseWriter, r *http.Request, u *store.User) {
+	if h.adguardFail(w, h.c.AdGuard.Backfill(r.Context())) {
+		return
+	}
+	h.c.Audit(r.Context(), u.Username, "adguard.backfill", "", "")
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (h *Handler) putAdGuardSettings(w http.ResponseWriter, r *http.Request, u *store.User) {

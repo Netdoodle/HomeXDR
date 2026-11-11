@@ -33,6 +33,7 @@ func (c *Core) initNetwork(ctx context.Context) {
 		c.Log.Error("load behaviour settings", "err", err)
 	}
 	c.AdGuard = adguard.New(c.State, c.Log, c.ingestAdGuard)
+	c.AdGuard.SetHistory(c.storeAdGuardHistory)
 	if err := c.AdGuard.Load(ctx); err != nil {
 		c.Log.Error("load AdGuard Home settings", "err", err)
 	}
@@ -41,9 +42,32 @@ func (c *Core) initNetwork(ctx context.Context) {
 // ingestAdGuard stores lookups read from AdGuard Home as events of the host it runs on,
 // which is the firewall's host when AdGuard Home runs there.
 func (c *Core) ingestAdGuard(ctx context.Context, evs []*event.Event) error {
-	u, err := adguard.ParseURL(c.AdGuard.View().URL)
+	host, err := c.adguardHost(ctx, evs)
 	if err != nil {
 		return err
+	}
+	return c.Ingest(ctx, host, evs)
+}
+
+// storeAdGuardHistory stores backfilled lookups as they are: no detection rules, so
+// history from before the integration was turned on does not raise new alerts.
+func (c *Core) storeAdGuardHistory(ctx context.Context, evs []*event.Event) error {
+	host, err := c.adguardHost(ctx, evs)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for _, e := range evs {
+		c.normalize(e, host, now)
+	}
+	return c.Events.Insert(ctx, evs)
+}
+
+// adguardHost is the network host the lookups come from (AdGuard Home), named on each event.
+func (c *Core) adguardHost(ctx context.Context, evs []*event.Event) (*store.Host, error) {
+	u, err := adguard.ParseURL(c.AdGuard.View().URL)
+	if err != nil {
+		return nil, err
 	}
 	addr := u.Hostname()
 	if _, err := netip.ParseAddr(addr); err != nil {
@@ -53,14 +77,14 @@ func (c *Core) ingestAdGuard(ctx context.Context, evs []*event.Event) error {
 	}
 	host, err := c.State.EnsureNetworkHost(ctx, addr, "", "")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, e := range evs {
 		if e.Observer != nil {
 			e.Observer.Hostname = host.Hostname
 		}
 	}
-	return c.Ingest(ctx, host, evs)
+	return host, nil
 }
 
 // raiseBehavior turns a detector's finding into an alert.

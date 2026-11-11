@@ -33,6 +33,7 @@ func (c *Core) Ingest(ctx context.Context, host *store.Host, evs []*event.Event)
 	c.observeHealth(ctx, host, evs)
 	c.observeNetwork(ctx, host, evs)
 	c.observeAV(host, evs)
+	c.observeDefender(ctx, host, evs)
 	return nil
 }
 

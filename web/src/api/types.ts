@@ -1116,6 +1116,8 @@ export interface AISettings {
   min_severity: Severity
   daily_limit: number
   max_tool_calls: number
+  /** Hosts with any of these labels are not investigated automatically */
+  skip_labels?: string[]
   /** OpenAI-compatible endpoint override (required for the local provider) */
   base_url?: string
   /** for the selected provider */
@@ -1154,6 +1156,7 @@ export interface AISettingsUpdate {
   min_severity: Severity
   daily_limit: number
   max_tool_calls: number
+  skip_labels: string[]
   base_url?: string
   engine: AIEngine
   mcp_enabled: boolean

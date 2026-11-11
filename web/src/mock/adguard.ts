@@ -35,6 +35,15 @@ const settings: AdGuardSettings = {
 export function adguardRoutes(route: Route, fail: (status: number, message: string) => never) {
   route('GET', '/api/settings/adguard', () => settings, { role: 'admin' })
   route(
+    'POST',
+    '/api/settings/adguard/backfill',
+    () => {
+      Object.assign(settings, { backfill: { state: 'done', imported: 412_830, oldest: ago(90 * 86_400_000) } })
+      return null
+    },
+    { role: 'admin' },
+  )
+  route(
     'PUT',
     '/api/settings/adguard',
     ({ body }) => {

@@ -13,6 +13,7 @@ import {
   type AdGuardTestResult,
 } from '../api/adguard'
 import { KV, RelTime, Toggle } from '../components/Misc'
+import { HistoryImport } from './AdGuardHistory'
 import { ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
 import { formatNumber } from '../lib/format'
@@ -152,6 +153,7 @@ function AdGuardForm({ settings }: { settings: AdGuardSettings }) {
             ...(st.last_error ? ([['Last error', <span key="le" className="danger-text">{st.last_error}</span>]] as [string, ReactNode][]) : []),
           ]}
         />
+        <HistoryImport settings={settings} />
         <p className="xsmall muted" style={{ margin: 0 }}>
           Lookups appear in search as <code>event.dataset:dns.adguard</code>. Blocked lookups have <code>event.action:dns-blocked</code>.
         </p>

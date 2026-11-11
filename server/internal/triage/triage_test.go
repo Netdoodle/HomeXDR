@@ -125,6 +125,8 @@ func (f *fixture) save(t *testing.T, mut func(*Settings)) {
 	t.Helper()
 	set := DefaultSettings()
 	set.APIKey = "sk-test-0000000000"
+	// The tests were written for medium alerts and 50 a day (the defaults before 2026-11-11).
+	set.MinSeverity, set.DailyLimit, set.SkipLabels = store.SevMedium, 50, nil
 	if mut != nil {
 		mut(&set)
 	}
@@ -510,5 +512,33 @@ func TestClaudeToolBudget(t *testing.T) {
 	res := last[len(last)-1].(map[string]any)["content"].([]any)[0].(map[string]any)
 	if res["is_error"] != true || !strings.Contains(resultText(res), "budget") {
 		t.Fatalf("over-budget call not refused: %v", res)
+	}
+}
+
+// TestSkipLabels: alerts on hosts with a skipped label are never queued automatically.
+func TestSkipLabels(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.save(t, func(s *Settings) { s.SkipLabels = []string{"Test"} })
+	if _, err := f.st.SetLabels(ctx, "h1", []string{"test", "lab"}); err != nil {
+		t.Fatal(err)
+	}
+	f.svc.AlertCreated(ctx, f.alert)
+	if tr, err := f.st.GetTriage(ctx, f.alert.ID); err == nil {
+		t.Fatalf("alert on a test host was queued: %+v", tr)
+	}
+	if _, err := f.st.SetLabels(ctx, "h1", []string{"lab"}); err != nil {
+		t.Fatal(err)
+	}
+	f.svc.AlertCreated(ctx, f.alert)
+	if _, err := f.st.GetTriage(ctx, f.alert.ID); err != nil {
+		t.Fatalf("alert on an ordinary host was not queued: %v", err)
+	}
+}
+
+func TestDefaultSettingsAreFrugal(t *testing.T) {
+	d := DefaultSettings()
+	if d.MinSeverity != store.SevHigh || d.DailyLimit != 20 || len(d.SkipLabels) != 1 || d.SkipLabels[0] != "test" {
+		t.Fatalf("defaults = %+v", d)
 	}
 }

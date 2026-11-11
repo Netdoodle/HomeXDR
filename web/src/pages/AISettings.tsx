@@ -44,6 +44,7 @@ function toUpdate(s: AISettings): AISettingsUpdate {
     min_severity: s.min_severity,
     daily_limit: s.daily_limit,
     max_tool_calls: s.max_tool_calls,
+    skip_labels: s.skip_labels ?? [],
     engine: s.engine ?? 'api',
     mcp_enabled: s.mcp_enabled ?? false,
     mcp_auto_trigger: s.mcp_auto_trigger ?? false,
@@ -290,6 +291,17 @@ function AIAnalystForm({ settings }: { settings: AISettings }) {
                   onChange={(e) => set('daily_limit', Number(e.target.value))}
                 />
                 <span className="help">Automatic investigations per day; later alerts are marked as skipped. Alerts below high may use 80% of this, so high and critical alerts still get a look late in a noisy day. A repeat of something the AI called benign in the last 7 days reuses that verdict and does not count. You can still start one by hand.</span>
+              </label>
+              <label className="field">
+                <span className="label">Skip hosts labelled</span>
+                <input
+                  className="input mono"
+                  value={form.skip_labels.join(', ')}
+                  onChange={(e) => set('skip_labels', e.target.value.split(',').map((x) => x.trimStart()))}
+                  placeholder="test"
+                  spellCheck={false}
+                />
+                <span className="help">Alerts on hosts with any of these labels (test machines, labs) are never investigated automatically. You can still start one by hand.</span>
               </label>
               <label className="field">
                 <span className="label">Tool calls per investigation</span>

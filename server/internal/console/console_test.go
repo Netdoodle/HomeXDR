@@ -295,7 +295,7 @@ func TestAISettingsAndTriage(t *testing.T) {
 		}
 	}
 	code, body := admin.do("GET", "/api/settings/ai", nil, false)
-	if code != 200 || body["key_set"] != false || body["ready"] != false || body["min_severity"] != "medium" || body["model"] != "claude-opus-5-5" {
+	if code != 200 || body["key_set"] != false || body["ready"] != false || body["min_severity"] != "high" || body["model"] != "claude-opus-5-5" {
 		t.Fatalf("defaults = %d %v", code, body)
 	}
 	settings := map[string]any{"enabled": true, "provider": "anthropic", "model": "claude-opus-5-5", "min_severity": "medium",

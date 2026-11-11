@@ -67,8 +67,6 @@ marked confirmed or likely.
 - **Linux:** flag programs running from memory (memfd) or from deleted files. The agent
   currently strips the "(deleted)" marker.
 - **Full PowerShell script block logging** as an install option.
-- **AI analyst cost controls** before turning it back on: higher minimum severity by
-  default, skipping test hosts, and a daily cap on runs.
 
 ## Not planned (needs Microsoft partnership or signing)
 
@@ -79,6 +77,10 @@ marked confirmed or likely.
 
 ## Done
 
+- Defender health alerts (protection off, signatures more than 3 days old) from Defender's own health reports
+- AI analyst cost controls: high and above, 20 a day, test hosts skipped; `ai-analyst frugal`
+- AdGuard Home history import: [network-visibility.md](network-visibility.md)
+- Dashboard top rules open their alerts
 - Data retention page: usage, disk, next falloff, changes behind two confirmation steps:
   [retention.md](retention.md)
 - Cloud backup to S3-compatible storage (cold archives, import back): [retention.md](retention.md)
