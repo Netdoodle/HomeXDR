@@ -22,7 +22,10 @@ type Event struct {
 	Tags    []string          `json:"tags,omitempty"`
 	Labels  map[string]string `json:"labels,omitempty"`
 
-	Process     *Process       `json:"process,omitempty"`
+	Process *Process `json:"process,omitempty"`
+	// Container is the container the event's process runs in, if any. It is unset for
+	// processes on the host itself.
+	Container   *Container     `json:"container,omitempty"`
 	File        *File          `json:"file,omitempty"`
 	DLL         *DLL           `json:"dll,omitempty"`
 	Registry    *Registry      `json:"registry,omitempty"`
@@ -117,6 +120,21 @@ type Process struct {
 	SessionID int64    `json:"session_id,omitempty"`
 	TTY       string   `json:"tty,omitempty"`
 	Parent    *Process `json:"parent,omitempty"`
+}
+
+// Container identifies a container (ECS container.*). ID is the runtime's full ID; Name
+// has no leading slash. Image fields are empty when the runtime could not be asked.
+type Container struct {
+	ID      string          `json:"id,omitempty"`
+	Name    string          `json:"name,omitempty"`
+	Runtime string          `json:"runtime,omitempty"` // docker, containerd, cri-o, podman, lxc
+	Image   *ContainerImage `json:"image,omitempty"`
+}
+
+// ContainerImage is the image a container was created from.
+type ContainerImage struct {
+	Name string `json:"name,omitempty"` // "binhex/arch-sonarr", "ghcr.io/org/app"
+	Tag  string `json:"tag,omitempty"`  // "latest"
 }
 
 // Hash holds file digests as lowercase hex.

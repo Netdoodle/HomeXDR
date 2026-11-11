@@ -173,6 +173,9 @@ func (en *enricher) fillFromProc(pi *procInfo) {
 		}
 	}
 	pi.ProcessAccessed = pi.Exe != ""
+	// Now, while /proc/<pid> exists: the event may be emitted after the process exits
+	// (hashing), and files it wrote are reported later still.
+	containers.remember(en.env.EntityID(pi.PID, pi.StartKey), pi.PID)
 }
 
 func (en *enricher) parent(pi *procInfo) *event.Process {

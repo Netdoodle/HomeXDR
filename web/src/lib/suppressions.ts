@@ -50,11 +50,15 @@ const MAX_VALUE = 1024
 /**
  * Suggests a suppression for this alert's rule, host, process and parent. File and network
  * events do not say what started the process, so the command line stands in for the parent:
- * the executable alone would also hide the same program run by anyone else.
+ * the executable alone would also hide the same program run by anyone else. A process in a
+ * container also gets its image, so the same command elsewhere still alerts.
  */
 export function formFromAlert(a: Alert): SuppressForm {
-  const p = (a.event ?? a.events?.[0])?.process
+  const ev = a.event ?? a.events?.[0]
+  const p = ev?.process
   const conditions: SuppressionCondition[] = []
+  // The image without its tag, so the suppression survives container updates.
+  if (ev?.container?.image?.name) conditions.push({ field: 'container.image.name', op: 'equals', value: ev.container.image.name })
   if (p?.executable) conditions.push({ field: 'process.executable', op: 'equals', value: p.executable })
   else if (p?.name ?? a.process_name) conditions.push({ field: 'process.name', op: 'equals', value: (p?.name ?? a.process_name)! })
   const command = p?.command_line ?? a.command_line

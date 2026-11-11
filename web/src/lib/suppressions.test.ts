@@ -23,6 +23,18 @@ describe('formFromAlert', () => {
     ])
   })
 
+  it('adds the container image, without its tag, for a process in a container', () => {
+    const inCtr = {
+      ...alert,
+      event: { ...alert.event, container: { id: 'abc', name: 'binhex-sonarr', image: { name: 'binhex/arch-sonarr', tag: 'latest' } } },
+    } as unknown as Alert
+    expect(formFromAlert(inCtr).conditions).toEqual([
+      { field: 'container.image.name', op: 'equals', value: 'binhex/arch-sonarr' },
+      { field: 'process.executable', op: 'equals', value: '/usr/bin/wget' },
+      { field: 'process.parent.executable', op: 'equals', value: '/usr/bin/php' },
+    ])
+  })
+
   it('uses the command line when the event does not say what started the process', () => {
     const file = { ...alert, event: { process: { name: 'wget', executable: '/usr/bin/wget', command_line: 'wget -O /tmp/x' } } } as unknown as Alert
     expect(formFromAlert(file).conditions).toEqual([
