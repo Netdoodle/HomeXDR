@@ -8,7 +8,7 @@ import { AlertStatusBadge, MitreTag, SeverityBadge } from '../components/Badges'
 import { Icon } from '../components/Icon'
 import { TopRepeatingPanel } from '../components/TopRepeating'
 import { PageHeader } from '../components/Layout'
-import { Pager, RelTime } from '../components/Misc'
+import { CopyIcon, Pager, RelTime } from '../components/Misc'
 import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
 import { formatNumber, plural } from '../lib/format'
@@ -259,7 +259,8 @@ export function AlertsPage() {
                         <td>
                           <SeverityBadge severity={a.severity} />
                         </td>
-                        <td className="truncate">
+                        <td className="truncate copy-cell">
+                          <CopyIcon text={a.rule.title} label="Alert title" />
                           <Link to={`/alerts/${encodeURIComponent(a.id)}`} onClick={(e) => e.stopPropagation()} title={a.rule.title}>
                             {a.rule.title}
                           </Link>
@@ -269,13 +270,20 @@ export function AlertsPage() {
                             ))}
                           </div>
                         </td>
-                        <td className="truncate">
+                        <td className="truncate copy-cell">
+                          <CopyIcon text={a.hostname} label="Host" />
                           <Link to={`/hosts/${encodeURIComponent(a.host_id)}`} onClick={(e) => e.stopPropagation()}>
                             {a.hostname}
                           </Link>
-                          {a.user ? <div className="muted xsmall truncate-inline">{a.user}</div> : null}
+                          {a.user ? (
+                            <div className="muted xsmall truncate-inline copy-line">
+                              {a.user}
+                              <CopyIcon text={a.user} label="User" />
+                            </div>
+                          ) : null}
                         </td>
-                        <td className="truncate" title={a.command_line}>
+                        <td className="truncate copy-cell" title={a.command_line}>
+                          <CopyIcon text={a.command_line || a.process_name} label={a.command_line ? 'Command line' : 'Process'} />
                           <span className="mono">{a.process_name ?? '—'}</span>
                           {a.command_line ? <div className="cmd xsmall truncate-inline">{a.command_line}</div> : null}
                         </td>
@@ -288,7 +296,10 @@ export function AlertsPage() {
                             </div>
                           ) : null}
                         </td>
-                        <td className="truncate">{a.assignee ?? <span className="empty-cell">—</span>}</td>
+                        <td className="truncate copy-cell">
+                          <CopyIcon text={a.assignee} label="Assignee" />
+                          {a.assignee ?? <span className="empty-cell">—</span>}
+                        </td>
                         <td>
                           <RelTime iso={a.last_seen} />
                         </td>

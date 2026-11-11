@@ -217,16 +217,81 @@ export function LabelEditor({
   )
 }
 
-export function KV({ items }: { items: [ReactNode, ReactNode][] }) {
+/** A KV row: label, value, and optionally the text its copy button copies. */
+export type KVItem = [ReactNode, ReactNode] | [ReactNode, ReactNode, string | number | undefined | null]
+
+/**
+ * Label/value pairs. With copyable, every value that is plain text, or that names its text
+ * as the row's third element, gets a copy button.
+ */
+export function KV({ items, copyable }: { items: KVItem[]; copyable?: boolean }) {
   return (
     <dl className="kv">
-      {items.map(([k, v], i) => (
-        <div key={i} style={{ display: 'contents' }}>
-          <dt>{k}</dt>
-          <dd>{v === undefined || v === null || v === '' ? <span className="empty-cell">—</span> : v}</dd>
-        </div>
-      ))}
+      {items.map((item, i) => {
+        const [k, v] = item
+        const empty = v === undefined || v === null || v === ''
+        let text: string | undefined
+        if (copyable && !empty) {
+          const explicit = item.length > 2 ? item[2] : undefined
+          if (explicit !== undefined && explicit !== null && explicit !== '') text = String(explicit)
+          else if (item.length < 3 && (typeof v === 'string' || typeof v === 'number')) text = String(v)
+        }
+        return (
+          <div key={i} style={{ display: 'contents' }}>
+            <dt>{k}</dt>
+            <dd className={text ? 'copy-cell' : undefined}>
+              {empty ? <span className="empty-cell">—</span> : v}
+              {text ? <CopyIcon text={text} label={typeof k === 'string' ? k : 'value'} /> : null}
+            </dd>
+          </div>
+        )
+      })}
     </dl>
+  )
+}
+
+async function writeClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    // Clipboard API needs a secure context; fall back to a hidden textarea.
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    ta.remove()
+  }
+}
+
+/**
+ * A small copy button for one value, shown when its row or cell is hovered or focused.
+ * It never triggers the row's own click.
+ */
+export function CopyIcon({ text, label }: { text: string | undefined | null; label: string }) {
+  const [done, setDone] = useState(false)
+  useEffect(() => {
+    if (!done) return
+    const t = setTimeout(() => setDone(false), 1200)
+    return () => clearTimeout(t)
+  }, [done])
+  if (text === undefined || text === null || text === '') return null
+  return (
+    <button
+      type="button"
+      className={done ? 'copy-icon done' : 'copy-icon'}
+      title={done ? 'Copied' : `Copy ${label.toLowerCase()}`}
+      aria-label={`Copy ${label.toLowerCase()}`}
+      onClick={(e) => {
+        e.stopPropagation()
+        e.preventDefault()
+        void writeClipboard(text).then(() => setDone(true))
+      }}
+    >
+      <Icon name={done ? 'check' : 'copy'} size={12} />
+    </button>
   )
 }
 

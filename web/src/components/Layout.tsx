@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { NavLink, Outlet, useNavigate } from 'react-router'
 import { api, queryKeys } from '../api'
 import { ROLE_LABEL } from '../lib/roles'
 import { useUser } from './Auth'
 import { Icon, type IconName } from './Icon'
+import { PlatformSearch, useHashSection } from './PlatformSearch'
 import { resolvedTheme, useTheme, type ThemeChoice } from './Theme'
 
 const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
@@ -150,30 +151,6 @@ function UserMenu() {
   )
 }
 
-function QuickSearch() {
-  const navigate = useNavigate()
-  const loc = useLocation()
-  const [q, setQ] = useState('')
-  if (loc.pathname === '/search') return <div className="topbar-search" />
-  const submit = (e: FormEvent) => {
-    e.preventDefault()
-    navigate(`/search?q=${encodeURIComponent(q.trim())}`)
-    setQ('')
-  }
-  return (
-    <form className="topbar-search" onSubmit={submit} role="search">
-      <input
-        className="input mono"
-        style={{ width: '100%' }}
-        placeholder="Search events: process.name:powershell.exe"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        aria-label="Search events"
-      />
-    </form>
-  )
-}
-
 function HealthIndicator() {
   const health = useQuery({
     queryKey: queryKeys.health,
@@ -214,6 +191,7 @@ function NewAlertsCount() {
 }
 
 export function Layout() {
+  useHashSection()
   const setup = useQuery({ queryKey: queryKeys.setup, queryFn: api.setupStatus, staleTime: Infinity })
   return (
     <div className="app">
@@ -246,7 +224,7 @@ export function Layout() {
       </aside>
       <div className="main">
         <header className="topbar">
-          <QuickSearch />
+          <PlatformSearch />
           <div className="spacer" />
           <HealthIndicator />
           <ThemeToggle />

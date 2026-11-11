@@ -79,6 +79,10 @@ marked confirmed or likely.
 
 ## Done
 
+- Maintenance tuning: SSH key names and maintenance suppressions per key, Docker update and
+  appdata backup tagging, container start-up window: [maintenance.md](maintenance.md)
+- Console search for pages, settings and sections; copy buttons on alert and host fields
+
 - Defender health alerts (protection off, signatures more than 3 days old) from Defender's own health reports
 - AI analyst cost controls: high and above, 20 a day, test hosts skipped; `ai-analyst frugal`
 - DNS resolver query log for Pi-hole v6 and Technitium DNS Server, beside AdGuard Home:

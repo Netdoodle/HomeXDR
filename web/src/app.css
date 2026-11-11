@@ -197,6 +197,52 @@ pre,
   width: min(380px, 40vw);
 }
 
+.platform-search {
+  position: relative;
+  width: min(460px, 46vw);
+}
+
+.platform-search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.platform-search-results li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.platform-search-results li.active {
+  background: var(--accent-soft, rgba(76, 141, 255, 0.15));
+}
+
+.platform-search-results li.empty {
+  cursor: default;
+}
+
+.flash-target {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  transition: outline-color 1.5s ease;
+}
+
 .content {
   padding: var(--pad);
   min-width: 0;
@@ -2606,4 +2652,64 @@ dialog.modal::backdrop {
   min-width: 0;
   text-align: right;
   overflow-wrap: anywhere;
+}
+
+/* Copy buttons on table cells and key/value rows: shown on hover or keyboard focus. */
+.copy-cell {
+  position: relative;
+}
+
+.copy-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  padding: 0;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-muted, inherit);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+td.copy-cell > .copy-icon {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  margin: 0;
+  z-index: 1;
+}
+
+tr:hover .copy-icon,
+dd:hover > .copy-icon,
+.copy-line:hover > .copy-icon,
+.copy-icon:focus-visible,
+.copy-icon.done {
+  opacity: 1;
+}
+
+.copy-icon:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.copy-icon.done {
+  color: var(--ok, var(--accent));
+}
+
+@media (hover: none) {
+  .copy-icon {
+    opacity: 0.7;
+  }
+}
+
+/* Sections the top search jumps to stop below the sticky top bar. */
+main .panel,
+main h2 {
+  scroll-margin-top: 72px;
 }
