@@ -148,7 +148,8 @@ function DashboardBody({ o, hours }: { o: Overview; hours: number }) {
               <BarList
                 items={o.top_rules.map((r) => ({
                   key: r.rule_id,
-                  href: `/rules/${encodeURIComponent(r.rule_id)}`,
+                  // Every alert this rule raised in the window, whatever its status (as counted here).
+                  href: `/alerts?rule=${encodeURIComponent(r.rule_id)}&status=all`,
                   title: r.title,
                   value: r.count,
                   color: `var(--sev-${r.severity})`,
