@@ -10,8 +10,8 @@ import (
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
-// Backfill imports AdGuard Home's query log from before live importing started, so the
-// history AdGuard still keeps (its query log retention) becomes searchable too.
+// Backfill imports the resolver's query log from before live importing started, so the
+// history it still keeps (its query log retention) becomes searchable too.
 //
 // It reads backwards from the moment live importing began and stores those lookups
 // without running detection rules on them (History, not Ingest), so old lookups don't
@@ -32,7 +32,7 @@ func (p *Poller) SetHistory(h Ingest) { p.history = h }
 func (p *Poller) Backfill(ctx context.Context) error {
 	set := p.settings()
 	if !set.Enabled || set.Password == "" {
-		return &InputError{"turn on reading AdGuard Home's query log first"}
+		return &InputError{"turn on reading the resolver's query log first"}
 	}
 	if p.history == nil {
 		return errors.New("history import is not wired")
@@ -48,7 +48,7 @@ func (p *Poller) Backfill(ctx context.Context) error {
 	}
 	if stt.Backfilled {
 		p.mu.Unlock()
-		return &InputError{"AdGuard Home's history was already imported"}
+		return &InputError{Product(set.Kind) + "'s history was already imported"}
 	}
 	p.backfill = BackfillStatus{State: "running"}
 	p.mu.Unlock()
@@ -69,7 +69,7 @@ func (p *Poller) runBackfill(set Settings, since time.Time) {
 	n := p.backfill.Imported
 	p.mu.Unlock()
 	if err != nil {
-		p.log.Warn("adguard home: history import failed", "imported", n, "err", err)
+		p.log.Warn("dns query log: history import failed", "resolver", Product(set.Kind), "imported", n, "err", err)
 		return
 	}
 	var stt state
@@ -77,15 +77,17 @@ func (p *Poller) runBackfill(set Settings, since time.Time) {
 		stt.Backfilled = true
 		_ = p.st.SetKV(ctx, stateKey, stt)
 	}
-	p.log.Info("adguard home: history imported", "lookups", n)
+	p.log.Info("dns query log: history imported", "resolver", Product(set.Kind), "lookups", n)
 }
 
 func (p *Poller) backfillOlder(ctx context.Context, set Settings, since time.Time) error {
-	c, err := NewClient(set)
+	c, err := newSource(set) // its own reader: it runs alongside live polling
 	if err != nil {
 		return err
 	}
-	olderThan := since.UTC().Format(time.RFC3339Nano)
+	defer c.Close(context.WithoutCancel(ctx))
+	olderThan := c.StartBefore(since)
+	got := map[string]bool{}
 	for page := 0; ; page++ {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -97,7 +99,14 @@ func (p *Poller) backfillOlder(ctx context.Context, set Settings, since time.Tim
 		evs := make([]*event.Event, 0, len(pg.Data))
 		var oldest time.Time
 		for i := range pg.Data {
-			if ev := pg.Data[i].Event(); ev != nil {
+			e := &pg.Data[i]
+			// Live importing already has everything from since on; a reader that cannot
+			// seek also returns those, and pages can shift and repeat entries.
+			if t, ok := e.When(); !ok || !t.Before(since) || got[e.key()] {
+				continue
+			}
+			got[e.key()] = true
+			if ev := e.Event(); ev != nil {
 				evs = append(evs, ev)
 				if oldest.IsZero() || ev.Timestamp.Before(oldest) {
 					oldest = ev.Timestamp

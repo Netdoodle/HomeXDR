@@ -10,7 +10,7 @@ Four optional sources fill the gap. Each one is off until you turn it on.
 | Source | What it gives you | What needs it |
 |---|---|---|
 | **Unbound query logs** | Which device looked up which name | DNS tunnelling, device inventory |
-| **AdGuard Home query log** | The same, when AdGuard Home answers DNS instead of Unbound | DNS tunnelling, device inventory |
+| **DNS resolver query log** | The same, when AdGuard Home, Pi-hole or Technitium answers DNS instead of Unbound | DNS tunnelling, device inventory |
 | **DHCP logs** | IP, MAC and hostname of each device | Device inventory: real names, new-device alerts with a MAC, rogue server context |
 | **NetFlow** | Every connection by its real LAN address, with bytes and packets | Beaconing, upload spike, unusual port, DNS bypass, internal scan |
 
@@ -28,7 +28,8 @@ HomeXDR never changes the firewall. All of these are changes you make yourself.
 
 Only useful when Unbound answers your devices. If AdGuard Home or another resolver listens on port 53 in front
 of it, or Unbound is turned off, Unbound's log names that resolver and not the device, so skip this section.
-If that resolver is AdGuard Home, read its query log instead: see [AdGuard Home query log](#adguard-home-query-log).
+If that resolver is AdGuard Home, Pi-hole or Technitium DNS Server, read its query log instead: see
+[DNS resolver query log](#dns-resolver-query-log).
 
 1. **Services → Unbound DNS → Advanced**: turn on **Log Replies**. Each reply line names the client, the
    name, the type, the result, the time taken and whether it came from cache.
@@ -43,14 +44,27 @@ Check it works: search for `event.module:dns`. Each row should have a `source.ip
 Only clients that use this resolver appear. A device with a hardcoded public resolver shows up through
 NetFlow and the DNS bypass detector instead.
 
-## AdGuard Home query log
+## DNS resolver query log
 
-When AdGuard Home answers your network's DNS, HomeXDR reads its query log over AdGuard Home's own API, every
-30 seconds by default. Each lookup becomes a DNS event (`event.dataset:dns.adguard`) with the device's address,
-the name, the type, the result and the upstream that answered. Lookups AdGuard Home blocked have
-`event.action:dns-blocked` and the reason and rule under `data.adguard`. Nothing changes on the firewall.
+When a homelab resolver answers your network's DNS, HomeXDR reads its query log over the resolver's own API,
+every 30 seconds by default. Pick the resolver in **Settings → Network → DNS resolver query log**:
 
-Set it up in **Settings → Network → AdGuard Home**:
+| Resolver | Login | Dataset | Reason under |
+|---|---|---|---|
+| AdGuard Home | Username and password | `dns.adguard` | `data.adguard` |
+| Pi-hole v6 or later | Password, or better an app password | `dns.pihole` | `data.pihole` |
+| Technitium DNS Server | API token | `dns.technitium` | `data.technitium` |
+
+Every resolver's lookups have the same shape: the device's address (`source.ip`), the name, the type, the
+response code, the answers when the resolver logs them, and the time it took. Lookups the resolver blocked
+have `event.action:dns-blocked` whichever resolver it was, and `event.module:dns` covers every DNS source.
+Only the dataset and the resolver's own details under `data.*` (its reason, upstream, rule) differ. Nothing
+changes on the firewall.
+
+Only one resolver is read at a time. Switching to another one starts reading afresh from that moment, and
+never reuses the previous resolver's password or trusted certificate.
+
+### AdGuard Home
 
 1. **Address**: AdGuard Home's web address, scheme, host and port only. Prefer https (for example
    `https://192.168.20.1:3001`), so the password is encrypted on the way.
@@ -61,20 +75,49 @@ Set it up in **Settings → Network → AdGuard Home**:
    If the certificate cannot be checked (expired, self-signed), **Test connection** shows its fingerprint and offers
    **Trust this certificate**. HomeXDR then accepts exactly that certificate and refuses any other, so after a
    renewal you trust the new one, or clear the field to check it normally again.
-4. Turn it on and save. Lookups from before that moment are not imported.
+4. Turn it on and save. Lookups from before that moment are only imported if you import the history (below).
 
-Check it works: the panel shows **Reading** and a count of new lookups, and a search for
-`event.dataset:dns.adguard` returns rows whose `source.ip` is a device.
+### Pi-hole
+
+Pi-hole v6 or later (its REST API under `/api`). Pi-hole v5's older API is not supported.
+
+1. **Address**: Pi-hole's web address, such as `https://192.168.20.2`. Pi-hole v6 serves https on 443 with its
+   own certificate, so use the certificate steps above to trust it.
+2. **Password**: in Pi-hole, **Settings → Web interface / API**, switch to Expert mode and **Configure app password**.
+   An app password skips two-factor and can be replaced without changing your own password. Your own password
+   also works. Pi-hole has no read-only logins either; HomeXDR only reads the version and the query log.
+3. HomeXDR keeps one login session and reuses it, because Pi-hole allows only a few sessions at a time. The
+   connection test logs out when it is done.
+
+The history import reads Pi-hole's long-term database, so it goes back as far as Pi-hole keeps queries there
+(91 days by default).
+
+### Technitium DNS Server
+
+1. Technitium keeps its query log through an app. In its console, **Apps → App Store**, install
+   **Query Logs (Sqlite)** if no query log app is installed. HomeXDR finds the installed one by itself.
+2. **Address**: Technitium's web address, such as `http://192.168.20.2:5380`, or its https port if you turned
+   that on.
+3. **API token**: **Administration → Sessions → Create Token**, for a user allowed to view the logs and the apps.
+   HomeXDR sends it in the request body, never in the address.
+
+### Checking it
+
+Check it works: the panel shows **Reading** and a count of new lookups, and a search for the resolver's
+dataset (for example `event.dataset:dns.pihole`) returns rows whose `source.ip` is a device.
 
 If more lookups arrive between two reads than HomeXDR reads at once (20,000), it keeps the newest and counts
 the miss under **Fell behind**. Check more often if that happens.
 
-**Import older history** (once the first read has succeeded) brings in the lookups AdGuard
-Home still keeps from before live importing began, as far back as its own query log
+**Import older history** (once the first read has succeeded) brings in the lookups the
+resolver still keeps from before live importing began, as far back as its own query log
 retention. It runs once, in the background, and the panel shows its progress. Those lookups
 are stored as history: detection rules and behaviour detectors are not run on them, so they
 raise no alerts. They are searchable like any other DNS event, and the event retention
 limits apply to them as usual.
+
+Other resolvers (Unbound on its own, dnsmasq, Blocky, CoreDNS) can send their query logs over syslog; Unbound
+is described above.
 
 ## DHCP logs
 

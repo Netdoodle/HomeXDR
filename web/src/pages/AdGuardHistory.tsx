@@ -1,8 +1,8 @@
-// One-time import of the lookups AdGuard Home still keeps from before live importing began.
+// One-time import of the lookups the DNS resolver still keeps from before live importing began.
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { adguardKeys, backfillAdGuard, type AdGuardSettings } from '../api/adguard'
+import { RESOLVERS, adguardKeys, backfillAdGuard, resolverOf, type AdGuardSettings } from '../api/adguard'
 import { errorMessage } from '../api/client'
 import { Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
@@ -14,11 +14,12 @@ export function HistoryImport({ settings }: { settings: AdGuardSettings }) {
   const toast = useToast()
   const [confirm, setConfirm] = useState(false)
   const b = settings.backfill
+  const name = RESOLVERS[resolverOf(settings.kind)].name
   const run = useMutation({
     mutationFn: backfillAdGuard,
     onSuccess: () => {
       setConfirm(false)
-      toast.success('Importing AdGuard Home history')
+      toast.success(`Importing ${name} history`)
       qc.invalidateQueries({ queryKey: adguardKeys.settings })
     },
   })
@@ -38,7 +39,7 @@ export function HistoryImport({ settings }: { settings: AdGuardSettings }) {
       {b?.state === 'done' || b?.state === 'running' ? null : confirm ? (
         <div className="callout small stack" style={{ gap: 8 }}>
           <span>
-            Import every lookup AdGuard Home still keeps from before {formatDateTime(settings.status.since)}, as far back as its query log retention. They are
+            Import every lookup {name} still keeps from before {formatDateTime(settings.status.since)}, as far back as its query log retention. They are
             stored as history: detection rules are not run on them, so no alerts are raised. This runs once and can take a while for a large log.
           </span>
           {run.isError ? <span className="danger-text">{errorMessage(run.error)}</span> : null}

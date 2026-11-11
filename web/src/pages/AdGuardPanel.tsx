@@ -1,16 +1,20 @@
-// Settings → Network → AdGuard Home: read its query log so DNS shows up per device.
+// Settings → Network → DNS resolver query log: read AdGuard Home's, Pi-hole's or Technitium's
+// query log so DNS shows up per device.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { errorMessage } from '../api/client'
 import {
+  RESOLVERS,
   adguardKeys,
+  resolverOf,
   getAdGuardSettings,
   putAdGuardSettings,
   testAdGuardSettings,
   type AdGuardInput,
   type AdGuardSettings,
   type AdGuardTestResult,
+  type ResolverKind,
 } from '../api/adguard'
 import { KV, RelTime, Toggle } from '../components/Misc'
 import { HistoryImport } from './AdGuardHistory'
@@ -36,6 +40,9 @@ const STATE_LABEL: Record<AdGuardSettings['status']['state'], string> = {
 function AdGuardForm({ settings }: { settings: AdGuardSettings }) {
   const qc = useQueryClient()
   const toast = useToast()
+  const savedKind = resolverOf(settings.kind)
+  const [kind, setKind] = useState<ResolverKind>(savedKind)
+  const r = RESOLVERS[kind]
   const [enabled, setEnabled] = useState(settings.enabled)
   const [url, setUrl] = useState(settings.url)
   const [username, setUsername] = useState(settings.username)
@@ -46,9 +53,10 @@ function AdGuardForm({ settings }: { settings: AdGuardSettings }) {
   const [result, setResult] = useState<AdGuardTestResult | null>(null)
 
   const input = (): AdGuardInput => ({
+    kind,
     enabled,
     url: url.trim(),
-    username: username.trim(),
+    username: r.username ? username.trim() : '',
     password: password || undefined,
     server_name: serverName.trim() || undefined,
     pin_sha256: pin.trim() || undefined,
@@ -59,7 +67,8 @@ function AdGuardForm({ settings }: { settings: AdGuardSettings }) {
     onSuccess: (s) => {
       qc.setQueryData(adguardKeys.settings, s)
       setPassword('')
-      toast.success(s.enabled ? 'AdGuard Home settings saved. Reading starts within a minute.' : 'AdGuard Home settings saved')
+      const n = RESOLVERS[resolverOf(s.kind)].name
+      toast.success(s.enabled ? `${n} settings saved. Reading starts within a minute.` : `${n} settings saved`)
     },
   })
   const test = useMutation({ mutationFn: testAdGuardSettings, onSuccess: setResult, onError: () => setResult(null) })
@@ -69,50 +78,80 @@ function AdGuardForm({ settings }: { settings: AdGuardSettings }) {
   }
   const st = settings.status
   const https = url.trim().toLowerCase().startsWith('https://')
+  // A saved secret belongs to the saved resolver; switching needs the new one's.
+  const secretSaved = settings.password_set && kind === savedKind
 
   return (
     <form className="panel" onSubmit={submit}>
       <div className="panel-header">
-        <h2>AdGuard Home</h2>
+        <h2>DNS resolver query log</h2>
       </div>
       <div className="panel-body stack" style={{ gap: 14 }}>
         <p className="small muted" style={{ margin: 0 }}>
-          When AdGuard Home answers your network's DNS, the firewall's own resolver never sees which device asked for what. HomeXDR can read AdGuard Home's
-          query log instead, so every lookup becomes a DNS event with the device's address. Lookups from before you turn this on are not imported.
+          When a homelab resolver such as AdGuard Home, Pi-hole or Technitium answers your network's DNS, the firewall's own resolver never sees which device
+          asked for what. HomeXDR can read that resolver's query log instead, so every lookup becomes a DNS event with the device's address. Lookups from
+          before you turn this on are only imported if you import the history.
         </p>
-        <Toggle checked={enabled} onChange={setEnabled} label="Read AdGuard Home's query log" />
+        <label className="field" style={{ maxWidth: 320 }}>
+          <span className="label">Resolver</span>
+          <select
+            className="input"
+            value={kind}
+            onChange={(e) => {
+              const k = e.target.value as ResolverKind
+              setKind(k)
+              setResult(null)
+              // A trusted certificate belongs to one server.
+              setPin(k === savedKind ? (settings.pin_sha256 ?? '') : '')
+              setServerName(k === savedKind ? (settings.server_name ?? '') : '')
+            }}
+          >
+            {(Object.keys(RESOLVERS) as ResolverKind[]).map((k) => (
+              <option key={k} value={k}>
+                {RESOLVERS[k].name}
+              </option>
+            ))}
+          </select>
+          {kind !== savedKind && settings.url ? (
+            <span className="help">Saving switches from {RESOLVERS[savedKind].name}: reading starts afresh, and its saved password is not reused.</span>
+          ) : null}
+        </label>
+        <Toggle checked={enabled} onChange={setEnabled} label={`Read ${r.name}'s query log`} />
         <label className="field">
           <span className="label">Address</span>
-          <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://192.168.20.1:3001" spellCheck={false} />
-          <span className="help">AdGuard Home's web address: scheme, host and port only. Prefer https, so the password is encrypted on the way.</span>
+          <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder={r.address} spellCheck={false} />
+          <span className="help">
+            {r.name}'s web address: scheme, host and port only. Prefer https, so the {r.secret.toLowerCase()} is encrypted on the way.
+          </span>
         </label>
         <div className="grid-2" style={{ gap: 14 }}>
+          {r.username ? (
+            <label className="field">
+              <span className="label">Username</span>
+              <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" spellCheck={false} />
+            </label>
+          ) : null}
           <label className="field">
-            <span className="label">Username</span>
-            <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" spellCheck={false} />
-          </label>
-          <label className="field">
-            <span className="label">Password</span>
+            <span className="label">{r.secret}</span>
             <input
               className="input"
               type="password"
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={settings.password_set ? 'Saved; type to replace' : ''}
+              placeholder={secretSaved ? 'Saved; type to replace' : ''}
             />
           </label>
         </div>
         <p className="xsmall muted" style={{ margin: 0 }}>
-          AdGuard Home has no read-only accounts, so this login can change its settings. HomeXDR only reads the status and the query log, and never shows the
-          password again.
+          {r.secretHelp} HomeXDR never shows the {r.secret.toLowerCase()} again.
         </p>
         {https ? (
           <div className="grid-2" style={{ gap: 14 }}>
             <label className="field">
               <span className="label">Certificate name</span>
               <input className="input mono" value={serverName} onChange={(e) => setServerName(e.target.value)} placeholder="Taken from the address" spellCheck={false} />
-              <span className="help">When the address is an IP, the name on AdGuard Home's certificate, such as ads.example.com.</span>
+              <span className="help">When the address is an IP, the name on {r.name}'s certificate, such as dns.example.com.</span>
             </label>
             <label className="field">
               <span className="label">Trusted certificate</span>
@@ -141,7 +180,7 @@ function AdGuardForm({ settings }: { settings: AdGuardSettings }) {
 
         <KV
           items={[
-            ['Status', `${STATE_LABEL[st.state]}${st.version ? ` · AdGuard Home ${st.version}` : ''}`],
+            ['Status', `${STATE_LABEL[st.state]}${st.version ? ` · ${RESOLVERS[savedKind].name} ${st.version}` : ''}`],
             ...(st.last_success
               ? ([['Last read', <span key="lr"><RelTime iso={st.last_success} />, {formatNumber(st.last_batch)} new lookups</span>]] as [string, ReactNode][])
               : []),
@@ -155,7 +194,8 @@ function AdGuardForm({ settings }: { settings: AdGuardSettings }) {
         />
         <HistoryImport settings={settings} />
         <p className="xsmall muted" style={{ margin: 0 }}>
-          Lookups appear in search as <code>event.dataset:dns.adguard</code>. Blocked lookups have <code>event.action:dns-blocked</code>.
+          Lookups appear in search as <code>event.dataset:{RESOLVERS[savedKind].dataset}</code>. Blocked lookups from any resolver have{' '}
+          <code>event.action:dns-blocked</code>, and <code>event.module:dns</code> covers every DNS source.
         </p>
       </div>
     </form>
@@ -177,7 +217,7 @@ function TestOutcome({ result, onTrust }: { result: AdGuardTestResult; onTrust: 
             {c.fingerprint}
           </div>
           <div>
-            If this is your AdGuard Home, you can trust exactly this certificate. Once it is renewed you will need to trust the new one, or clear the field to
+            If this is your resolver, you can trust exactly this certificate. Once it is renewed you will need to trust the new one, or clear the field to
             check it normally again.
           </div>
           <div>

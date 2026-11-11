@@ -1,4 +1,4 @@
-// Mock AdGuard Home integration.
+// Mock DNS resolver query log integration.
 
 import type { AdGuardInput, AdGuardSettings, AdGuardTestResult } from '../api/adguard'
 import type { Role } from '../api/types'
@@ -12,6 +12,7 @@ const FINGERPRINT = 'B2:B6:FA:DD:7C:C4:6B:66:51:17:97:DC:A5:AF:09:84:0A:B9:84:74
 
 let password = 'mock-password'
 const settings: AdGuardSettings = {
+  kind: 'adguard',
   enabled: true,
   url: 'https://192.168.20.1:3001',
   username: 'admin',
@@ -49,13 +50,17 @@ export function adguardRoutes(route: Route, fail: (status: number, message: stri
     ({ body }) => {
       const s = body as AdGuardInput
       if (s.enabled && !/^https?:\/\/[^/@]+\/?$/.test(s.url)) fail(400, "enter AdGuard Home's address, such as https://192.168.20.1:3001")
-      if (s.clear_password) password = ''
+      const switched = s.kind !== (settings.kind ?? 'adguard')
+      if (s.clear_password || (switched && !s.password)) password = ''
       else if (s.password) password = s.password
-      if (s.enabled && (!s.username || !password)) fail(400, "enter AdGuard Home's username and password")
+      if (s.enabled && s.kind === 'adguard' && (!s.username || !password)) fail(400, "enter AdGuard Home's username and password")
+      if (s.enabled && s.kind !== 'adguard' && !password)
+        fail(400, s.kind === 'pihole' ? "enter Pi-hole's password or an app password" : 'enter a Technitium DNS Server API token')
       Object.assign(settings, {
+        kind: s.kind,
         enabled: s.enabled,
         url: s.url.replace(/\/$/, ''),
-        username: s.username,
+        username: s.kind === 'adguard' ? s.username : '',
         password_set: password !== '',
         server_name: s.server_name ?? '',
         pin_sha256: s.pin_sha256 ?? '',
@@ -71,13 +76,15 @@ export function adguardRoutes(route: Route, fail: (status: number, message: stri
     '/api/settings/adguard/test',
     ({ body }): AdGuardTestResult => {
       const s = body as AdGuardInput
-      if (s.url.startsWith('https://') && !s.pin_sha256) {
+      if (s.kind === 'adguard' && s.url.startsWith('https://') && !s.pin_sha256) {
         return {
           ok: false,
           message: "AdGuard Home's certificate has expired",
           certificate: { subject: 'ads.example.com', names: ['ads.example.com'], issuer: 'E6', not_after: '2026-08-06T05:01:40Z', expired: true, fingerprint: FINGERPRINT },
         }
       }
+      if (s.kind === 'pihole') return { ok: true, message: 'Connected to Pi-hole v6.1. The query log is readable.', version: 'v6.1' }
+      if (s.kind === 'technitium') return { ok: true, message: 'Connected to Technitium DNS Server 13.6. The query log is readable.', version: '13.6' }
       return { ok: true, message: 'Connected to AdGuard Home v0.107.79. The query log is readable.', version: 'v0.107.79' }
     },
     { role: 'admin' },
