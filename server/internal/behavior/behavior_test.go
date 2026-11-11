@@ -666,6 +666,59 @@ func TestInternalScanBenign(t *testing.T) {
 	}
 }
 
+func withFlags(ev *event.Event, flags string) *event.Event {
+	ev.Data = map[string]any{"tcp_flags": flags}
+	return ev
+}
+
+// NetFlow has both directions of every conversation. A service on a high port answering a
+// client's lower ephemeral ports passes the port rule, so the flags and the reverse records
+// must keep it from looking like a scan, while real scans still count.
+func TestInternalScanReplies(t *testing.T) {
+	h := newHarness(t)
+	ts := h.now.Add(-5 * time.Minute)
+	const printer, master = "192.168.20.189", "192.168.10.52"
+	var evs []*event.Event
+	for i := range 40 {
+		cport := 40000 + i*100
+		evs = append(evs,
+			// The printer: a session on its port 53048, and its status port 3910.
+			withFlags(flow(ts, master, cport, printer, 53048, "tcp", 500), "FSPA"),
+			withFlags(flow(ts, printer, 53048, master, cport, "tcp", 900), "FSPA"),
+			withFlags(flow(ts, printer, 53048, master, cport, "tcp", 300), "A"),
+			withFlags(flow(ts, master, cport+1, printer, 3910, "tcp", 500), "FSPA"),
+			withFlags(flow(ts, printer, 3910, master, cport+1, "tcp", 900), "FSPA"),
+			// A server on a high port answering 40 hosts.
+			withFlags(flow(ts, fmt.Sprintf("192.168.10.%d", i+2), 30000+i, "192.168.20.90", 60000, "tcp", 500), "SPA"),
+			withFlags(flow(ts, "192.168.20.90", 60000, fmt.Sprintf("192.168.10.%d", i+2), 30000+i, "tcp", 500), "SPA"),
+			// A SYN scan from one source port, answered with resets.
+			withFlags(flow(ts, "192.168.20.70", 61000, "192.168.10.201", 1+i, "tcp", 44), "S"),
+			withFlags(flow(ts, "192.168.10.201", 1+i, "192.168.20.70", 61000, "tcp", 40), "RA"),
+			// A connect scan of open ports, a new source port each time.
+			withFlags(flow(ts, "192.168.20.71", 50000+i, "192.168.10.202", 1000+i, "tcp", 120), "FSA"),
+			withFlags(flow(ts, "192.168.10.202", 1000+i, "192.168.20.71", 50000+i, "tcp", 120), "FSA"),
+		)
+	}
+	// The printer opening a few connections of its own still counts, below the threshold.
+	evs = append(evs, withFlags(flow(ts, printer, 43220, master, 5357, "tcp", 60), "S"))
+	h.insert(evs...)
+	got := map[string]Finding{}
+	for _, x := range h.run("internal_scan") {
+		got[x.Source.IP] = x
+	}
+	if len(got) != 2 {
+		for _, x := range got {
+			t.Errorf("finding: %s", x.Description)
+		}
+		t.FailNow()
+	}
+	for _, src := range []string{"192.168.20.70", "192.168.20.71"} {
+		if x, ok := got[src]; !ok || x.Data["ports"] != float64(40) || !strings.Contains(x.Title, "Port scan") {
+			t.Errorf("%s: %+v", src, x)
+		}
+	}
+}
+
 func TestRogueDHCP(t *testing.T) {
 	h := newHarness(t)
 	ts := func() time.Time { return h.now.Add(-time.Minute) }
