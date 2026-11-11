@@ -67,6 +67,11 @@ func (s *authSensor) Run(ctx context.Context, out platform.Emitter) error {
 			files = append(files, f)
 		}
 	}
+	if fi, err := os.Stat("/var/log/syslog"); err == nil && fi.Size() > 0 && !anyNonEmpty(files) {
+		// Unraid and some minimal systems log sshd, sudo and su to syslog only (Unraid
+		// keeps an empty /var/log/secure). parseAuth ignores the other programs' lines.
+		files = append(files, "/var/log/syslog")
+	}
 	if len(files) == 0 {
 		return errors.New("no auth log source: journald is not running and neither /var/log/auth.log nor /var/log/secure exists")
 	}
@@ -87,6 +92,7 @@ func (s *authSensor) Run(ctx context.Context, out platform.Emitter) error {
 			ts = time.Now()
 		}
 		if e := parseAuth(authMsg{App: p.App, PID: p.PID, Msg: p.Message, Time: ts.UTC()}); e != nil {
+			noteSSHLogin(e)
 			out.Emit(e)
 		}
 	})
@@ -197,6 +203,7 @@ func (s *authSensor) follow(ctx context.Context, journalctl string, args []strin
 		}
 		cursor = c
 		if e := parseAuth(m); e != nil {
+			noteSSHLogin(e)
 			out.Emit(e)
 		}
 		if time.Since(lastSave) > 5*time.Second {
@@ -212,4 +219,13 @@ func (s *authSensor) follow(ctx context.Context, journalctl string, args []strin
 		return fmt.Errorf("journalctl: %w", werr)
 	}
 	return errors.New("journalctl stopped")
+}
+
+func anyNonEmpty(files []string) bool {
+	for _, f := range files {
+		if fi, err := os.Stat(f); err == nil && fi.Size() > 0 {
+			return true
+		}
+	}
+	return false
 }

@@ -3,6 +3,7 @@
 import type { BehaviorSettingsUpdate, DetectorSettings, DetectorStatus, Device, DevicePatch, DeviceList, NetworkSettings } from '../api/network'
 import type { NetFlowStats, Role } from '../api/types'
 import { adguardRoutes } from './adguard'
+import { maintenanceRoutes } from './maintenance'
 import { antivirusRoutes } from './antivirus'
 import { backupRoutes, retentionRoutes } from './retention'
 
@@ -216,6 +217,7 @@ type Route = (method: string, path: string, handler: (c: Ctx) => unknown, opts?:
 /** Registers this feature's routes on the mock server. */
 export function networkRoutes(route: Route, fail: (status: number, message: string) => never) {
   adguardRoutes(route, fail)
+  maintenanceRoutes(route, fail)
   antivirusRoutes(route, fail)
   retentionRoutes(route, fail)
   backupRoutes(route, fail)

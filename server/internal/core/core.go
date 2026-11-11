@@ -49,6 +49,8 @@ type Core struct {
 	Enrich enrich.Lookup
 	// Suppress decides whether a hit is suppressed (suppressions.go).
 	Suppress *Suppressor
+	// Maint labels maintenance work: SSH key sessions, container updates (maintenance.go).
+	Maint *maintTracker
 	// Notify tells the owner about new alerts and sends the daily digest.
 	Notify *notify.Service
 	// Flow counts NetFlow and IPFIX intake (flowstats.go).

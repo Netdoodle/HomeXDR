@@ -124,6 +124,7 @@ func New(c *core.Core) *Handler {
 	h.route("DELETE /api/settings/ai/mcp-tokens/{id}", admin, h.deleteMCPToken)
 
 	h.routesNoise(viewer, analyst, admin)
+	h.routesMaintenance(viewer, admin)
 	h.routesHealth(viewer, analyst, admin)
 	h.routesNetwork(viewer, analyst, admin)
 	h.routesAV(viewer, analyst, admin)

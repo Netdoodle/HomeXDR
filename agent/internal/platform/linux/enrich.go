@@ -105,8 +105,10 @@ type enricher struct {
 	module string
 	hashes *lru[fileKey, string]
 	procs  *lru[string, procSummary]
-	hashQ  chan hashJob
-	self   int64
+	// origins caches each process's lineage (lineage.go), by entity ID.
+	origins *lru[string, origin]
+	hashQ   chan hashJob
+	self    int64
 }
 
 type hashJob struct {
@@ -119,9 +121,10 @@ type hashJob struct {
 func newEnricher(env platform.Env, module string) *enricher {
 	return &enricher{
 		env: env, module: module,
-		hashes: newLRU[fileKey, string](4096),
-		procs:  newLRU[string, procSummary](16384),
-		self:   int64(os.Getpid()),
+		hashes:  newLRU[fileKey, string](4096),
+		procs:   newLRU[string, procSummary](16384),
+		origins: newLRU[string, origin](16384),
+		self:    int64(os.Getpid()),
 	}
 }
 
@@ -247,6 +250,7 @@ func (en *enricher) execEvent(pi *procInfo, ts time.Time) *event.Event {
 	if pi.ArgsTruncated {
 		ev.Tags = append(ev.Tags, "args_truncated")
 	}
+	en.labelLineage(ev, pi)
 	return ev
 }
 

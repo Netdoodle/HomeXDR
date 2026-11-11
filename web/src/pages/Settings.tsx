@@ -21,6 +21,7 @@ import { AgentLifecycleTab } from './AgentLifecycle'
 import { AIAnalystTab } from './AISettings'
 import { NotificationsTab } from './NotificationSettings'
 import { SuppressionsTab } from './Suppressions'
+import { MaintenanceTab } from './MaintenanceSettings'
 import { NetFlowPanel } from './NetFlowPanel'
 import { NetworkSettingsTab } from './NetworkSettings'
 import { OfflineListsTab } from './OfflineLists'
@@ -32,6 +33,7 @@ const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'agents', label: 'Agent updates', icon: 'refresh', admin: true },
   { id: 'integrations', label: 'Integrations', icon: 'network' },
   { id: 'suppressions', label: 'Suppressions', icon: 'filter' },
+  { id: 'maintenance', label: 'Maintenance', icon: 'key' },
   { id: 'notifications', label: 'Notifications', icon: 'info', admin: true },
   { id: 'network', label: 'Network', icon: 'hosts', admin: true },
   { id: 'ai', label: 'AI analyst', icon: 'sparkle', admin: true },
@@ -58,6 +60,7 @@ export function SettingsPage() {
       {tab === 'agents' ? <AgentLifecycleTab /> : null}
       {tab === 'integrations' ? <IntegrationsTab /> : null}
       {tab === 'suppressions' ? <SuppressionsTab /> : null}
+      {tab === 'maintenance' ? <MaintenanceTab /> : null}
       {tab === 'notifications' ? <NotificationsTab /> : null}
       {tab === 'network' ? <NetworkSettingsTab /> : null}
       {tab === 'ai' ? <AIAnalystTab /> : null}
