@@ -76,7 +76,8 @@ agents at the MagicDNS name; the spool covers the gaps.
 ## macOS agent, next steps
 
 - **Developer ID signing and notarization**, so Full Disk Access survives updates and an
-  MDM profile can grant it (today's ad-hoc signature ties the grant to one build).
+  MDM profile can grant it (on Apple silicon, today's ad-hoc signature ties the grant to
+  one build; unsigned Intel builds keep it).
 - **DNS sensor**: the shared DNS parser over a pf/BPF capture of port 53 (no process), or
   mDNSResponder's log.
 - **Login items and background tasks** in `persistence.autoruns` (`sfltool dumpbtm`).

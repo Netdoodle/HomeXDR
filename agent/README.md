@@ -90,10 +90,11 @@ Endpoint Security reports too), so polled and streamed events of one process joi
 the Apple-granted entitlement a custom client needs. It prints JSON that the agent decodes
 (`internal/platform/darwin/eslog.go`); the environment of executed processes is never
 recorded. Without Full Disk Access `eslogger` refuses to start and the sensors fall back,
-showing the reason in the host's sensor status. **The binary is ad-hoc signed, so macOS
-ties the Full Disk Access grant to that exact build: after an automatic update, grant it
-again** (or remove and re-add the entry). A Developer ID signature would keep the grant;
-see the roadmap.
+showing the reason in the host's sensor status. **On Apple silicon, grant Full Disk Access
+again after each automatic update:** arm64 binaries must be (ad-hoc) signed, and macOS ties
+the grant to that exact build. Intel builds are unsigned, so macOS keys the grant on the
+path and it survives updates (seen on macOS 15.7). A Developer ID signature would keep the
+grant on both; see the roadmap.
 
 Isolation loads pf rules (same allow list as Linux) into the anchor
 `com.apple/000.HomeXDR`, which the stock `/etc/pf.conf` evaluates through
@@ -382,8 +383,8 @@ restarting without reaching the server (more than three starts), the agent puts 
 previous binary back and skips that version for a day. `homexdr-agent status` shows
 whether automatic updates are on and whether an update is waiting for confirmation.
 Details: [docs/protocol.md](../docs/protocol.md#agent-updates). Windows agents do not
-update themselves yet. On macOS, grant Full Disk Access again after an update (see
-[macOS platform](#macos-platform)).
+update themselves yet. On Apple silicon Macs, grant Full Disk Access again after an
+update (see [macOS platform](#macos-platform)).
 
 ## Uninstall
 
