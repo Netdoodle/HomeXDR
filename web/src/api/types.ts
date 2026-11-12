@@ -68,6 +68,8 @@ export interface Host {
   last_seen?: string
   enrolled_at: string
   labels: string[]
+  /** host group (Settings → Groups); "" or missing: the organisation itself */
+  group_id?: string
   sensors?: HostSensor[]
   queue_events?: number
   allowed_actions?: string[]
@@ -524,6 +526,17 @@ export interface AlertNote {
   at: string
 }
 
+export interface AlertLink {
+  rule_id: string
+  title: string
+  source?: string
+  severity: Severity
+  first_seen: string
+  last_seen: string
+  count: number
+  event_id?: string
+}
+
 export interface Alert {
   id: string
   created_at: string
@@ -555,6 +568,9 @@ export interface Alert {
   event?: Event
   events?: Event[]
   notes: AlertNote[]
+  /** other detectors' hits about the same thing folded into this alert (Defender and HomeXDR's antivirus on one file) */
+  linked?: AlertLink[]
+  link_key?: string
   /** the AI analyst's investigation, when there is one */
   ai_triage?: AITriageSummary
   /** the suppression that closed this alert or, when overridden, matched but had to keep it */

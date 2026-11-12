@@ -113,6 +113,9 @@ agents at the MagicDNS name; the spool covers the gaps.
 
 ## Done
 
+- Host groups (organisation › parent › child) with per-group ClamAV and YARA switches:
+  [groups.md](groups.md); Defender and HomeXDR detections of one file share one alert:
+  [antivirus.md](antivirus.md#microsoft-defender-and-homexdr-on-the-same-file)
 - YARA scanning next to ClamAV: YARA Forge core rules updated daily, your own rules,
   hacking-tool and suspicious matches alert only: [antivirus.md](antivirus.md#yara-rules)
 - macOS agent (Intel and Apple silicon): eslogger process, auth, file and security events

@@ -132,3 +132,56 @@ func TestJudgeWithYara(t *testing.T) {
 		t.Errorf("status yara = %+v", v.Yara)
 	}
 }
+
+// Per-group scanner switches: a host only hears about detections from its own scanners,
+// and a clean verdict from fewer scanners than a host wants is scanned again.
+func TestGroupScanners(t *testing.T) {
+	h := newHarness(t)
+	h.s.d.Yara = fakeYara(t)
+	h.s.d.Scanners = func(group string) Scanners {
+		switch group {
+		case "clam-only":
+			return Scanners{ClamAV: true}
+		case "yara-only":
+			return Scanners{YARA: true}
+		case "none":
+			return Scanners{}
+		}
+		return Scanners{ClamAV: true, YARA: true}
+	}
+	ctx := context.Background()
+	cand := func(group, path string, c byte, pid int64) Candidate {
+		return Candidate{HostID: "h-" + group, Hostname: group, Platform: "windows", Path: path, SHA256: sha(c), PID: pid,
+			EntityID: group + string(c), GroupID: group}
+	}
+	h.files[`C:\a\mal.exe`] = "YARA-MAL"
+	h.files[`C:\a\fine.exe`] = "fine"
+
+	// Only a ClamAV-only host runs it: ClamAV finds nothing, YARA is not asked.
+	h.run(t, cand("clam-only", `C:\a\mal.exe`, 'a', 1))
+	if len(h.detected) != 0 {
+		t.Fatalf("clam-only host: %+v", h.detected)
+	}
+	if v, err := h.st.GetAVVerdict(ctx, sha('a')); err != nil || v.Source != "clamav" {
+		t.Fatalf("verdict %+v %v", v, err)
+	}
+	// A host that wants YARA too: the clean ClamAV-only verdict is not enough, so it is
+	// scanned again and YARA finds it.
+	h.fetched = nil
+	h.run(t, cand("all", `C:\a\mal.exe`, 'a', 2))
+	if len(h.fetched) != 1 || len(h.detected) != 1 || h.detected[0].Source != SourceYara {
+		t.Fatalf("all host: fetched %v detected %+v", h.fetched, h.detected)
+	}
+	// Seen again on the ClamAV-only host: the YARA verdict does not count there.
+	h.detected = nil
+	h.run(t, cand("clam-only", `C:\a\mal.exe`, 'a', 3), cand("yara-only", `C:\a\mal.exe`, 'a', 4))
+	if len(h.detected) != 1 || h.detected[0].GroupID != "yara-only" {
+		t.Fatalf("mixed hosts: %+v", h.detected)
+	}
+	// Both scanners off for the group: nothing is fetched.
+	h.fetched = nil
+	h.run(t, cand("none", `C:\a\fine.exe`, 'b', 5))
+	if len(h.fetched) != 0 {
+		t.Fatalf("fetched with scanners off: %v", h.fetched)
+	}
+}

@@ -175,6 +175,45 @@ function AlertView({ alert: a }: { alert: Alert }) {
 
           <AITriagePanel alertId={a.id} />
 
+          {a.linked?.length ? (
+            <section className="panel">
+              <div className="panel-header">
+                <h2>Also detected by</h2>
+                <span className="hint">Folded into this alert: same file on the same host</span>
+              </div>
+              <div className="panel-body">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Source</th>
+                      <th>Detection</th>
+                      <th>Severity</th>
+                      <th>Hits</th>
+                      <th>Last seen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {a.linked.map((l) => (
+                      <tr key={l.rule_id}>
+                        <td>{l.source ?? 'Rule'}</td>
+                        <td>
+                          {l.rule_id.includes(':') ? l.title : <Link to={`/rules/${encodeURIComponent(l.rule_id)}`}>{l.title}</Link>}
+                        </td>
+                        <td>
+                          <SeverityBadge severity={l.severity} />
+                        </td>
+                        <td>{l.count}</td>
+                        <td>
+                          <RelTime iso={l.last_seen} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
           <section className="panel">
             <div className="panel-header">
               <h2>Rule</h2>

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router'
 import { errorMessage } from '../api'
 import { avKeys, forgetAVVerdict, getAV, putAV, type AVSettings, type AVStatus } from '../api/antivirus'
 import { useCan } from '../components/Auth'
@@ -129,6 +130,19 @@ function Form({ settings }: { settings: AVSettings }) {
           <Toggle checked={s.scan_unknown} disabled={ro} onChange={(v) => set({ scan_unknown: v })} label="Scan unknown files" />
           <span>
             Upload programs nobody vouches for and scan them with ClamAV and YARA <span className="muted small">(on this server; the upload is deleted afterwards)</span>
+          </span>
+        </div>
+        <div className="row" style={{ gap: 24, alignItems: 'center', paddingLeft: 52, flexWrap: 'wrap' }}>
+          <span className="row" style={{ gap: 10, alignItems: 'center' }}>
+            <Toggle checked={s.use_clamav} disabled={ro || !s.scan_unknown} onChange={(v) => set({ use_clamav: v })} label="ClamAV" />
+            <span>ClamAV</span>
+          </span>
+          <span className="row" style={{ gap: 10, alignItems: 'center' }}>
+            <Toggle checked={s.use_yara} disabled={ro || !s.scan_unknown} onChange={(v) => set({ use_yara: v })} label="YARA" />
+            <span>YARA</span>
+          </span>
+          <span className="help" style={{ margin: 0 }}>
+            For every host, unless its group says otherwise (<Link to="/settings/groups">Settings → Groups</Link>).
           </span>
         </div>
         <label className="field" style={{ maxWidth: 260 }}>

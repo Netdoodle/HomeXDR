@@ -9,6 +9,7 @@ import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
 import { InvestigateMenu } from '../components/InvestigateMenu'
 import { CopyIcon, KV, LabelEditor, LinkTabs, RelTime } from '../components/Misc'
+import { HostGroupPicker } from './GroupsSettings'
 import { ConfirmDialog } from '../components/Modal'
 import { EmptyState, ErrorState, Loading, QueryView, Spinner } from '../components/States'
 import { TimeRangePicker } from '../components/TimeRangePicker'
@@ -152,6 +153,17 @@ function Overview({ host: h }: { host: Host }) {
             />
           </div>
         </section>
+        {h.kind === 'endpoint' ? (
+          <section className="panel">
+            <div className="panel-header">
+              <h2>Group</h2>
+              <span className="hint">Settings for this host come from its group</span>
+            </div>
+            <div className="panel-body">
+              <HostGroupPicker hostId={h.id} groupId={h.group_id} />
+            </div>
+          </section>
+        ) : null}
         <section className="panel">
           <div className="panel-header">
             <h2>Labels</h2>

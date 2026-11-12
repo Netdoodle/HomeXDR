@@ -8,6 +8,9 @@ export interface AVSettings {
   enabled: boolean
   action: AVAction
   scan_unknown: boolean
+  /** global scanner switches; Settings → Groups can override them per group */
+  use_clamav: boolean
+  use_yara: boolean
   use_intel: boolean
   max_file_mb: number
   blocked_hashes: string[] | null

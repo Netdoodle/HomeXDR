@@ -211,6 +211,9 @@ func (s *Store) migrate(ctx context.Context) error {
 			}
 		}
 	}
+	if _, err := s.db.ExecContext(ctx, postMigrate); err != nil {
+		return fmt.Errorf("store: migrate: %w", err)
+	}
 	return nil
 }
 
@@ -230,7 +233,18 @@ var columnMigrations = []struct{ table, column, def string }{
 	{"hosts", "update_now_at", `TEXT`},
 	{"hosts", "update_offered", `TEXT NOT NULL DEFAULT ''`},
 	{"hosts", "update_offered_at", `TEXT`},
+	// Alerts from different detectors about one thing (link_key) fold together.
+	{"alerts", "link_key", `TEXT NOT NULL DEFAULT ''`},
+	{"alerts", "linked", `TEXT NOT NULL DEFAULT '[]'`},
+	// Host groups.
+	{"hosts", "group_id", `TEXT NOT NULL DEFAULT ''`},
 }
+
+// postMigrate runs after the column migrations (indexes on added columns).
+const postMigrate = `
+CREATE INDEX IF NOT EXISTS alerts_link ON alerts(link_key, status);
+CREATE INDEX IF NOT EXISTS hosts_group ON hosts(group_id);
+`
 
 // tsLayout is fixed-width so timestamps sort lexically.
 const tsLayout = "2006-01-02T15:04:05.000000Z"

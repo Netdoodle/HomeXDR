@@ -17,6 +17,7 @@ import { formatDateTime, formatTimestamp } from '../lib/time'
 import { AgentConfigEditor } from './AgentConfigEditor'
 import { ThreatIntelTab } from './ThreatIntelSettings'
 import { AntivirusTab } from './AntivirusSettings'
+import { GroupsTab } from './GroupsSettings'
 import { AgentLifecycleTab } from './AgentLifecycle'
 import { AIAnalystTab } from './AISettings'
 import { NotificationsTab } from './NotificationSettings'
@@ -30,6 +31,7 @@ const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'tokens', label: 'Enrollment', icon: 'key', admin: true },
   { id: 'users', label: 'Users', icon: 'user', admin: true },
   { id: 'agent-config', label: 'Agent config', icon: 'settings' },
+  { id: 'groups', label: 'Groups', icon: 'hosts' },
   { id: 'agents', label: 'Agent updates', icon: 'refresh', admin: true },
   { id: 'integrations', label: 'Integrations', icon: 'network' },
   { id: 'suppressions', label: 'Suppressions', icon: 'filter' },
@@ -57,6 +59,7 @@ export function SettingsPage() {
       {tab === 'tokens' ? <TokensTab /> : null}
       {tab === 'users' ? <UsersTab /> : null}
       {tab === 'agent-config' ? <AgentConfigEditor /> : null}
+      {tab === 'groups' ? <GroupsTab /> : null}
       {tab === 'agents' ? <AgentLifecycleTab /> : null}
       {tab === 'integrations' ? <IntegrationsTab /> : null}
       {tab === 'suppressions' ? <SuppressionsTab /> : null}

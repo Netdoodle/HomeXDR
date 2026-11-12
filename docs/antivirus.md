@@ -30,6 +30,26 @@ Windows from Sysmon or computed by the agent, on Linux computed by the agent whe
    yet. The upload is deleted after the scan. If either scanner fails, no verdict is
    stored and the file is tried again the next time it runs.
 
+### Scanner switches
+
+Settings → Antivirus turns ClamAV and YARA on or off for every host; host groups can
+override either for their hosts (Settings → Groups, [groups.md](groups.md)). A detection
+by a scanner that is off for a host's group raises nothing on that host, and a file found
+clean without a scanner a host's group wants is scanned again when that host runs it.
+
+## Microsoft Defender and HomeXDR on the same file
+
+When Defender and HomeXDR's antivirus both detect one file on one host, they share one
+alert instead of two. Defender's detection events (1006, 1007, 1008, 1015, 1116 to 1119,
+through the eventlog sensor) and HomeXDR's detection both carry a link key, the host and
+the file path (case-insensitive on Windows; for a file inside an archive, the archive).
+Whichever comes second folds into the open alert of the first: the alert lists it under
+**Also detected by** with its rule, source and hit count, its events join the alert's,
+and the alert takes the higher severity of the two. Defender's later events about the same
+file (the action it took, 1117) fold in the same way, and detections of different files on
+one host stay separate alerts. A closed alert no longer absorbs anything: a later detection
+opens a new one.
+
 ## YARA rules
 
 The scanner (`homexdr-yara`, its own container) downloads the [YARA Forge](https://yarahq.github.io/)
@@ -134,5 +154,5 @@ Custom signatures go in ClamAV's database directory as `*.hsb` files (one
 | Method | Path | Role | |
 |---|---|---|---|
 | GET | `/api/antivirus` | viewer | Settings, ClamAV and YARA status, verdict counts, recent detections |
-| PUT | `/api/settings/antivirus` | admin | Settings: `enabled`, `action` (`quarantine` or `alert`), `scan_unknown`, `use_intel`, `max_file_mb`, `blocked_hashes`, `allowed_hashes` |
+| PUT | `/api/settings/antivirus` | admin | Settings: `enabled`, `action` (`quarantine` or `alert`), `scan_unknown`, `use_clamav`, `use_yara`, `use_intel`, `max_file_mb`, `blocked_hashes`, `allowed_hashes` |
 | DELETE | `/api/antivirus/verdicts/{sha256}` | analyst | Forget a verdict |
