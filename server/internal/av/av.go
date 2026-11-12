@@ -342,15 +342,17 @@ func (s *Service) Run(ctx context.Context) {
 // process decides one hash and then handles every candidate that waited for it.
 func (s *Service) process(ctx context.Context, hash string) {
 	s.mu.Lock()
-	first := s.waiting[hash][0]
+	waiting := append([]Candidate(nil), s.waiting[hash]...)
 	set := s.set
+	s.mu.Unlock()
+	first := waiting[0]
 	// Scan with every scanner any waiting host's group wants; each host then only hears
-	// about detections from its own scanners.
+	// about detections from its own scanners. Resolved without s.mu held: the resolver
+	// (Deps.Scanners) reads Settings, which takes s.mu.
 	var want Scanners
-	for _, c := range s.waiting[hash] {
+	for _, c := range waiting {
 		want = want.or(s.scannersFor(c, set))
 	}
-	s.mu.Unlock()
 	det, err := s.judge(ctx, first, want)
 	if err != nil && ctx.Err() == nil {
 		s.mu.Lock()
