@@ -2735,61 +2735,6 @@ main h2 {
 }
 
 /* Threat map: executive tiles, trend lines and the attack origins map. */
-.exec-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 10px;
-}
-.exec-tile {
-  border-radius: var(--radius);
-  overflow: hidden;
-  border: 1px solid var(--border);
-  background: var(--surface-1);
-}
-.exec-label {
-  padding: 9px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-}
-.exec-body {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  padding: 16px 18px 18px;
-  min-height: 92px;
-  color: #fff;
-}
-.exec-body.good {
-  background: #2f8f4e;
-}
-.exec-body.bad {
-  background: #b9384b;
-}
-.exec-body.info {
-  background: #1f6fa8;
-}
-.exec-value {
-  font-size: 46px;
-  font-weight: 800;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
-.exec-trend {
-  font-size: 17px;
-  font-weight: 700;
-  opacity: 0.95;
-}
-.exec-trend.worse {
-  color: #ffd6d6;
-}
-.exec-sub {
-  flex-basis: 100%;
-  font-size: 12px;
-  opacity: 0.85;
-}
 .line-chart svg {
   display: block;
 }
