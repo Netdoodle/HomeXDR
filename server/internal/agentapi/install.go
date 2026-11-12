@@ -5,12 +5,12 @@ import (
 	"strings"
 )
 
-// linuxInstall installs the agent on Linux. It verifies the server's CA against the pin
+// unixInstall installs the agent on Linux and macOS (served as linux.sh and macos.sh). It verifies the server's CA against the pin
 // before downloading anything else, so the binary is fetched over a verified TLS
 // connection. Fetching this script itself with `curl -k` is the one unverified step; to
 // avoid it, download the script once and review it, or copy the agent binary manually.
-const linuxInstall = `#!/bin/sh
-# HomeXDR agent installer for Linux.
+const unixInstall = `#!/bin/sh
+# HomeXDR agent installer for Linux and macOS.
 #   sh install.sh --token <enrollment token> --ca-pin sha256:<hex> [--labels a,b]
 #                 [--update-key ed25519:<base64>]   enable signed automatic updates
 set -eu
@@ -35,38 +35,55 @@ done
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo sh install.sh ...)"
 command -v curl >/dev/null || die "curl is required"
 command -v openssl >/dev/null || die "openssl is required to verify the server certificate"
-command -v sha256sum >/dev/null || die "sha256sum is required"
+case "$(uname -s)" in
+  Linux) OS=linux ;;
+  Darwin) OS=darwin ;;
+  *) die "unsupported OS $(uname -s)" ;;
+esac
+if command -v sha256sum >/dev/null; then SHA="sha256sum"
+elif command -v shasum >/dev/null; then SHA="shasum -a 256"
+else die "sha256sum or shasum is required"; fi
 case "$(uname -m)" in
   x86_64|amd64) ARCH=amd64 ;;
   aarch64|arm64) ARCH=arm64 ;;
   *) die "unsupported architecture $(uname -m)" ;;
 esac
-BIN="homexdr-agent-linux-$ARCH"
+if [ "$OS" = darwin ]; then
+  MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
+  [ "$MAJOR" -ge 13 ] 2>/dev/null || echo "homexdr: macOS $(sw_vers -productVersion) has no eslogger; the agent will poll instead (macOS 13 or later recommended)" >&2
+fi
+BIN="homexdr-agent-$OS-$ARCH"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 # 1. Fetch the CA and check it against the pin.
 curl -fsSLk "$SERVER/v1/ca.crt" -o "$TMP/ca.crt" || die "cannot reach $SERVER"
-GOT="sha256:$(openssl x509 -in "$TMP/ca.crt" -outform der | sha256sum | cut -d' ' -f1)"
+GOT="sha256:$(openssl x509 -in "$TMP/ca.crt" -outform der | $SHA | cut -d' ' -f1)"
 [ "$GOT" = "$PIN" ] || die "CA pin mismatch: server presented $GOT"
 
 # 2. Download the agent over verified TLS and check its checksum.
 curl -fsSL --cacert "$TMP/ca.crt" "$SERVER/v1/download/$BIN" -o "$TMP/$BIN" || die "download failed"
 curl -fsSL --cacert "$TMP/ca.crt" "$SERVER/v1/download/SHA256SUMS" -o "$TMP/SHA256SUMS" || die "checksum download failed"
-(cd "$TMP" && grep " $BIN\$" SHA256SUMS | sha256sum -c - >/dev/null) || die "checksum mismatch"
+(cd "$TMP" && grep " $BIN\$" SHA256SUMS | $SHA -c - >/dev/null) || die "checksum mismatch"
 
 # 3. Install, enroll and start the service.
+mkdir -p /usr/local/bin
 install -m 0755 "$TMP/$BIN" /usr/local/bin/homexdr-agent
 set -- install --server "$SERVER" --token "$TOKEN" --ca-pin "$PIN"
 [ -n "$LABELS" ] && set -- "$@" --labels "$LABELS"
 [ -n "$UPDATE_KEY" ] && set -- "$@" --update-key "$UPDATE_KEY"
 /usr/local/bin/homexdr-agent "$@"
 echo "homexdr: agent installed and enrolled"
+if [ "$OS" = darwin ]; then
+  echo "homexdr: now give /usr/local/bin/homexdr-agent Full Disk Access (System Settings > Privacy & Security >"
+  echo "homexdr: Full Disk Access, +, then Cmd-Shift-G to type the path) and restart it with:"
+  echo "homexdr:   sudo launchctl kickstart -k system/com.homexdr.agent"
+fi
 `
 
 func (h *Handler) installScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
-	_, _ = w.Write([]byte(strings.Replace(linuxInstall, "__SERVER__", shellSafe(h.c.Cfg.AgentURL), 1)))
+	_, _ = w.Write([]byte(strings.Replace(unixInstall, "__SERVER__", shellSafe(h.c.Cfg.AgentURL), 1)))
 }
 
 func (h *Handler) caCert(w http.ResponseWriter, r *http.Request) {

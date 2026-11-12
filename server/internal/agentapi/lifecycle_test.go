@@ -283,3 +283,21 @@ func TestHeartbeatOffersArchivedRelease(t *testing.T) {
 		t.Fatalf("archived release does not verify: %v", err)
 	}
 }
+
+func TestInstallScripts(t *testing.T) {
+	l := newLifecycle(t)
+	anon := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: l.roots}}}
+	for _, p := range []string{"/v1/install/linux.sh", "/v1/install/macos.sh"} {
+		resp, err := anon.Get(l.srv.URL + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		s := string(b)
+		if resp.StatusCode != 200 || !strings.HasPrefix(s, "#!/bin/sh") || strings.Contains(s, "__SERVER__") ||
+			!strings.Contains(s, `Darwin) OS=darwin`) || !strings.Contains(s, `BIN="homexdr-agent-$OS-$ARCH"`) {
+			t.Fatalf("%s: %d\n%s", p, resp.StatusCode, s)
+		}
+	}
+}

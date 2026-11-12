@@ -1,0 +1,25 @@
+title: User Added To The Admin Group On macOS
+id: e660c0aa-8721-40df-84e5-80f997289903
+status: experimental
+description: |
+  An account was made an administrator. Attackers add themselves, or a new account, to
+  the admin group to keep root through sudo.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1098/
+tags:
+  - attack.persistence
+  - attack.privilege-escalation
+  - attack.t1098
+logsource:
+  product: macos
+  category: iam
+detection:
+  selection:
+    event.action: 'group_member_added'
+    group: 'admin'
+  condition: selection
+falsepositives:
+  - You making an account an administrator
+level: high

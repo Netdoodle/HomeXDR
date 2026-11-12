@@ -5,12 +5,12 @@ package linux
 import (
 	"bytes"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Netdoodle/homexdr/agent/internal/authparse"
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
@@ -199,8 +199,6 @@ var sshLogFiles = []string{"/var/log/auth.log", "/var/log/secure", "/var/log/sys
 
 const sshLogTail = 512 << 10
 
-var reSSHKeyTail = regexp.MustCompile(`ssh2: (\S+) (SHA256:[A-Za-z0-9+/=]+)`)
-
 func scanLoginInLogs(pid int64) (key string, found bool) {
 	needle := []byte("[" + strconv.FormatInt(pid, 10) + "]: Accepted ")
 	for _, f := range sshLogFiles {
@@ -220,7 +218,7 @@ func scanLoginInLogs(pid int64) (key string, found bool) {
 			if !strings.Contains(line, "sshd") {
 				continue
 			}
-			if g := reSSHKeyTail.FindStringSubmatch(line); g != nil {
+			if g := authparse.SSHKeyTail.FindStringSubmatch(line); g != nil {
 				return g[2], true
 			}
 			return "", true

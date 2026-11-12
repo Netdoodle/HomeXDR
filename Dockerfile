@@ -28,7 +28,7 @@ RUN V=github.com/Netdoodle/homexdr/shared/version && \
     LDFLAGS="-s -w -X $V.Version=${VERSION} -X $V.Commit=${COMMIT} -X $V.CommitTime=${COMMIT_TIME}" && \
     cd /src/server && go build -trimpath -ldflags "$LDFLAGS" -o /out/homexdr-server ./cmd/homexdr-server && \
     mkdir -p /out/downloads /out/data && cd /src/agent && \
-    for target in linux/amd64 linux/arm64 windows/amd64; do \
+    for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do \
       os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe; \
       GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$LDFLAGS" \
         -o /out/downloads/homexdr-agent-$os-$arch$ext ./cmd/homexdr-agent || exit 1; \

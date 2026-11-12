@@ -68,17 +68,19 @@ describe('install commands', () => {
     ])
   })
 
-  it('builds the documented Linux and Windows commands', () => {
+  it('builds the documented Linux, macOS and Windows commands', () => {
     const c = buildInstallCommands('https://homexdr.lan:8443', 'hxe_abc123', 'sha256:00ff')
     expect(c.linux).toBe('curl -fsSLk https://homexdr.lan:8443/v1/install/linux.sh | sudo sh -s -- --token hxe_abc123 --ca-pin sha256:00ff')
+    expect(c.macos).toBe('curl -fsSLk https://homexdr.lan:8443/v1/install/macos.sh | sudo sh -s -- --token hxe_abc123 --ca-pin sha256:00ff')
     expect(c.windows).toBe('homexdr-agent.exe install --server https://homexdr.lan:8443 --token hxe_abc123 --ca-pin sha256:00ff')
   })
 
-  it('adds the update key to the Linux command only', () => {
+  it('adds the update key to the Linux and macOS commands only', () => {
     const c = buildInstallCommands('https://homexdr.lan:8443', 'hxe_abc123', 'sha256:00ff', 'ed25519:AbC+/9=')
     expect(c.linux).toBe(
       'curl -fsSLk https://homexdr.lan:8443/v1/install/linux.sh | sudo sh -s -- --token hxe_abc123 --ca-pin sha256:00ff --update-key ed25519:AbC+/9=',
     )
+    expect(c.macos).toContain('--update-key ed25519:AbC+/9=')
     expect(c.windows).not.toContain('update-key')
   })
 

@@ -1,7 +1,8 @@
 # homexdr-agent
 
 The HomeXDR endpoint agent. It runs as a normal, visible system service
-(`homexdr-agent.service` on Linux, `HomeXDR Agent` on Windows), collects telemetry,
+(`homexdr-agent.service` on Linux, `HomeXDR Agent` on Windows, `com.homexdr.agent` on
+macOS), collects telemetry,
 runs read-only collectors, and performs a small fixed set of response actions that the
 host's owner triggers from their own console. It logs everything it does and uninstalls
 cleanly. See [`docs/architecture.md`](../docs/architecture.md) and
@@ -60,6 +61,51 @@ Isolation uses a dedicated nftables table `inet homexdr` (or `HOMEXDR-*` iptable
 when `nft` is missing) that allows loopback, the server's IPs and port, DNS to the
 configured resolvers, DHCP, IPv6 neighbour discovery and the allow lists, and drops
 everything else, including forwarded traffic. Release deletes the table.
+
+### macOS platform
+
+Intel and Apple silicon, built without cgo (`GOOS=darwin`). Full telemetry needs macOS 13
+or later and **Full Disk Access** for `/usr/local/bin/homexdr-agent` (System Settings ›
+Privacy & Security › Full Disk Access › +, then Cmd-Shift-G to type the path; restart the
+agent with `sudo launchctl kickstart -k system/com.homexdr.agent`).
+
+| Sensor | Primary | Fallback |
+|---|---|---|
+| process | Endpoint Security through Apple's `eslogger` (`exec` with argv, cwd, TTY and code signing; `exit` with status) | `sysctl kern.proc.all` polling every second (`sysctl`, misses shorter processes, no exit codes), reported as `degraded` |
+| network | `lsof -i` polling every 5 s (`lsof`): new TCP connections with PID, direction from the listening ports | |
+| file | `eslogger` `create`, `rename`, `unlink` and `close` after a write, with the process | none (FIM still runs) |
+| auth | `eslogger`: SSH and console logins/logouts, screen lock/unlock, Screen Sharing, Open Directory/Touch ID authentications; on 14+ also `sudo`, `su` and account and group changes | `log stream` for sshd and sudo messages (`unifiedlog`), parsed like the Linux auth log |
+| dns, library | not implemented on macOS yet (reported as unavailable) | |
+
+The process sensor's `eslogger` client also reports the low-volume security events
+macOS has no other sensor for: launch items added or removed (`launch_item_added`, with
+the plist and program; the usual persistence), XProtect detections and remediations
+(`malware_detected`), Gatekeeper overrides (15+), privacy permission (TCC) changes
+(15.4+) and configuration profiles (14+). Events a release does not have are left out
+(`eslogger --list-events`). The agent's own child processes (`lsof`, `launchctl`) are not
+reported. Process entity IDs use the start time in microseconds (`p_starttime`, which
+Endpoint Security reports too), so polled and streamed events of one process join.
+
+`eslogger` is Apple's own Endpoint Security client: it gives the agent ES events without
+the Apple-granted entitlement a custom client needs. It prints JSON that the agent decodes
+(`internal/platform/darwin/eslog.go`); the environment of executed processes is never
+recorded. Without Full Disk Access `eslogger` refuses to start and the sensors fall back,
+showing the reason in the host's sensor status. **The binary is ad-hoc signed, so macOS
+ties the Full Disk Access grant to that exact build: after an automatic update, grant it
+again** (or remove and re-add the entry). A Developer ID signature would keep the grant;
+see the roadmap.
+
+Isolation loads pf rules (same allow list as Linux) into the anchor
+`com.apple/000.HomeXDR`, which the stock `/etc/pf.conf` evaluates through
+`anchor "com.apple/*"`, so pf.conf is not edited. The agent enables pf with a reference
+token (`pfctl -E`, released on `host.release`), flushes existing states, and refuses to
+isolate if a customised pf.conf has no `com.apple/*` anchor. Kill checks the start time
+before signalling, as on Linux (macOS has no pidfd).
+
+The service is a launchd daemon (`/Library/LaunchDaemons/com.homexdr.agent.plist`,
+`KeepAlive`), logging to `/Library/Logs/HomeXDR/agent.log` with rotation through
+`/etc/newsyslog.d/homexdr.conf`. Config: `/Library/Application Support/HomeXDR/agent.json`;
+data: `/Library/Application Support/HomeXDR/data`.
 
 ### Windows platform
 
@@ -192,7 +238,11 @@ cd agent
 go build -o homexdr-agent ./cmd/homexdr-agent                       # current OS
 GOOS=linux GOARCH=arm64 go build -o homexdr-agent-linux-arm64 ./cmd/homexdr-agent
 GOOS=windows go build -o homexdr-agent.exe ./cmd/homexdr-agent
+GOOS=darwin GOARCH=arm64 go build -o homexdr-agent-darwin-arm64 ./cmd/homexdr-agent
 ```
+
+The Go linker ad-hoc signs darwin/arm64 binaries, which Apple silicon requires; Intel
+binaries run unsigned.
 
 Set the version with
 `-ldflags "-X github.com/Netdoodle/homexdr/shared/version.Version=v0.1.0"`.
@@ -226,7 +276,11 @@ sudo go test ./internal/platform/linux/                 # also runs the live eBP
 sudo HOMEXDR_NETNS_TEST=1 go test -run NFTRulesetInNetns ./internal/platform/linux/
 go test -fuzz FuzzParseDNS -fuzztime 1m ./internal/platform/linux/
 go test ./internal/platform/windows/                    # on Windows: Event Log parsing, process mapping and live Application log tests
+go test ./internal/platform/darwin/                     # on macOS: also the live process table, lsof, plist, collector and eslogger tests
 ```
+
+The macOS parsers and the eslogger event mapping are tested on every OS; CI runs the live
+tests on Apple silicon and Intel runners.
 
 The Windows live tests write records to the Application log as a normal user and check
 that a subscription receives them and that a saved bookmark resumes without duplicates or
@@ -254,7 +308,9 @@ homexdr-agent install --server https://xdr.example.lan:8443 \
 
 `install` enrolls (unless already enrolled), writes `/etc/systemd/system/homexdr-agent.service`
 (`Restart=always`) and runs `systemctl enable --now`. On Windows, run the same command
-from an elevated PowerShell.
+from an elevated PowerShell. On macOS the console's command runs the same script
+(`/v1/install/macos.sh`), which installs `/usr/local/bin/homexdr-agent` and loads the
+launchd job; then grant Full Disk Access (above).
 
 Add `--update-key ed25519:<base64>` (shown on the console's settings page once the server
 has a signed release) to let the agent update itself; see [Automatic updates](#automatic-updates).
@@ -276,8 +332,8 @@ homexdr-agent version
 
 ## Config file and local policy
 
-`/etc/homexdr/agent.json` (Linux) or `%ProgramData%\HomeXDR\agent.json` (Windows),
-mode 0600:
+`/etc/homexdr/agent.json` (Linux), `/Library/Application Support/HomeXDR/agent.json`
+(macOS) or `%ProgramData%\HomeXDR\agent.json` (Windows), mode 0600:
 
 ```json
 {
@@ -326,7 +382,8 @@ restarting without reaching the server (more than three starts), the agent puts 
 previous binary back and skips that version for a day. `homexdr-agent status` shows
 whether automatic updates are on and whether an update is waiting for confirmation.
 Details: [docs/protocol.md](../docs/protocol.md#agent-updates). Windows agents do not
-update themselves yet.
+update themselves yet. On macOS, grant Full Disk Access again after an update (see
+[macOS platform](#macos-platform)).
 
 ## Uninstall
 
