@@ -1,16 +1,18 @@
 // Threat map: who on the internet is trying to reach the firewall, from where, and at which ports.
 
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { getInbound, inboundKeys, type InboundCountry, type InboundSource, type InboundView } from '../api/inbound'
-import { BarList, ColumnChart } from '../components/Charts'
+import { AttackMap } from '../components/AttackMap'
+import { BarList, niceMax, useWidth } from '../components/Charts'
 import { PageHeader } from '../components/Layout'
 import { CopyIcon, RelTime } from '../components/Misc'
 import { EmptyState, ErrorState, Loading } from '../components/States'
-import { countryName, COUNTRY_CENTROIDS } from '../lib/countryCentroids'
+import { countryName } from '../lib/countryCentroids'
 import { formatCount, formatNumber } from '../lib/format'
-import { flagEmoji, investigateHref, worldDotsPath, worldPoint } from '../lib/intel'
+import { flagEmoji, investigateHref } from '../lib/intel'
+import { formatDateTime } from '../lib/time'
 
 const RANGES = [
   { hours: 1, label: '1 hour' },
@@ -74,32 +76,47 @@ function ThreatMapBody({ v }: { v: InboundView }) {
           Countries and networks need the offline IP network list. Turn it on under <Link to="/settings/lists">Settings → Offline lists</Link>.
         </div>
       ) : null}
-      <div className="stats">
-        <div className="stat">
-          <span className="label">Attempts</span>
-          <span className="value">{formatCount(v.attempts)}</span>
-          <span className="sub">{formatNumber(Math.round(v.attempts / v.hours))} per hour</span>
-        </div>
-        <div className="stat">
-          <span className="label">Blocked</span>
-          <span className="value">{blockedPct}%</span>
-          <span className="sub">{formatNumber(v.blocked)} connections</span>
-        </div>
-        <div className="stat">
-          <span className="label">Sources</span>
-          <span className="value">{formatNumber(v.sources)}</span>
-          <span className="sub">unique internet addresses</span>
-        </div>
-        <div className="stat">
-          <span className="label">Countries</span>
-          <span className="value">{formatNumber(v.countries.filter((c) => c.code).length)}</span>
-          <span className="sub">{v.countries[0]?.code ? `most from ${countryName(v.countries[0].code)}` : ' '}</span>
-        </div>
+      <div className="exec-tiles">
+        <ExecTile label={`Attacks blocked (${rangeLabel(v.hours)})`} value={v.blocked} prev={v.prev_blocked} tone="good" downIsGood />
+        <ExecTile
+          label={`Let in from the internet (${rangeLabel(v.hours)})`}
+          value={v.allowed}
+          tone={v.allowed ? 'bad' : 'good'}
+          sub={v.allowed ? 'your exposed services' : 'nothing passed the firewall'}
+        />
+        <ExecTile label="Unique attackers" value={v.sources} prev={v.prev_sources} tone="info" downIsGood />
+        <ExecTile
+          label="Countries"
+          value={v.countries.filter((c) => c.code).length}
+          tone="info"
+          sub={v.countries[0]?.code ? `most from ${countryName(v.countries[0].code)}` : undefined}
+        />
+      </div>
+
+      <div className="grid grid-2" style={{ alignItems: 'start' }}>
+        <section className="panel">
+          <div className="panel-header">
+            <h2 className="grow">Attempts trend</h2>
+            <span className="small muted">{formatNumber(Math.round(v.attempts / v.hours))} per hour, {blockedPct}% blocked</span>
+          </div>
+          <div className="panel-body">
+            <LineChart points={v.timeline.map((p) => ({ t: p.t, value: p.blocked + p.allowed }))} unit="attempts" tone="attempts" spanSec={v.span_sec} />
+          </div>
+        </section>
+        <section className="panel">
+          <div className="panel-header">
+            <h2 className="grow">Attackers trend</h2>
+            <span className="small muted">unique internet addresses per {bucketLabel(v.span_sec)}</span>
+          </div>
+          <div className="panel-body">
+            <LineChart points={v.timeline.map((p) => ({ t: p.t, value: p.sources }))} unit="sources" tone="sources" spanSec={v.span_sec} />
+          </div>
+        </section>
       </div>
 
       <section className="panel">
         <div className="panel-header">
-          <h2 className="grow">Attempts by country</h2>
+          <h2 className="grow">Attack origins</h2>
           {country !== null ? (
             <button type="button" className="btn sm" onClick={() => setCountry(null)}>
               {flagEmoji(country)} {countryName(country)} ✕
@@ -116,25 +133,38 @@ function ThreatMapBody({ v }: { v: InboundView }) {
         </div>
         <div className="panel-body">
           {view === 'map' ? (
-            <AttackMap countries={v.countries} selected={country} onSelect={setCountry} />
+            <AttackMap
+              countries={v.countries}
+              selected={country}
+              onSelect={setCountry}
+              details={(code) => {
+                const top = v.top_sources.filter((s) => (s.country ?? '') === code).slice(0, 3)
+                return top.length ? (
+                  <div className="xsmall" style={{ marginTop: 6 }}>
+                    <div className="muted">Top sources</div>
+                    {top.map((s) => (
+                      <div key={s.ip} className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+                        <Link className="mono" to={investigateHref(s.ip)}>
+                          {s.ip}
+                        </Link>
+                        <span>{formatNumber(s.attempts)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null
+              }}
+            />
           ) : (
             <CountryTable countries={v.countries} total={v.attempts} onSelect={setCountry} />
           )}
           <p className="xsmall muted" style={{ margin: '6px 0 0' }}>
-            Bubble size is the number of attempts; red bubbles had connections let in. Click a country to filter the sources below.
+            Bubble size and shading follow the number of attempts; red-ringed bubbles had connections let in. Click a country for its numbers, scroll or use
+            the buttons to zoom, drag to move.
           </p>
         </div>
       </section>
 
       <div className="grid grid-2" style={{ alignItems: 'start' }}>
-        <section className="panel">
-          <div className="panel-header">
-            <h2>Attempts over time</h2>
-          </div>
-          <div className="panel-body">
-            <ColumnChart data={v.timeline.map((p) => ({ t: p.t, count: p.blocked + p.allowed }))} unit="attempts" />
-          </div>
-        </section>
         <section className="panel">
           <div className="panel-header">
             <h2>Top countries</h2>
@@ -219,29 +249,6 @@ function ThreatMapBody({ v }: { v: InboundView }) {
   )
 }
 
-function AttackMap({ countries, selected, onSelect }: { countries: InboundCountry[]; selected: string | null; onSelect: (c: string) => void }) {
-  const { path, width, height } = useMemo(worldDotsPath, [])
-  const placed = countries.filter((c) => COUNTRY_CENTROIDS[c.code])
-  const max = Math.max(1, ...placed.map((c) => c.attempts))
-  return (
-    <svg className="world-map threat-map" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Map of attempts by country">
-      <path className="land" d={path} />
-      {[...placed].reverse().map((c) => {
-        const [lat, lon] = COUNTRY_CENTROIDS[c.code]
-        const p = worldPoint(lat, lon)
-        const r = 0.9 + 6 * Math.sqrt(c.attempts / max)
-        const cls = ['bubble', c.allowed > 0 ? 'allowed' : '', selected === c.code ? 'selected' : ''].join(' ')
-        return (
-          <circle key={c.code} className={cls} cx={p.x} cy={p.y} r={r} onClick={() => onSelect(c.code)} tabIndex={0} role="button"
-            onKeyDown={(e) => (e.key === 'Enter' ? onSelect(c.code) : null)}>
-            <title>{`${countryName(c.code)}: ${formatNumber(c.attempts)} attempts from ${formatNumber(c.sources)} sources${c.allowed ? `, ${formatNumber(c.allowed)} let in` : ''}`}</title>
-          </circle>
-        )
-      })}
-    </svg>
-  )
-}
-
 function CountryTable({ countries, total, onSelect }: { countries: InboundCountry[]; total: number; onSelect: (c: string) => void }) {
   return (
     <div className="table-wrap">
@@ -314,4 +321,125 @@ function SourceTable({ rows, showAllowed }: { rows: InboundSource[]; showAllowed
       </table>
     </div>
   )
+}
+
+function rangeLabel(hours: number): string {
+  return RANGES.find((r) => r.hours === hours)?.label ?? `${hours} hours`
+}
+
+function bucketLabel(sec: number): string {
+  if (sec >= 86400) return 'day'
+  if (sec >= 3600) return sec === 3600 ? 'hour' : `${sec / 3600} hours`
+  return `${sec / 60} minutes`
+}
+
+function ExecTile({
+  label,
+  value,
+  prev,
+  tone,
+  sub,
+  downIsGood,
+}: {
+  label: string
+  value: number
+  prev?: number
+  tone: 'good' | 'bad' | 'info'
+  sub?: string
+  downIsGood?: boolean
+}) {
+  let trend: ReactNode = null
+  if (prev !== undefined && prev > 0) {
+    const pct = Math.round(((value - prev) / prev) * 100)
+    const up = pct > 0
+    trend = (
+      <span className={['exec-trend', pct === 0 ? '' : up === !downIsGood ? 'better' : 'worse'].join(' ')} title={`Previous period: ${formatNumber(prev)}`}>
+        <span aria-hidden="true">{pct === 0 ? '→' : up ? '↗' : '↘'}</span>
+        {pct > 0 ? '+' : ''}
+        {pct}%
+      </span>
+    )
+  }
+  return (
+    <div className="exec-tile">
+      <div className="exec-label">{label}</div>
+      <div className={`exec-body ${tone}`}>
+        <span className="exec-value">{formatNumber(value)}</span>
+        {trend}
+        {sub ? <span className="exec-sub">{sub}</span> : null}
+      </div>
+    </div>
+  )
+}
+
+function LineChart({ points, unit, tone, spanSec }: { points: { t: string; value: number }[]; unit: string; tone: 'attempts' | 'sources'; spanSec: number }) {
+  const [ref, width] = useWidth<HTMLDivElement>(500)
+  const [hover, setHover] = useState<number | null>(null)
+  const height = 180
+  const pad = { l: 40, r: 10, t: 14, b: 22 }
+  if (points.length === 0) return <EmptyState title="No data in this window" compact />
+  const max = niceMax(Math.max(1, ...points.map((p) => p.value)))
+  const w = width - pad.l - pad.r
+  const h = height - pad.t - pad.b
+  const x = (i: number) => pad.l + (points.length === 1 ? w / 2 : (i / (points.length - 1)) * w)
+  const y = (val: number) => pad.t + h - (val / max) * h
+  const line = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join('')
+  const area = `${line}L${x(points.length - 1).toFixed(1)} ${pad.t + h}L${x(0).toFixed(1)} ${pad.t + h}Z`
+  const peak = points.reduce((m, p, i) => (p.value > points[m].value ? i : m), 0)
+  const labelEvery = Math.max(1, Math.ceil(points.length / Math.max(2, Math.floor(w / 90))))
+  return (
+    <div ref={ref} className={`line-chart ${tone}`} style={{ position: 'relative' }}>
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${unit} over time`}
+        onMouseLeave={() => setHover(null)}
+        onMouseMove={(e) => {
+          const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
+          const i = Math.round(((e.clientX - r.left - pad.l) / w) * (points.length - 1))
+          setHover(i >= 0 && i < points.length ? i : null)
+        }}
+      >
+        {[0, max / 2, max].map((t) => (
+          <g key={t} className="axis">
+            <line className="gridline" x1={pad.l} x2={width - pad.r} y1={y(t)} y2={y(t)} />
+            <text x={pad.l - 6} y={y(t) + 3.5} textAnchor="end">
+              {formatCount(t)}
+            </text>
+          </g>
+        ))}
+        {points.map((p, i) =>
+          i % labelEvery === 0 ? (
+            <text key={i} className="axis-x" x={x(i)} y={height - 6} textAnchor="middle">
+              {axisLabel(p.t, spanSec)}
+            </text>
+          ) : null,
+        )}
+        <path className="area" d={area} />
+        <path className="line" d={line} />
+        <text className="peak" x={x(peak)} y={y(points[peak].value) - 6} textAnchor="middle">
+          {formatCount(points[peak].value)}
+        </text>
+        {hover !== null ? (
+          <>
+            <line className="cursor" x1={x(hover)} x2={x(hover)} y1={pad.t} y2={pad.t + h} />
+            <circle className="dot" cx={x(hover)} cy={y(points[hover].value)} r={3.5} />
+          </>
+        ) : null}
+      </svg>
+      {hover !== null ? (
+        <div className="chart-tooltip" style={{ left: Math.min(Math.max(x(hover), 60), width - 60), top: y(points[hover].value) }}>
+          <div className="muted">{formatDateTime(points[hover].t).slice(0, -3)}</div>
+          <strong>{formatNumber(points[hover].value)}</strong> {unit}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const two = (n: number) => String(n).padStart(2, '0')
+
+/** An x-axis label: the time of day for short buckets, the date for daily ones. */
+function axisLabel(iso: string, spanSec: number): string {
+  const d = new Date(iso)
+  if (spanSec >= 6 * 3600) return `${MONTHS[d.getMonth()]} ${d.getDate()}`
+  return `${two(d.getHours())}:${two(d.getMinutes())}`
 }

@@ -2733,3 +2733,195 @@ main h2 {
   stroke-width: 0.5;
   outline: none;
 }
+
+/* Threat map: executive tiles, trend lines and the attack origins map. */
+.exec-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+.exec-tile {
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+}
+.exec-label {
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.exec-body {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 16px 18px 18px;
+  min-height: 92px;
+  color: #fff;
+}
+.exec-body.good {
+  background: #2f8f4e;
+}
+.exec-body.bad {
+  background: #b9384b;
+}
+.exec-body.info {
+  background: #1f6fa8;
+}
+.exec-value {
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.exec-trend {
+  font-size: 17px;
+  font-weight: 700;
+  opacity: 0.95;
+}
+.exec-trend.worse {
+  color: #ffd6d6;
+}
+.exec-sub {
+  flex-basis: 100%;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.line-chart svg {
+  display: block;
+}
+.line-chart .gridline {
+  stroke: var(--border);
+}
+.line-chart text {
+  fill: var(--text-faint);
+  font-size: 10.5px;
+}
+.line-chart .line {
+  fill: none;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.line-chart .area {
+  opacity: 0.12;
+}
+.line-chart.attempts .line {
+  stroke: #e8875a;
+}
+.line-chart.attempts .area,
+.line-chart.attempts .dot {
+  fill: #e8875a;
+}
+.line-chart.sources .line {
+  stroke: #3fae7f;
+}
+.line-chart.sources .area,
+.line-chart.sources .dot {
+  fill: #3fae7f;
+}
+.line-chart text.peak {
+  fill: var(--text);
+  font-weight: 600;
+}
+.line-chart .cursor {
+  stroke: var(--text-faint);
+  stroke-dasharray: 3 3;
+}
+.attack-map {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  user-select: none;
+}
+.attack-map svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: grab;
+  touch-action: none;
+}
+.attack-map svg.zoomed:active {
+  cursor: grabbing;
+}
+.attack-map .ocean {
+  fill: #1b1e24;
+}
+.attack-map .country {
+  fill: #3a3f49;
+  stroke: #1b1e24;
+  cursor: pointer;
+}
+.attack-map .country.hit {
+  fill: color-mix(in srgb, #e5484d calc(var(--heat, 0) * 100%), #3a3f49);
+}
+.attack-map .country:hover,
+.attack-map .country.selected {
+  fill: #4a505c;
+}
+.attack-map .country.hit:hover,
+.attack-map .country.hit.selected {
+  fill: color-mix(in srgb, #e5484d calc(var(--heat, 0) * 100% + 15%), #4a505c);
+}
+.attack-map .bubble {
+  fill: #e5533f;
+  fill-opacity: 0.92;
+  stroke: #1b1e24;
+  cursor: pointer;
+}
+.attack-map .bubble.allowed {
+  stroke: #ffd166;
+}
+.attack-map .bubble:hover,
+.attack-map .bubble:focus-visible,
+.attack-map .bubble.selected {
+  fill: #ff6a55;
+  outline: none;
+}
+.map-zoom {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.map-zoom .btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+}
+.map-card {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 12px));
+  min-width: 220px;
+  padding: 10px 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  z-index: 5;
+}
+.map-card.below {
+  transform: translate(-50%, 14px);
+}
+.map-card-stats {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 3px 16px;
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.map-card-stats dt {
+  color: var(--text-muted);
+}
+.map-card-stats dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

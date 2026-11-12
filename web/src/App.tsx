@@ -1,11 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { isApiError, setUnauthorizedHandler } from './api'
 import { RequireAuth } from './components/Auth'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Layout } from './components/Layout'
 import { ThemeProvider } from './components/Theme'
+import { Loading } from './components/States'
+
+// The threat map carries the world's country outlines, so it loads only when opened.
+const ThreatMapPage = lazy(() => import('./pages/ThreatMap').then((m) => ({ default: m.ThreatMapPage })))
 import { ToastProvider } from './components/Toast'
 import { AlertDetailPage } from './pages/AlertDetail'
 import { AlertsPage } from './pages/Alerts'
@@ -22,7 +26,6 @@ import { ProcessTreePage } from './pages/ProcessTree'
 import { RuleDetailPage } from './pages/RuleDetail'
 import { RuleEditorPage } from './pages/RuleEditor'
 import { InvestigatePage } from './pages/Investigate'
-import { ThreatMapPage } from './pages/ThreatMap'
 import { RuleReposPage } from './pages/RuleRepos'
 import { RulesPage } from './pages/Rules'
 import { SearchPage } from './pages/Search'
@@ -86,7 +89,14 @@ export function App() {
                 <Route path="devices" element={<DevicesPage />} />
                 <Route path="search" element={<SearchPage />} />
                 <Route path="investigate" element={<InvestigatePage />} />
-                <Route path="threat-map" element={<ThreatMapPage />} />
+                <Route
+                  path="threat-map"
+                  element={
+                    <Suspense fallback={<Loading />}>
+                      <ThreatMapPage />
+                    </Suspense>
+                  }
+                />
                 <Route path="rules" element={<RulesPage />} />
                 <Route path="rules/new" element={<RuleEditorPage />} />
                 <Route path="rules/repositories" element={<RuleReposPage />} />

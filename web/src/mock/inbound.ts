@@ -49,7 +49,11 @@ function view(hours: number): InboundView {
       t: new Date(now - (buckets - i) * span * 1000).toISOString(),
       blocked: Math.round((attempts / buckets) * (0.7 + 0.6 * Math.abs(Math.sin(i / 3)))),
       allowed: 0,
+      sources: Math.round(60 + 40 * Math.abs(Math.cos(i / 4))),
     })),
+    prev_attempts: Math.round(attempts * 1.16),
+    prev_blocked: Math.round((attempts - 3) * 1.16),
+    prev_sources: Math.round(countries.reduce((n, c) => n + c.sources, 0) * 0.93),
   }
 }
 

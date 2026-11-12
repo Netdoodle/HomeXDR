@@ -48,7 +48,10 @@ export interface InboundView {
   allowed_sources: InboundSource[]
   networks: InboundNetwork[]
   ports: InboundPort[]
-  timeline: { t: string; blocked: number; allowed: number }[]
+  timeline: { t: string; blocked: number; allowed: number; sources: number }[]
+  prev_attempts: number
+  prev_blocked: number
+  prev_sources: number
   no_geo?: boolean
   truncated?: boolean
 }
