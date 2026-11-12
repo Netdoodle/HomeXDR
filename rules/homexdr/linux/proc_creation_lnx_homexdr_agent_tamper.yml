@@ -1,0 +1,28 @@
+title: HomeXDR Agent Stopped Or Removed On Linux
+id: 264c6125-ead5-40bb-8059-ee900c117c43
+status: experimental
+description: |
+  A command stopped, disabled, killed or uninstalled the HomeXDR agent. Intruders blind the
+  monitoring first. Watch for the host going quiet right after.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1562/001/
+tags:
+  - attack.defense-evasion
+  - attack.t1562.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re:
+      - '\b(?:pkill|killall)\b.*homexdr-agent'
+      - '\bsystemctl\s+(?:stop|disable|mask|kill)\b.*homexdr-agent'
+      - '\bplugin\s+remove\s+\S*homexdr-agent'
+      - 'homexdr-agent\s+uninstall\b'
+      - '\brm\s+-\S*r\S*\s+\S*homexdr-agent'
+  condition: selection
+falsepositives:
+  - You removing or restarting the agent by hand
+level: high

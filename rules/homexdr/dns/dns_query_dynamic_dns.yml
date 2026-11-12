@@ -1,0 +1,40 @@
+title: DNS Lookup Of A Dynamic DNS Name
+id: ae55da09-77f6-482c-9764-80c0007fcbcf
+status: experimental
+description: |
+  A device looked up a name at a free dynamic DNS service. Malware uses them for command and
+  control because names are free and change address at will. Add a filter for your own names.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1568/
+tags:
+  - attack.command-and-control
+  - attack.t1568
+logsource:
+  category: dns
+detection:
+  selection:
+    QueryName|endswith:
+      - '.duckdns.org'
+      - '.no-ip.org'
+      - '.no-ip.com'
+      - '.no-ip.biz'
+      - '.ddns.net'
+      - '.hopto.org'
+      - '.zapto.org'
+      - '.sytes.net'
+      - '.servebeer.com'
+      - '.serveftp.com'
+      - '.dynu.net'
+      - '.dynu.com'
+      - '.freedns.afraid.org'
+      - '.mooo.com'
+      - '.changeip.com'
+      - '.dyndns.org'
+      - '.dynv6.net'
+      - '.ydns.eu'
+  condition: selection
+falsepositives:
+  - Your own dynamic DNS names. Add them as a filter.
+level: low

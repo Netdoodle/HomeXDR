@@ -1,0 +1,22 @@
+title: OPNsense Web GUI Login
+id: 2b22bb51-4ec6-4b28-ba4f-b9bc56ace572
+status: experimental
+description: |
+  Someone logged in to the OPNsense web interface. Keeps a record of who administered the
+  firewall and from where. Needs the OPNsense audit log sent to HomeXDR.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1078/
+tags:
+  - attack.initial-access
+  - attack.t1078
+logsource:
+  service: audit
+detection:
+  selection:
+    Message|contains: 'Successful login for user'
+  condition: selection
+falsepositives:
+  - Your own logins
+level: low

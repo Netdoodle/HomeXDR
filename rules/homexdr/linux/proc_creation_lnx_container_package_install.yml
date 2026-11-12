@@ -1,0 +1,28 @@
+title: Package Installed Inside A Running Container
+id: f4c88d4f-327c-466f-9b05-f1ae6e868445
+status: experimental
+description: |
+  A package manager installed software inside a container after it started. Images ship with
+  their packages, so installing at runtime usually means someone is fetching tools. Installs
+  during a container's start-up minutes are left out (labels.maintenance: container-start).
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1105/
+tags:
+  - attack.command-and-control
+  - attack.t1105
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection_container:
+    container.id|exists: true
+  selection_install:
+    CommandLine|re: '(?:^|[\s/])(?:apk\s+add|apt(?:-get)?\s+(?:-\S+\s+)*install|yum\s+(?:-\S+\s+)*install|dnf\s+(?:-\S+\s+)*install|microdnf\s+install|pip3?\s+install|npm\s+(?:i|install)\s+(?:-\S+\s+)*-g|gem\s+install)\b'
+  filter_maintenance:
+    labels.maintenance|exists: true
+  condition: all of selection_* and not 1 of filter_*
+falsepositives:
+  - Containers that install add-ons on start (Docker mods) later than the start-up window
+level: medium

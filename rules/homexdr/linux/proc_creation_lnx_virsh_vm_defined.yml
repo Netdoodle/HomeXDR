@@ -1,0 +1,26 @@
+title: Virtual Machine Defined From The Command Line
+id: 90bdc3c5-2e78-4499-b25b-39524007aac7
+status: experimental
+description: |
+  A VM was defined, created or set to autostart with virsh or virt-install. A hidden VM is a
+  quiet place to run tools outside the host's monitoring. The Unraid web interface does not
+  use these commands.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1564/006/
+tags:
+  - attack.defense-evasion
+  - attack.t1564.006
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re:
+      - '\bvirsh\s+(?:-\S+\s+)*(?:define|create|autostart)\b'
+      - '\bvirt-install\b'
+  condition: selection
+falsepositives:
+  - VMs you create from the command line
+level: low

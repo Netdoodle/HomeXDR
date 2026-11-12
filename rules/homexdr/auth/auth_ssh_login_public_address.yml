@@ -17,7 +17,9 @@ logsource:
   category: authentication
 detection:
   selection:
-    event.action: 'ssh_login'
+    event.action:
+      - 'ssh_login'
+      - 'ssh-login'
     event.outcome: 'success'
   filter_private:
     SourceIp|cidr:

@@ -1,0 +1,31 @@
+title: SSH Server Configured To Allow Root Or Password Logins
+id: 4da25d73-90c5-4e32-b6f1-6bd4506c0c6d
+status: experimental
+description: |
+  A command set PermitRootLogin, PasswordAuthentication or PermitEmptyPasswords to yes in an
+  sshd configuration (on Unraid, /boot/config/ssh/sshd_config). Weakening SSH keeps a door
+  open after a break-in.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1098/
+  - https://attack.mitre.org/techniques/T1556/
+tags:
+  - attack.persistence
+  - attack.t1098
+  - attack.defense-evasion
+  - attack.t1556
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection_file:
+    CommandLine|contains: 'sshd_config'
+  selection_setting:
+    # The new value: after a quote, space or "=", or on the replacement side of a sed
+    # s/old/new/ (a "/" not right after the "s"), never the text being replaced.
+    CommandLine|re: '(?i)(?:^|[^s]/|[\s''"=])(?:PermitRootLogin|PasswordAuthentication|PermitEmptyPasswords)[\s=]+yes(?:[/''"\s]|$)'
+  condition: all of selection_*
+falsepositives:
+  - Deliberate SSH configuration changes
+level: medium

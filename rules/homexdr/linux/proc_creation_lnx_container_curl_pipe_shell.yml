@@ -1,0 +1,30 @@
+title: Download Piped To A Shell Inside A Container
+id: f2fdb6c7-172e-4841-90e1-6cb2ea70179b
+status: experimental
+description: |
+  A command inside a container downloaded something and piped it straight into a shell. In an
+  application container this is how a second stage arrives after an exploit.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1059/004/
+  - https://attack.mitre.org/techniques/T1105/
+tags:
+  - attack.execution
+  - attack.t1059.004
+  - attack.command-and-control
+  - attack.t1105
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection_container:
+    container.id|exists: true
+  selection_pipe:
+    CommandLine|re:
+      - '(?:curl|wget)\s[^|]*\|\s*(?:sudo\s+)?(?:/usr)?(?:/bin/)?(?:ba|da|z|a)?sh(?:\s|$)'
+      - '(?:ba|da|z|a)?sh\s+-c\s+["'']?\$\((?:curl|wget)\s'
+  condition: all of selection_*
+falsepositives:
+  - Install scripts run by hand inside a container you are building
+level: high

@@ -1,0 +1,23 @@
+title: OPNsense Configuration Changed
+id: 8d8210a6-9441-44e2-a2b2-05862a5463d4
+status: experimental
+description: |
+  A user changed the OPNsense configuration: firewall rules, NAT, users, or any other setting.
+  The audit line names the user, their address and the page. Needs the OPNsense audit log
+  sent to HomeXDR.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1562/004/
+tags:
+  - attack.defense-evasion
+  - attack.t1562.004
+logsource:
+  service: audit
+detection:
+  selection:
+    Message|contains: 'changed configuration to'
+  condition: selection
+falsepositives:
+  - Your own changes
+level: low
