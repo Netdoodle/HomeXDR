@@ -1,0 +1,36 @@
+title: SSH Login From A Public Address
+id: 50843b3d-bf03-4724-91ab-1536d24ad20c
+status: experimental
+description: |
+  A user logged in over SSH from an address outside the private and Tailscale ranges. In a
+  homelab, SSH from the internet usually means a forwarded port or a compromised account.
+author: HomeXDR
+date: 2026-11-11
+references:
+  - https://attack.mitre.org/techniques/T1021/004/
+tags:
+  - attack.lateral-movement
+  - attack.t1021.004
+  - attack.initial-access
+  - attack.t1078
+logsource:
+  category: authentication
+detection:
+  selection:
+    event.action: 'ssh_login'
+    event.outcome: 'success'
+  filter_private:
+    SourceIp|cidr:
+      - '10.0.0.0/8'
+      - '172.16.0.0/12'
+      - '192.168.0.0/16'
+      - '127.0.0.0/8'
+      - '100.64.0.0/10'
+      - '169.254.0.0/16'
+      - '::1/128'
+      - 'fc00::/7'
+      - 'fe80::/10'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - SSH you deliberately expose, or a VPN range other than Tailscale's
+level: high

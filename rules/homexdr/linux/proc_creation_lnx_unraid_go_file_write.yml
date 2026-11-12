@@ -1,0 +1,24 @@
+title: Unraid Boot Script Modified
+id: 20d3be3f-f45f-4b68-9060-ea10ef764bf4
+status: experimental
+description: |
+  A command wrote to /boot/config/go, the script Unraid runs as root at every boot. The
+  flash drive survives reboots and OS updates, so this is the simplest way to persist on
+  Unraid.
+author: HomeXDR
+date: 2026-11-11
+references:
+  - https://attack.mitre.org/techniques/T1037/
+tags:
+  - attack.persistence
+  - attack.t1037
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re: '(?:>>?\s*|tee\s+(?:-a\s+)?|sed\s+-i\S*\s.*|(?:cp|mv|install|dd)\s.*)/boot/config/go(?:["''\s]|$)'
+  condition: selection
+falsepositives:
+  - You editing the go file, or a plugin installer that adds to it
+level: high

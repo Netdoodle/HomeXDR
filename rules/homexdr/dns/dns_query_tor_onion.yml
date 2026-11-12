@@ -1,0 +1,30 @@
+title: DNS Lookup Of A Tor Onion Or Tor2web Gateway
+id: 604a03b3-b817-4066-97a2-5862090322bc
+status: experimental
+description: |
+  A device looked up a .onion name or a Tor2web gateway. Tor Browser never resolves .onion
+  names through DNS; ransomware notes and malware loaders do.
+author: HomeXDR
+date: 2026-11-11
+references:
+  - https://attack.mitre.org/techniques/T1090/003/
+tags:
+  - attack.command-and-control
+  - attack.t1090.003
+logsource:
+  category: dns
+detection:
+  selection_onion:
+    QueryName|endswith: '.onion'
+  selection_gateway:
+    QueryName|contains:
+      - 'tor2web'
+      - '.onion.ws'
+      - '.onion.ly'
+      - '.onion.pet'
+      - '.onion.to'
+      - '.onion.sh'
+  condition: 1 of selection_*
+falsepositives:
+  - A Tor client misconfigured to resolve through the system resolver
+level: high

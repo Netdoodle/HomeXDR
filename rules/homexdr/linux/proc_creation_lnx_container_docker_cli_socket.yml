@@ -1,0 +1,32 @@
+title: Docker Socket Used From Inside A Container
+id: e1f0647a-e172-44d2-b1da-b737c7b4e78f
+status: experimental
+description: |
+  A process inside a container ran the docker CLI or talked to the Docker socket directly.
+  With the socket mounted, a compromised container can start a privileged container and
+  take over the host.
+author: HomeXDR
+date: 2026-11-11
+references:
+  - https://attack.mitre.org/techniques/T1611/
+tags:
+  - attack.privilege-escalation
+  - attack.t1611
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection_container:
+    container.id|exists: true
+  selection_docker:
+    - Image|endswith:
+        - '/docker'
+        - '/docker-compose'
+    - CommandLine|contains|all:
+        - '--unix-socket'
+        - 'docker.sock'
+    - CommandLine|contains: 'DOCKER_HOST=unix://'
+  condition: all of selection_*
+falsepositives:
+  - Container managers that run the docker CLI inside their own container (Dockge, Komodo, CI runners)
+level: medium

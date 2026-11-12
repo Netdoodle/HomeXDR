@@ -1,0 +1,27 @@
+title: Nsenter Into The Host's Namespaces
+id: 12a41d04-9526-4f50-b148-7b3eff2c42b0
+status: experimental
+description: |
+  nsenter entered the namespaces of PID 1, the host's init. From inside a container that is
+  a breakout: the command runs on the host. On the host itself it gives a root shell that
+  escapes systemd and container limits.
+author: HomeXDR
+date: 2026-11-11
+references:
+  - https://attack.mitre.org/techniques/T1611/
+tags:
+  - attack.privilege-escalation
+  - attack.t1611
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection_img:
+    - Image|endswith: '/nsenter'
+    - CommandLine|startswith: 'nsenter '
+  selection_target:
+    CommandLine|re: '(?:^|\s)(?:-t\s*1|--target[=\s]1)(?:\s|$)'
+  condition: all of selection_*
+falsepositives:
+  - Administrators debugging a container host by hand
+level: high

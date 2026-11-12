@@ -1,0 +1,27 @@
+title: Unraid Plugin Installed From A URL
+id: d6e263b8-bd85-4342-ad7f-424b9fcba940
+status: experimental
+description: |
+  Unraid's plugin command installed a plugin from a URL. Plugins run as root at every boot
+  from the flash drive, so a plugin from an unknown source is a persistent backdoor.
+author: HomeXDR
+date: 2026-11-11
+references:
+  - https://attack.mitre.org/techniques/T1543/
+tags:
+  - attack.persistence
+  - attack.t1543
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re: '(?:^|[\s/])plugin\s+install\s+https?://\S+\.plg'
+  filter_unraid:
+    CommandLine|contains:
+      - 'https://raw.githubusercontent.com/unraid/'
+      - 'https://stable.dl.unraid.net/'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - Plugins you install or update from Apps (Community Applications)
+level: low
