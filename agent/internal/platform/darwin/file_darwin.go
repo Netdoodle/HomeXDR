@@ -31,7 +31,14 @@ var fileEvents = []string{"create", "rename", "unlink", "close"}
 
 // fileExcludes are left out by default: caches and logs that change constantly.
 var fileExcludes = []string{"/Users/*/Library/Caches", "/Users/*/Library/Logs", "/private/var/folders",
-	"/Users/*/Library/Containers/*/Data/Library/Caches", "*.sqlite-wal", "*.sqlite-shm", "*.db-wal", "*.db-shm", ".DS_Store"}
+	// Xcode's build output and simulator devices (thousands of changes a minute while
+	// building or running a simulator), and the system's own activity databases.
+	"/Users/*/Library/Developer", "/Users/*/Library/Biome",
+	"/Users/*/Library/Containers/*/Data/Library/Caches", "*.sqlite-wal", "*.sqlite-shm", "*.db-wal", "*.db-shm", ".DS_Store",
+	// Chromium and Electron apps' caches (browsers, Slack, VS Code, Claude) under
+	// Application Support.
+	"/Users/**/Cache/Cache_Data", "/Users/**/Code Cache", "/Users/**/GPUCache", "/Users/**/DawnGraphiteCache",
+	"/Users/**/DawnWebGPUCache", "/Users/**/Service Worker/CacheStorage", "/Users/**/Service Worker/ScriptCache"}
 
 // fileSensor reports file creation, change, deletion and rename under the configured
 // directories, with the process that made the change. eslogger reports every file
