@@ -1,0 +1,34 @@
+title: DNS Lookup Of An Anonymous Paste Or File Upload Service
+id: 4a5f9d6b-eeb3-4849-af56-6761e9b46fec
+status: experimental
+description: |
+  A device looked up an anonymous paste or file upload service. Scripts use them to download
+  a second stage or to upload stolen files. Worth a look when the device is a server.
+author: HomeXDR
+date: 2026-11-11
+references:
+  - https://attack.mitre.org/techniques/T1567/
+tags:
+  - attack.exfiltration
+  - attack.t1567
+logsource:
+  category: dns
+detection:
+  selection:
+    QueryName:
+      - 'transfer.sh'
+      - 'temp.sh'
+      - 'file.io'
+      - 'bashupload.com'
+      - 'oshi.at'
+      - '0x0.st'
+      - 'termbin.com'
+      - 'ix.io'
+      - 'sprunge.us'
+      - 'pastebin.com'
+      - 'paste.ee'
+      - 'hastebin.com'
+  condition: selection
+falsepositives:
+  - People sharing snippets from a desktop
+level: low

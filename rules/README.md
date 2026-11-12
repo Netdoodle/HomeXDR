@@ -8,6 +8,31 @@ HomeXDR loads [Sigma](https://sigmahq.io/) rules from three places:
   keeps up to date (below);
 - custom rules written in the console, stored in the database.
 
+## Rules HomeXDR ships
+
+`rules/homexdr/` holds rules for what community rule sets leave out on a homelab: Docker and
+Unraid hosts, SSH, and DNS lookups from a resolver's query log. They load with the server and
+are tested in `server/internal/detect/homexdr_rules_test.go`.
+
+| Rule | Level | Fires on |
+|---|---|---|
+| Nsenter Into The Host's Namespaces | high | `nsenter -t 1`: a container breakout or a root shell outside every limit |
+| Container Started With Host-Level Access | medium | `docker run` with `--privileged`, `--pid=host`, `-v /:/`, the Docker socket or `SYS_ADMIN` |
+| Docker Socket Used From Inside A Container | medium | the docker CLI or `curl --unix-socket docker.sock` inside a container |
+| SSH Authorized Keys Changed From The Command Line | medium | writing, copying or downloading an `authorized_keys` file |
+| Unraid Boot Script Modified | high | writing to `/boot/config/go`, which runs as root at every boot |
+| Unraid Plugin Installed From A URL | low | `plugin install https://...plg` from outside Unraid's own servers |
+| DNS Lookup Of A Reverse Tunnel Service | medium | ngrok, Cloudflare quick tunnels, localtunnel, serveo, pinggy, bore |
+| DNS Lookup Of A Tor Onion Or Tor2web Gateway | high | `.onion` names and Tor2web gateways |
+| DNS Lookup Of An Anonymous Paste Or File Upload Service | low | transfer.sh, file.io, 0x0.st, pastebin and similar |
+| SSH Login From A Public Address | high | a successful SSH login from outside private and Tailscale ranges |
+| Root SSH Login With A Password | medium | root or Administrator logging in over SSH with a password |
+| SSH Login With A Key HomeXDR Does Not Know | low | a key login whose key has no name under Settings -> Maintenance |
+
+The Docker rules match what Unraid's Docker manager runs when it updates a privileged
+container; those commands carry `labels.maintenance: docker-update`, which Settings ->
+Maintenance can quiet ([maintenance.md](../docs/maintenance.md)).
+
 ## Importing a rule repository
 
 The quickest way to add community rules is **Rules → Import rules** in the console (admins).

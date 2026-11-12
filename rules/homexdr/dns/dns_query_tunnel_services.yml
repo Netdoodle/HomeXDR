@@ -1,0 +1,36 @@
+title: DNS Lookup Of A Reverse Tunnel Service
+id: eb926ea2-7e6a-49bc-b250-b73f9e92160c
+status: experimental
+description: |
+  A device looked up a reverse tunnel service (ngrok, Cloudflare quick tunnels, localtunnel,
+  serveo, pinggy, bore). Malware and intruders use them to reach into a network without an
+  open port, or to send data out.
+author: HomeXDR
+date: 2026-11-11
+references:
+  - https://attack.mitre.org/techniques/T1572/
+tags:
+  - attack.command-and-control
+  - attack.t1572
+logsource:
+  category: dns
+detection:
+  selection:
+    QueryName|endswith:
+      - '.ngrok.io'
+      - '.ngrok.app'
+      - '.ngrok-free.app'
+      - '.ngrok.dev'
+      - '.trycloudflare.com'
+      - '.loca.lt'
+      - '.localtunnel.me'
+      - '.serveo.net'
+      - '.pinggy.io'
+      - '.pinggy.link'
+      - 'bore.pub'
+      - '.localhost.run'
+      - '.lhr.life'
+  condition: selection
+falsepositives:
+  - Tunnels you run on purpose for a demo or a game server
+level: medium

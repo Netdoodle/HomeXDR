@@ -1,0 +1,48 @@
+title: Container Started With Host-Level Access
+id: ce785d0b-3a01-432a-8759-aa1bfce55158
+status: experimental
+description: |
+  A container was created or started with access to the host: --privileged, the host's PID
+  namespace, the host's root file system, the Docker socket, or CAP_SYS_ADMIN. Any of these
+  lets a process in the container take over the host.
+author: HomeXDR
+date: 2026-11-11
+references:
+  - https://attack.mitre.org/techniques/T1610/
+  - https://attack.mitre.org/techniques/T1611/
+tags:
+  - attack.execution
+  - attack.t1610
+  - attack.privilege-escalation
+  - attack.t1611
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection_cli:
+    CommandLine|contains:
+      - 'docker run '
+      - 'docker create '
+      - 'docker container run '
+      - 'docker container create '
+      - 'podman run '
+      - 'nerdctl run '
+  selection_access:
+    CommandLine|contains:
+      - '--privileged'
+      - '--pid=host'
+      - '--pid host'
+      - "--pid='host'"
+      - '-v /:/'
+      - "-v '/':"
+      - '--volume /:/'
+      - '--volume=/:/'
+      - 'docker.sock'
+      - '--cap-add=SYS_ADMIN'
+      - '--cap-add SYS_ADMIN'
+      - '--cap-add=ALL'
+      - 'apparmor=unconfined'
+  condition: all of selection_*
+falsepositives:
+  - Containers you deliberately run privileged or with the Docker socket (GPU or Coral access, Portainer, Watchtower). Suppress them by container name.
+level: medium

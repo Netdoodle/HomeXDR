@@ -1,0 +1,28 @@
+title: SSH Login With A Key HomeXDR Does Not Know
+id: 91185cb5-b28c-46a0-a12b-da23346de6d3
+status: experimental
+description: |
+  A key logged in over SSH that has no name under Settings -> Maintenance. Once you have named
+  your own keys, any other key is either new or not yours.
+author: HomeXDR
+date: 2026-11-11
+references:
+  - https://attack.mitre.org/techniques/T1098/004/
+tags:
+  - attack.persistence
+  - attack.t1098.004
+  - attack.initial-access
+  - attack.t1078
+logsource:
+  category: authentication
+detection:
+  selection:
+    event.action: 'ssh_login'
+    event.outcome: 'success'
+    labels.ssh_key|exists: true
+  filter_named:
+    labels.ssh_key_name|exists: true
+  condition: selection and not filter_named
+falsepositives:
+  - Keys you have not named yet
+level: low
