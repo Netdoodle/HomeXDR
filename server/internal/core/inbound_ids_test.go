@@ -66,6 +66,9 @@ func TestInboundIDS(t *testing.T) {
 			nl = cc
 		}
 	}
+	if nl.MaxSeverity != "high" {
+		t.Fatalf("NL worst severity = %q", nl.MaxSeverity)
+	}
 	if nl.Total != 3 || nl.ByCategory["Misc Attack"] != 2 || nl.ByCategory["A Network Trojan was detected"] != 1 {
 		t.Fatalf("NL = %+v", nl)
 	}

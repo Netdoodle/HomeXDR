@@ -73,6 +73,9 @@ func TestInboundThreats(t *testing.T) {
 	if len(v.Countries) != 2 || v.Countries[0].Code != "NL" || v.Countries[0].Attempts != 11 || v.Countries[0].Sources != 2 {
 		t.Fatalf("countries: %+v", v.Countries)
 	}
+	if v.Countries[0].Last.IsZero() || v.Countries[0].Last.Before(now.Add(-2*time.Hour)) {
+		t.Fatalf("country last seen = %v", v.Countries[0].Last)
+	}
 	top := v.TopSources[0]
 	if top.IP != "45.141.233.145" || top.Ports != 10 || top.ASName != "PFCLOUD" || top.Attempts != 10 {
 		t.Fatalf("top source: %+v", top)

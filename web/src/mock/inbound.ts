@@ -15,7 +15,7 @@ const COUNTRIES: [string, number, number, number][] = [
 
 function view(hours: number): InboundView {
   const f = Math.max(hours / 24, 0.05)
-  const countries = COUNTRIES.map(([code, a, s, allowed]) => ({ code, attempts: Math.round(a * f), sources: Math.max(1, Math.round(s * Math.min(f, 3))), allowed }))
+  const countries = COUNTRIES.map(([code, a, s, allowed], i) => ({ code, attempts: Math.round(a * f), sources: Math.max(1, Math.round(s * Math.min(f, 3))), allowed, last: new Date(Date.now() - i * 45_000).toISOString() }))
   const attempts = countries.reduce((n, c) => n + c.attempts, 0)
   const now = Date.now()
   const span = hours <= 1 ? 300 : hours <= 48 ? 3600 : hours <= 168 ? 21600 : 86400
@@ -51,6 +51,7 @@ function view(hours: number): InboundView {
       allowed: 0,
       sources: Math.round(60 + 40 * Math.abs(Math.cos(i / 4))),
     })),
+    home_country: 'US',
     prev_attempts: Math.round(attempts * 1.16),
     prev_blocked: Math.round((attempts - 3) * 1.16),
     prev_sources: Math.round(countries.reduce((n, c) => n + c.sources, 0) * 0.93),
@@ -78,12 +79,12 @@ export function inboundRoutes(route: Route) {
         { name: 'ET WEB_SERVER WebShell Generic - wget http - POST', category: 'Web Application Attack', severity: 'high', count: 77, sources: 9, countries: 4, top_country: 'BG', spark: spark(3) },
       ],
       countries: [
-        { code: 'US', total: 420, sources: 260, by_category: { 'Misc Attack': 310, 'Attempted Information Leak': 60, 'Potentially Bad Traffic': 50 } },
-        { code: 'CN', total: 300, sources: 150, by_category: { 'Potentially Bad Traffic': 120, 'Misc Attack': 140, 'Attempted Administrator Privilege Gain': 40 } },
-        { code: 'NL', total: 210, sources: 70, by_category: { 'Attempted Information Leak': 90, 'Misc Attack': 100, 'Web Application Attack': 20 } },
-        { code: 'RU', total: 150, sources: 40, by_category: { 'Attempted Administrator Privilege Gain': 60, 'Misc Attack': 90 } },
-        { code: 'BR', total: 90, sources: 35, by_category: { 'Misc Attack': 90 } },
-        { code: 'BG', total: 60, sources: 9, by_category: { 'Web Application Attack': 50, 'Misc Attack': 10 } },
+        { code: 'US', total: 420, sources: 260, max_severity: 'medium', by_category: { 'Misc Attack': 310, 'Attempted Information Leak': 60, 'Potentially Bad Traffic': 50 } },
+        { code: 'CN', total: 300, sources: 150, max_severity: 'high', by_category: { 'Potentially Bad Traffic': 120, 'Misc Attack': 140, 'Attempted Administrator Privilege Gain': 40 } },
+        { code: 'NL', total: 210, sources: 70, max_severity: 'medium', by_category: { 'Attempted Information Leak': 90, 'Misc Attack': 100, 'Web Application Attack': 20 } },
+        { code: 'RU', total: 150, sources: 40, max_severity: 'high', by_category: { 'Attempted Administrator Privilege Gain': 60, 'Misc Attack': 90 } },
+        { code: 'BR', total: 90, sources: 35, max_severity: 'low', by_category: { 'Misc Attack': 90 } },
+        { code: 'BG', total: 60, sources: 9, max_severity: 'high', by_category: { 'Web Application Attack': 50, 'Misc Attack': 10 } },
       ],
     }
   })

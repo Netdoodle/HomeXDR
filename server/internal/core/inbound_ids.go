@@ -42,6 +42,9 @@ type IDSCountry struct {
 	Total      int64            `json:"total"`
 	Sources    int              `json:"sources"`
 	ByCategory map[string]int64 `json:"by_category"`
+	// MaxSeverity is the worst alert from the country: high, medium or low.
+	MaxSeverity string `json:"max_severity"`
+	maxSev      int64
 }
 
 // IDSView is the IDS part of the threat map.
@@ -168,6 +171,9 @@ func (c *Core) InboundIDS(ctx context.Context, hours int) (*IDSView, error) {
 		}
 		ct.Total += n
 		ct.ByCategory[cat] += n
+		if sev > ct.maxSev {
+			ct.maxSev = sev
+		}
 		countrySources[cc][remote] = true
 	}
 	for _, t := range threats {
@@ -188,6 +194,7 @@ func (c *Core) InboundIDS(ctx context.Context, hours int) (*IDSView, error) {
 	}
 	for cc, ct := range countries {
 		ct.Sources = len(countrySources[cc])
+		ct.MaxSeverity = idsSeverity(ct.maxSev)
 		v.Countries = append(v.Countries, *ct)
 	}
 	sort.Slice(v.Countries, func(i, j int) bool { return v.Countries[i].Total > v.Countries[j].Total })
