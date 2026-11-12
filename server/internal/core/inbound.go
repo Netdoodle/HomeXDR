@@ -80,6 +80,7 @@ type InboundPoint struct {
 	T       time.Time `json:"t"`
 	Blocked int64     `json:"blocked"`
 	Allowed int64     `json:"allowed"`
+	Sources int64     `json:"sources"` // distinct internet sources in the bucket
 }
 
 // InboundView is the inbound threats page.
@@ -96,6 +97,10 @@ type InboundView struct {
 	Networks   []InboundNetwork `json:"networks"`
 	Ports      []InboundPort    `json:"ports"`
 	Timeline   []InboundPoint   `json:"timeline"`
+	// The same window just before this one, for trends.
+	PrevAttempts int64 `json:"prev_attempts"`
+	PrevBlocked  int64 `json:"prev_blocked"`
+	PrevSources  int64 `json:"prev_sources"`
 	// NoGeo is set when the offline IP network list is not loaded, so no country is known.
 	NoGeo bool `json:"no_geo,omitempty"`
 	// Truncated is set when there were more sources than one query returns; the rarest are left out.
@@ -270,6 +275,39 @@ func (c *Core) InboundThreats(ctx context.Context, hours int) (*InboundView, err
 				}
 			}
 			v.Timeline = append(v.Timeline, p)
+		}
+	}
+	if len(v.Timeline) > 0 {
+		if res, err := c.Events.Search(ctx, events.SearchQuery{From: from, Query: public +
+			` | timechart span=` + span + ` dc(source.ip)`}); err == nil {
+			at := map[int64]int64{}
+			for _, row := range res.Rows {
+				if len(row) >= 2 {
+					if t, ok := toTime(row[0]); ok {
+						at[t.Unix()] = toInt64(row[1])
+					}
+				}
+			}
+			for i := range v.Timeline {
+				v.Timeline[i].Sources = at[v.Timeline[i].T.Unix()]
+			}
+		}
+	}
+
+	// 4. The window before, for the trend arrows.
+	prevFrom := from.Add(-time.Duration(hours) * time.Hour)
+	if res, err := c.Events.Search(ctx, events.SearchQuery{From: prevFrom, To: from, Query: public +
+		` | stats count, dc(source.ip) as sources by event.action`}); err == nil {
+		for _, row := range res.Rows {
+			if len(row) < 3 {
+				continue
+			}
+			n := toInt64(row[1])
+			v.PrevAttempts += n
+			if !allowedAction(fmt.Sprint(row[0])) {
+				v.PrevBlocked += n
+			}
+			v.PrevSources += toInt64(row[2]) // per action; sources rarely both pass and block
 		}
 	}
 	return v, nil

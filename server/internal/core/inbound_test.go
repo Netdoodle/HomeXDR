@@ -47,7 +47,9 @@ func TestInboundThreats(t *testing.T) {
 		row("rdr", "198.51.100.7", 443, 3*time.Hour),
 		row("block", "192.168.20.151", 445, time.Hour), // a LAN device: not the internet
 		row("block", "100.81.93.1", 22, time.Hour),     // Tailscale
-		row("block", "203.0.113.9", 80, 48*time.Hour),  // outside the window
+		row("block", "203.0.113.9", 80, 60*time.Hour),  // outside both windows
+		row("block", "203.0.113.10", 80, 30*time.Hour), // the window before: the trend
+		row("block", "203.0.113.11", 80, 31*time.Hour),
 	)
 	if err := c.Events.Insert(ctx, evs); err != nil {
 		t.Fatal(err)
@@ -84,6 +86,16 @@ func TestInboundThreats(t *testing.T) {
 	var tl int64
 	for _, p := range v.Timeline {
 		tl += p.Blocked + p.Allowed
+	}
+	var srcs int64
+	for _, p := range v.Timeline {
+		srcs += p.Sources
+	}
+	if srcs < 3 {
+		t.Fatalf("timeline sources %d: %+v", srcs, v.Timeline)
+	}
+	if v.PrevAttempts != 2 || v.PrevBlocked != 2 || v.PrevSources != 2 {
+		t.Fatalf("previous window: %d attempts, %d blocked, %d sources", v.PrevAttempts, v.PrevBlocked, v.PrevSources)
 	}
 	if tl != 13 {
 		t.Fatalf("timeline total %d, want 13: %+v", tl, v.Timeline)
