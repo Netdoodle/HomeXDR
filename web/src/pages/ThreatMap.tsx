@@ -1,7 +1,7 @@
 // Threat map: who on the internet is trying to reach the firewall, from where, and at which ports.
 
 import { useQuery } from '@tanstack/react-query'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router'
 import { getInbound, getInboundEvents, inboundKeys, type InboundCountry, type InboundKind, type InboundSource, type InboundView } from '../api/inbound'
 import { EventTable } from '../components/EventTable'
@@ -89,21 +89,27 @@ function ThreatMapBody({ v }: { v: InboundView }) {
           Countries and networks need the offline IP network list. Turn it on under <Link to="/settings/lists">Settings → Offline lists</Link>.
         </div>
       ) : null}
-      <div className="exec-tiles">
-        <ExecTile label={`Attacks blocked (${rangeLabel(v.hours)})`} value={v.blocked} prev={v.prev_blocked} tone="good" downIsGood />
-        <ExecTile
-          label={`Let in from the internet (${rangeLabel(v.hours)})`}
-          value={v.allowed}
-          tone={v.allowed ? 'bad' : 'good'}
-          sub={v.allowed ? 'your exposed services' : 'nothing passed the firewall'}
-        />
-        <ExecTile label="Unique attackers" value={v.sources} prev={v.prev_sources} tone="info" downIsGood />
-        <ExecTile
-          label="Countries"
-          value={v.countries.filter((c) => c.code).length}
-          tone="info"
-          sub={v.countries[0]?.code ? `most from ${countryName(v.countries[0].code)}` : undefined}
-        />
+      <div className="stats">
+        <div className="stat">
+          <span className="label">Attempts</span>
+          <span className="value">{formatCount(v.attempts)}</span>
+          <span className="sub">{formatNumber(Math.round(v.attempts / v.hours))} per hour</span>
+        </div>
+        <div className="stat">
+          <span className="label">Blocked</span>
+          <span className="value">{blockedPct}%</span>
+          <span className="sub">{formatNumber(v.blocked)} connections</span>
+        </div>
+        <div className="stat">
+          <span className="label">Sources</span>
+          <span className="value">{formatNumber(v.sources)}</span>
+          <span className="sub">unique internet addresses</span>
+        </div>
+        <div className="stat">
+          <span className="label">Countries</span>
+          <span className="value">{formatNumber(v.countries.filter((c) => c.code).length)}</span>
+          <span className="sub">{v.countries[0]?.code ? `most from ${countryName(v.countries[0].code)}` : ' '}</span>
+        </div>
       </div>
 
       <div className="grid grid-2" style={{ alignItems: 'start' }}>
@@ -372,45 +378,6 @@ function bucketLabel(sec: number): string {
   if (sec >= 86400) return 'day'
   if (sec >= 3600) return sec === 3600 ? 'hour' : `${sec / 3600} hours`
   return `${sec / 60} minutes`
-}
-
-function ExecTile({
-  label,
-  value,
-  prev,
-  tone,
-  sub,
-  downIsGood,
-}: {
-  label: string
-  value: number
-  prev?: number
-  tone: 'good' | 'bad' | 'info'
-  sub?: string
-  downIsGood?: boolean
-}) {
-  let trend: ReactNode = null
-  if (prev !== undefined && prev > 0) {
-    const pct = Math.round(((value - prev) / prev) * 100)
-    const up = pct > 0
-    trend = (
-      <span className={['exec-trend', pct === 0 ? '' : up === !downIsGood ? 'better' : 'worse'].join(' ')} title={`Previous period: ${formatNumber(prev)}`}>
-        <span aria-hidden="true">{pct === 0 ? '→' : up ? '↗' : '↘'}</span>
-        {pct > 0 ? '+' : ''}
-        {pct}%
-      </span>
-    )
-  }
-  return (
-    <div className="exec-tile">
-      <div className="exec-label">{label}</div>
-      <div className={`exec-body ${tone}`}>
-        <span className="exec-value">{formatNumber(value)}</span>
-        {trend}
-        {sub ? <span className="exec-sub">{sub}</span> : null}
-      </div>
-    </div>
-  )
 }
 
 function LineChart({ points, unit, tone, spanSec }: { points: { t: string; value: number }[]; unit: string; tone: 'attempts' | 'sources'; spanSec: number }) {
