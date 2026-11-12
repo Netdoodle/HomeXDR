@@ -358,8 +358,30 @@ const allowedActionsQuery = `(event.action:pass OR event.action:nat)`
 // InboundEvents returns the firewall events from one country's internet sources (all,
 // blocked or let in) in the last hours, newest first. The country is looked up per source
 // address, the way the map counts it, and turned into a list of addresses for the search.
-func (c *Core) InboundEvents(ctx context.Context, hours int, country, kind string, offset int) (*InboundEventsView, error) {
+func (c *Core) InboundEvents(ctx context.Context, hours int, country, kind, category string, offset int) (*InboundEventsView, error) {
 	from := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
+	if kind == "ids" {
+		q, n, err := c.idsEventsQuery(ctx, from, country, category)
+		if err != nil {
+			return nil, err
+		}
+		v := &InboundEventsView{Events: []any{}, Sources: n}
+		if q == "" {
+			return v, nil
+		}
+		res, err := c.Events.Search(ctx, events.SearchQuery{From: from, Query: q, Limit: inboundEventsPage, Offset: offset})
+		if err != nil {
+			return nil, err
+		}
+		v.Total = res.Total
+		for _, e := range res.Events {
+			v.Events = append(v.Events, e)
+		}
+		if n <= inboundQueryMaxIPs/2 {
+			v.Query = q
+		}
+		return v, nil
+	}
 	bySrc, _, err := c.inboundSources(ctx, from)
 	if err != nil {
 		return nil, err

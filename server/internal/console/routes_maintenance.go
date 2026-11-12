@@ -15,6 +15,7 @@ func (h *Handler) routesMaintenance(viewer, admin string) {
 	h.route("PUT /api/settings/maintenance", admin, h.putMaintenance)
 	h.route("GET /api/stats/inbound", viewer, h.inboundThreats)
 	h.route("GET /api/stats/inbound/events", viewer, h.inboundEvents)
+	h.route("GET /api/stats/inbound/ids", viewer, h.inboundIDS)
 }
 
 func (h *Handler) getMaintenance(w http.ResponseWriter, r *http.Request, _ *store.User) {
@@ -65,9 +66,9 @@ func (h *Handler) inboundEvents(w http.ResponseWriter, r *http.Request, _ *store
 	}
 	kind := r.URL.Query().Get("kind")
 	switch kind {
-	case "all", "blocked", "allowed":
+	case "all", "blocked", "allowed", "ids":
 	default:
-		writeErr(w, http.StatusBadRequest, "kind must be all, blocked or allowed")
+		writeErr(w, http.StatusBadRequest, "kind must be all, blocked, allowed or ids")
 		return
 	}
 	country := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("country")))
@@ -79,7 +80,25 @@ func (h *Handler) inboundEvents(w http.ResponseWriter, r *http.Request, _ *store
 	if offset < 0 || offset > 10000 {
 		offset = 0
 	}
-	v, err := h.c.InboundEvents(r.Context(), hours, country, kind, offset)
+	category := strings.TrimSpace(r.URL.Query().Get("category"))
+	if len(category) > 120 {
+		category = category[:120]
+	}
+	v, err := h.c.InboundEvents(r.Context(), hours, country, kind, category, offset)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// inboundIDS is the IDS part of the threat map: Suricata alerts by threat and country.
+func (h *Handler) inboundIDS(w http.ResponseWriter, r *http.Request, _ *store.User) {
+	hours := qInt(r, "hours", 24)
+	if hours < 1 || hours > 24*30 {
+		hours = 24
+	}
+	v, err := h.c.InboundIDS(r.Context(), hours)
 	if err != nil {
 		h.fail(w, err)
 		return

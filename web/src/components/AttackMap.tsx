@@ -26,12 +26,18 @@ export function AttackMap({
   onSelect,
   details,
   onDrill,
+  slices,
+  cardBody,
 }: {
   countries: MapCountry[]
   selected: string | null
   onSelect: (code: string | null) => void
   /** Extra lines for the selected country's card. */
   details?: (code: string) => ReactNode
+  /** Pie slices per country (IDS mode): the bubble is split by category. */
+  slices?: Map<string, { key: string; value: number; color: string }[]>
+  /** Replaces the card's numbers (IDS mode). */
+  cardBody?: (code: string) => ReactNode
   /** Opens the logs behind a number on the card. */
   onDrill?: (code: string, kind: 'all' | 'blocked' | 'allowed' | 'sources') => void
 }) {
@@ -152,6 +158,33 @@ export function AttackMap({
             const [lat, lon] = COUNTRY_CENTROIDS[c.code]
             const p = project(lat, lon)
             const r = (3 + 22 * Math.sqrt(c.attempts / max)) * bubbleScale
+            const parts = slices?.get(c.code)
+            if (parts && parts.length) {
+              const total = parts.reduce((n, s) => n + s.value, 0) || 1
+              let a0 = -Math.PI / 2
+              return (
+                <g
+                  key={c.code}
+                  className={['pie', selected === c.code ? 'selected' : ''].join(' ')}
+                  onClick={(e) => pick(c.code, e)}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${countryName(c.code)}: ${formatNumber(c.attempts)} IDS alerts`}
+                >
+                  {parts.length === 1 ? (
+                    <circle cx={p.x} cy={p.y} r={r} fill={parts[0].color} strokeWidth={1 / view.k} />
+                  ) : (
+                    parts.map((s) => {
+                      const a1 = a0 + (s.value / total) * Math.PI * 2
+                      const large = a1 - a0 > Math.PI ? 1 : 0
+                      const d = `M${p.x} ${p.y}L${p.x + r * Math.cos(a0)} ${p.y + r * Math.sin(a0)}A${r} ${r} 0 ${large} 1 ${p.x + r * Math.cos(a1)} ${p.y + r * Math.sin(a1)}Z`
+                      a0 = a1
+                      return <path key={s.key} d={d} fill={s.color} strokeWidth={0.6 / view.k} />
+                    })
+                  )}
+                </g>
+              )
+            }
             return (
               <circle
                 key={c.code}
@@ -205,6 +238,7 @@ export function AttackMap({
               <Icon name="close" size={12} />
             </button>
           </div>
+          {cardBody ? cardBody(card.code) : (
           <dl className="map-card-stats">
             <dt>Attempts</dt>
             <dd>
@@ -231,6 +265,7 @@ export function AttackMap({
               />
             </dd>
           </dl>
+          )}
           {details ? details(card.code) : null}
         </div>
       ) : null}

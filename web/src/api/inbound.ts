@@ -60,7 +60,7 @@ export const inboundKeys = { view: (hours: number) => ['stats', 'inbound', hours
 
 export const getInbound = (hours: number) => http.get<InboundView>(`/api/stats/inbound?hours=${hours}`)
 
-export type InboundKind = 'all' | 'blocked' | 'allowed'
+export type InboundKind = 'all' | 'blocked' | 'allowed' | 'ids'
 
 export interface InboundEvents {
   events: import('./types').Event[]
@@ -70,5 +70,36 @@ export interface InboundEvents {
   query?: string
 }
 
-export const getInboundEvents = (hours: number, country: string, kind: InboundKind, offset = 0) =>
-  http.get<InboundEvents>(`/api/stats/inbound/events?hours=${hours}&country=${encodeURIComponent(country)}&kind=${kind}&offset=${offset}`)
+export const getInboundEvents = (hours: number, country: string, kind: InboundKind, offset = 0, category = '') =>
+  http.get<InboundEvents>(`/api/stats/inbound/events?hours=${hours}&country=${encodeURIComponent(country)}&kind=${kind}&offset=${offset}${category ? `&category=${encodeURIComponent(category)}` : ''}`)
+
+export interface IDSThreat {
+  name: string
+  category: string
+  severity: 'high' | 'medium' | 'low'
+  count: number
+  sources: number
+  countries: number
+  top_country?: string
+  spark: number[]
+}
+
+export interface IDSCountry {
+  code: string
+  total: number
+  sources: number
+  by_category: Record<string, number>
+}
+
+export interface IDSView {
+  hours: number
+  span_sec: number
+  buckets: string[]
+  total: number
+  threats: IDSThreat[]
+  categories: string[]
+  countries: IDSCountry[]
+  truncated?: boolean
+}
+
+export const getInboundIDS = (hours: number) => http.get<IDSView>(`/api/stats/inbound/ids?hours=${hours}`)
