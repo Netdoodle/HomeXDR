@@ -48,7 +48,7 @@ load_conf() {
   : "${COMPOSE_DIR:?set COMPOSE_DIR in $CONF}"
   SERVICE="${SERVICE:-homexdr}"
   IMAGE="${IMAGE:-homexdr/server}"
-  REPO_URL="${REPO_URL:-git@github.com:Netdoodle/homexdr.git}"
+  REPO_URL="${REPO_URL:-git@github.com:Netdoodle/HomeXDR.git}"
   BRANCH="${BRANCH:-main}"
   SRC_DIR="${SRC_DIR:-$COMPOSE_DIR/src}"
   SIGNING_KEY="${SIGNING_KEY:-$(dirname "$CONF")/release-signing.key}"

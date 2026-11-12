@@ -42,7 +42,7 @@ ARG COMMIT=unknown
 LABEL org.opencontainers.image.title="homexdr-server" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${COMMIT}" \
-      org.opencontainers.image.source="https://github.com/Netdoodle/homexdr"
+      org.opencontainers.image.source="https://github.com/Netdoodle/HomeXDR"
 COPY --from=build /out/homexdr-server /usr/local/bin/homexdr-server
 COPY --from=build /out/downloads/ /usr/share/homexdr/downloads/
 COPY rules/ /usr/share/homexdr/rules/

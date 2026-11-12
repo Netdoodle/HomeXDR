@@ -9,7 +9,7 @@ SERVICE=homexdr
 IMAGE=homexdr/server
 
 # Where to build from. A private repository needs a read-only deploy key.
-REPO_URL=git@github.com:Netdoodle/homexdr.git
+REPO_URL=git@github.com:Netdoodle/HomeXDR.git
 BRANCH=main
 #GIT_SSH_KEY=/root/.ssh/homexdr-deploy-key
 #KNOWN_HOSTS=/root/.ssh/known_hosts
