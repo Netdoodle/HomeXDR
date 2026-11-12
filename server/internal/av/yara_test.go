@@ -185,3 +185,18 @@ func TestGroupScanners(t *testing.T) {
 		t.Fatalf("fetched with scanners off: %v", h.fetched)
 	}
 }
+
+// The scanner resolver reads the antivirus settings (as the server's group resolver
+// does); judging a file must not hold the service lock while calling it.
+func TestScannersResolverReadsSettings(t *testing.T) {
+	h := newHarness(t)
+	h.s.d.Scanners = func(string) Scanners {
+		set := h.s.Settings()
+		return Scanners{ClamAV: set.UseClamAV, YARA: set.UseYARA}
+	}
+	h.files[`C:\a\evil.exe`] = "EVIL"
+	h.run(t, Candidate{HostID: "h", Platform: "windows", Path: `C:\a\evil.exe`, SHA256: sha('a'), PID: 9})
+	if len(h.detected) != 1 {
+		t.Fatalf("detected %+v", h.detected)
+	}
+}
