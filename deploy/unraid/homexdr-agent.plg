@@ -22,7 +22,7 @@ Install: copy this file to /boot/config/plugins/ and run
 then fill in /boot/config/plugins/homexdr-agent/homexdr-agent.cfg (or enroll by hand).
 See deploy/unraid/README.md.
 -->
-<PLUGIN name="&name;" author="&author;" version="&version;" min="6.12.0" icon="shield" support="https://github.com/Netdoodle/homexdr">
+<PLUGIN name="&name;" author="&author;" version="&version;" min="6.12.0" icon="shield" support="https://github.com/Netdoodle/HomeXDR">
 
 <CHANGES>
 ###2026.10.20
