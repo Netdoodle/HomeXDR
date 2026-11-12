@@ -74,6 +74,31 @@ func TestESExecAndExit(t *testing.T) {
 	}
 }
 
+func TestESHardLinkedStub(t *testing.T) {
+	m := newTestMapper()
+	m.sameFile = func(a, b string) bool {
+		stubs := map[string]bool{"/usr/bin/git": true, "/usr/bin/python3": true}
+		return stubs[a] && stubs[b]
+	}
+	line := strings.NewReplacer(`"path":"\/usr\/bin\/curl","path_truncated":false},"ppid"`, `"path":"\/usr\/bin\/python3","path_truncated":false},"ppid"`,
+		`"args":["curl","-fsSL","https:\/\/example.com\/x.sh"]`, `"args":["\/usr\/bin\/git","status"]`).Replace(esExecLine)
+	msg, name, raw, _ := parseESLine([]byte(line))
+	ev := m.mapProcess(msg, name, raw)
+	if ev.Process.Executable != "/usr/bin/git" || ev.Process.Name != "git" {
+		t.Fatalf("stub reported as %q", ev.Process.Executable)
+	}
+	// A relative argv[0] resolves against the reported directory; a different file stays.
+	if got := m.execPath("/usr/bin/python3", []string{"git", "status"}); got != "/usr/bin/git" {
+		t.Fatal(got)
+	}
+	if got := m.execPath("/usr/bin/python3", []string{"/opt/homebrew/bin/git"}); got != "/usr/bin/python3" {
+		t.Fatal(got)
+	}
+	if got := m.execPath("/usr/bin/python3", []string{"python3", "-c", "1"}); got != "/usr/bin/python3" {
+		t.Fatal(got)
+	}
+}
+
 func TestESSkipsAgentChildren(t *testing.T) {
 	m := newTestMapper()
 	child := strings.Replace(esExecLine, `"ppid":7187,"tty"`, `"ppid":4242,"tty"`, 1)

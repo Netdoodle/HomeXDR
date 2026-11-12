@@ -76,6 +76,7 @@ func (s *processSensor) Run(ctx context.Context, out platform.Emitter) error {
 // mapper builds the eslogger mapper with live parent lookups.
 func (s *processSensor) mapper() *esMapper {
 	m := newESMapper(s.env.EntityID, nil, users.name, int64(os.Getpid()))
+	m.sameFile = sameFile
 	m.parent = func(ppid int64) *event.Process { return describe(s.env, m.procs, ppid) }
 	return m
 }
@@ -236,4 +237,20 @@ func (s *processSensor) pollExec(m *esMapper, k kproc, now time.Time) *event.Eve
 		Message: "process started: " + p.CommandLine,
 		Process: p,
 	}
+}
+
+// sameFile reports whether two paths are one file (hard links), with a small cache:
+// the same few stubs are checked over and over.
+var sameFileCache = newLRU[[2]string, bool](256)
+
+func sameFile(a, b string) bool {
+	k := [2]string{a, b}
+	if v, ok := sameFileCache.get(k); ok {
+		return v
+	}
+	fa, err1 := os.Stat(a)
+	fb, err2 := os.Stat(b)
+	v := err1 == nil && err2 == nil && os.SameFile(fa, fb)
+	sameFileCache.put(k, v)
+	return v
 }

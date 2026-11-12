@@ -163,6 +163,8 @@ type esMapper struct {
 	user   func(uid uint32) string
 	self   int64
 	procs  *lru[string, procSummary]
+	// sameFile reports whether two paths name one file; nil skips the hard link check.
+	sameFile func(a, b string) bool
 	// skipped holds entity IDs of the agent's own children (lsof, launchctl, ...), so
 	// their exits are not reported either.
 	skipped *lru[string, bool]
@@ -244,7 +246,7 @@ func (m *esMapper) exec(msg *esMessage, raw json.RawMessage, ts time.Time) *even
 		m.skipped.put(id, true) // the agent's own commands
 		return nil
 	}
-	exe := t.Executable.Path
+	exe := m.execPath(t.Executable.Path, x.Args)
 	p := &event.Process{
 		EntityID: id, PID: pid, Name: baseName(exe), Executable: exe,
 		Args: x.Args, CommandLine: joinArgs(x.Args), CodeSignature: codeSignature(t),
@@ -304,6 +306,28 @@ func (m *esMapper) exec(msg *esMessage, raw json.RawMessage, ts time.Time) *even
 		ev.Data = data
 	}
 	return ev
+}
+
+// execPath picks the name a hard-linked program was started by. Endpoint Security
+// reports one of a file's names, and macOS's command-line stubs (/usr/bin/git, python3,
+// make, ...) are hard links to one launcher, so `git status` can arrive as
+// /usr/bin/python3. When argv[0] (resolved against the reported directory if relative)
+// is the same file under another name, that name is the one the user ran.
+func (m *esMapper) execPath(exe string, args []string) string {
+	if m.sameFile == nil || len(args) == 0 || args[0] == "" || exe == "" {
+		return exe
+	}
+	cand := args[0]
+	if !strings.HasPrefix(cand, "/") {
+		if strings.Contains(cand, "/") {
+			return exe
+		}
+		cand = dirName(exe) + "/" + cand
+	}
+	if cand != exe && baseName(cand) != baseName(exe) && m.sameFile(exe, cand) {
+		return cand
+	}
+	return exe
 }
 
 func (m *esMapper) exit(msg *esMessage, raw json.RawMessage, ts time.Time) *event.Event {
