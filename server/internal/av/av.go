@@ -52,6 +52,10 @@ type Settings struct {
 	// ScanUnknown fetches programs no reputation source vouches for and scans them with
 	// ClamAV and YARA (needs HOMEXDR_CLAMD_ADDR or HOMEXDR_YARA_ADDR).
 	ScanUnknown bool `json:"scan_unknown"`
+	// UseClamAV and UseYARA are the global switches for the two scanners; host groups
+	// can override them for their hosts (Deps.Scanners).
+	UseClamAV bool `json:"use_clamav"`
+	UseYARA   bool `json:"use_yara"`
 	// UseIntel looks hashes up with the threat intel sources configured under Settings →
 	// Threat intel (only hashes are sent, never files).
 	UseIntel      bool     `json:"use_intel"`
@@ -62,7 +66,8 @@ type Settings struct {
 
 // DefaultSettings: on, stopping and quarantining what it finds.
 func DefaultSettings() Settings {
-	return Settings{Enabled: true, Action: ActionQuarantine, ScanUnknown: true, UseIntel: true, MaxFileMB: 64}
+	return Settings{Enabled: true, Action: ActionQuarantine, ScanUnknown: true, UseClamAV: true, UseYARA: true,
+		UseIntel: true, MaxFileMB: 64}
 }
 
 // InputError is a bad setting.
@@ -123,6 +128,34 @@ type Candidate struct {
 	SHA256                     string
 	PID                        int64
 	EntityID                   string
+	GroupID                    string // the host's group, for per-group scanner switches
+}
+
+// Scanners says which file scanners apply to a host.
+type Scanners struct{ ClamAV, YARA bool }
+
+func (a Scanners) or(b Scanners) Scanners { return Scanners{a.ClamAV || b.ClamAV, a.YARA || b.YARA} }
+
+// covers reports whether a stored clean verdict's source ("clamav", "yara",
+// "clamav+yara") includes every scanner in want.
+func (want Scanners) coveredBy(source string) bool {
+	has := map[string]bool{}
+	for _, p := range strings.Split(source, "+") {
+		has[p] = true
+	}
+	return (!want.ClamAV || has["clamav"]) && (!want.YARA || has["yara"])
+}
+
+// allows reports whether a detection from source counts for a host with these scanners:
+// a detection by a scanner that is off for the host's group is not reported there.
+func (sc Scanners) allows(source string) bool {
+	switch {
+	case source == "clamav":
+		return sc.ClamAV
+	case source == SourceYara || strings.HasPrefix(source, SourceYara+":"):
+		return sc.YARA
+	}
+	return true
 }
 
 // Reputation is what the threat intel sources say about a hash.
@@ -160,6 +193,21 @@ type Deps struct {
 	Fetch func(ctx context.Context, c Candidate, maxBytes int64) (string, error)
 	// Detected raises the alert and, with ActionQuarantine, the response.
 	Detected func(ctx context.Context, d Detection, s Settings)
+	// Scanners resolves the scanner switches for a host group; nil: the global
+	// settings apply everywhere.
+	Scanners func(groupID string) Scanners
+}
+
+// scannersFor returns the scanners switched on for a candidate's host, limited to the
+// ones that are set up.
+func (s *Service) scannersFor(c Candidate, set Settings) Scanners {
+	sc := Scanners{ClamAV: set.UseClamAV, YARA: set.UseYARA}
+	if s.d.Scanners != nil {
+		sc = s.d.Scanners(c.GroupID)
+	}
+	sc.ClamAV = sc.ClamAV && s.d.Clamd != nil
+	sc.YARA = sc.YARA && s.d.Yara != nil
+	return sc
 }
 
 // Service is the antivirus.
@@ -295,8 +343,15 @@ func (s *Service) Run(ctx context.Context) {
 func (s *Service) process(ctx context.Context, hash string) {
 	s.mu.Lock()
 	first := s.waiting[hash][0]
+	set := s.set
+	// Scan with every scanner any waiting host's group wants; each host then only hears
+	// about detections from its own scanners.
+	var want Scanners
+	for _, c := range s.waiting[hash] {
+		want = want.or(s.scannersFor(c, set))
+	}
 	s.mu.Unlock()
-	det, err := s.judge(ctx, first)
+	det, err := s.judge(ctx, first, want)
 	if err != nil && ctx.Err() == nil {
 		s.mu.Lock()
 		s.lastErr = fmt.Sprintf("%s: %v", s.now().UTC().Format(time.RFC3339), err)
@@ -306,20 +361,24 @@ func (s *Service) process(ctx context.Context, hash string) {
 	s.mu.Lock()
 	cands := s.waiting[hash]
 	delete(s.waiting, hash)
-	set := s.set
+	set = s.set
 	s.mu.Unlock()
 	if det == nil {
 		return
 	}
 	for _, c := range cands {
+		if !s.scannersFor(c, set).allows(det.Source) {
+			continue
+		}
 		d := *det
 		d.Candidate = c
 		s.respond(ctx, d, set)
 	}
 }
 
-// judge returns a detection when the file is malware, nil otherwise.
-func (s *Service) judge(ctx context.Context, c Candidate) (*Detection, error) {
+// judge returns a detection when the file is malware, nil otherwise. want are the file
+// scanners to use if the file has to be scanned.
+func (s *Service) judge(ctx context.Context, c Candidate, want Scanners) (*Detection, error) {
 	set := s.Settings()
 	if !set.Enabled {
 		return nil, nil
@@ -334,7 +393,9 @@ func (s *Service) judge(ctx context.Context, c Candidate) (*Detection, error) {
 	switch {
 	case err == nil && v.Verdict == store.AVMalicious:
 		return &Detection{Source: v.Source, Signature: v.Signature}, nil
-	case err == nil && (v.Verdict != store.AVClean || s.now().Sub(v.CheckedAt) < rescanAfter):
+	case err == nil && v.Verdict == store.AVClean && (!want.coveredBy(v.Source) || s.now().Sub(v.CheckedAt) >= rescanAfter):
+		// Clean, but not yet scanned by every scanner wanted now, or a while ago: scan.
+	case err == nil:
 		return nil, nil
 	case err != nil && !errors.Is(err, store.ErrNotFound):
 		return nil, err
@@ -356,7 +417,7 @@ func (s *Service) judge(ctx context.Context, c Candidate) (*Detection, error) {
 			return nil, err
 		}
 	}
-	if !set.ScanUnknown || (s.d.Clamd == nil && s.d.Yara == nil) || s.d.Fetch == nil {
+	if !set.ScanUnknown || (!want.ClamAV && !want.YARA) || s.d.Fetch == nil {
 		return nil, nil
 	}
 	fctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
@@ -370,7 +431,7 @@ func (s *Service) judge(ctx context.Context, c Candidate) (*Detection, error) {
 		return nil, fmt.Errorf("fetch %s from %s: %w", c.Path, c.Hostname, err)
 	}
 	defer os.Remove(path)
-	source, sig, err := s.scanFile(fctx, path)
+	source, sig, err := s.scanFile(fctx, path, want)
 	if err != nil {
 		return nil, fmt.Errorf("scan of %s: %w", c.Path, err)
 	}
@@ -386,7 +447,7 @@ func (s *Service) judge(ctx context.Context, c Candidate) (*Detection, error) {
 // verdict source and signature; when every scanner finds it clean, the scanners that
 // ran ("clamav+yara") and no signature. A scanner that fails means no verdict, so the
 // file is tried again the next time it runs.
-func (s *Service) scanFile(ctx context.Context, path string) (source, sig string, err error) {
+func (s *Service) scanFile(ctx context.Context, path string, want Scanners) (source, sig string, err error) {
 	var errs []error
 	var ran []string
 	scan := func(name string, fn func(f *os.File) (string, string, error)) (string, string, bool) {
@@ -407,7 +468,7 @@ func (s *Service) scanFile(ctx context.Context, path string) (source, sig string
 		}
 		return "", "", false
 	}
-	if s.d.Clamd != nil {
+	if want.ClamAV && s.d.Clamd != nil {
 		if src, sig, hit := scan("clamav", func(f *os.File) (string, string, error) {
 			sig, err := s.d.Clamd.Scan(ctx, f)
 			return "clamav", sig, err
@@ -415,7 +476,7 @@ func (s *Service) scanFile(ctx context.Context, path string) (source, sig string
 			return src, sig, nil
 		}
 	}
-	if s.d.Yara != nil {
+	if want.YARA && s.d.Yara != nil {
 		if src, sig, hit := scan("yara", func(f *os.File) (string, string, error) {
 			ms, err := s.d.Yara.Scan(ctx, f)
 			if err != nil || len(ms) == 0 {

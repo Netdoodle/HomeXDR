@@ -22,7 +22,7 @@ func (h *Handler) getAV(w http.ResponseWriter, r *http.Request, _ *store.User) {
 }
 
 func (h *Handler) putAV(w http.ResponseWriter, r *http.Request, u *store.User) {
-	var in av.Settings
+	in := h.c.AV.Settings() // fields the request leaves out keep their values
 	if !decode(w, r, &in) {
 		return
 	}
@@ -38,8 +38,8 @@ func (h *Handler) putAV(w http.ResponseWriter, r *http.Request, u *store.User) {
 	}
 	details := "off"
 	if set.Enabled {
-		details = fmt.Sprintf("on, action %s, scan unknown %v, intel %v, %d blocked, %d allowed",
-			set.Action, set.ScanUnknown, set.UseIntel, len(set.BlockedHashes), len(set.AllowedHashes))
+		details = fmt.Sprintf("on, action %s, scan unknown %v (clamav %v, yara %v), intel %v, %d blocked, %d allowed",
+			set.Action, set.ScanUnknown, set.UseClamAV, set.UseYARA, set.UseIntel, len(set.BlockedHashes), len(set.AllowedHashes))
 	}
 	h.c.Audit(r.Context(), u.Username, "settings.antivirus", "", details)
 	writeJSON(w, http.StatusOK, h.c.AV.Status(r.Context()))

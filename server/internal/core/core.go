@@ -63,6 +63,8 @@ type Core struct {
 	AdGuard *adguard.Poller
 	// AV is the antivirus (feature_av.go).
 	AV *av.Service
+	// groups caches the host group tree (groups.go).
+	groups groupCache
 	// Backup archives events to object storage (feature_backup.go).
 	Backup *backup.Service
 	// Health is feed health, the offline lists and vulnerability matching.
@@ -96,6 +98,9 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 	c.initHealth(ctx)
 	c.initNetwork(ctx)
 	c.initAV(ctx)
+	if err := c.ReloadGroups(ctx); err != nil {
+		c.Log.Error("load host groups", "err", err)
+	}
 	c.initBackup(ctx)
 	return c, nil
 }

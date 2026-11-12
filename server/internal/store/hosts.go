@@ -26,19 +26,22 @@ const (
 
 // Host is a host record in API shape.
 type Host struct {
-	ID             string             `json:"id"`
-	Hostname       string             `json:"hostname"`
-	Kind           string             `json:"kind"`
-	OS             event.OS           `json:"os"`
-	Arch           string             `json:"arch,omitempty"`
-	IPs            []string           `json:"ips"`
-	MACs           []string           `json:"macs,omitempty"`
-	AgentVersion   string             `json:"agent_version,omitempty"`
-	Status         string             `json:"status"`
-	Isolated       bool               `json:"isolated"`
-	LastSeen       *time.Time         `json:"last_seen,omitempty"`
-	EnrolledAt     time.Time          `json:"enrolled_at"`
-	Labels         []string           `json:"labels"`
+	ID           string     `json:"id"`
+	Hostname     string     `json:"hostname"`
+	Kind         string     `json:"kind"`
+	OS           event.OS   `json:"os"`
+	Arch         string     `json:"arch,omitempty"`
+	IPs          []string   `json:"ips"`
+	MACs         []string   `json:"macs,omitempty"`
+	AgentVersion string     `json:"agent_version,omitempty"`
+	Status       string     `json:"status"`
+	Isolated     bool       `json:"isolated"`
+	LastSeen     *time.Time `json:"last_seen,omitempty"`
+	EnrolledAt   time.Time  `json:"enrolled_at"`
+	Labels       []string   `json:"labels"`
+	// GroupID is the host group (store.HostGroup) the host belongs to; "" is the
+	// organisation itself (Global).
+	GroupID        string             `json:"group_id"`
 	Sensors        []api.SensorStatus `json:"sensors,omitempty"`
 	QueueEvents    int64              `json:"queue_events,omitempty"`
 	AllowedActions []string           `json:"allowed_actions,omitempty"`
@@ -68,7 +71,7 @@ type Host struct {
 
 const hostCols = `h.id, h.kind, h.hostname, h.info, h.status, h.labels, h.enrolled_at, h.last_seen,
 	h.revoked, h.isolated, h.cert_serial, h.source_ip, h.pending_cert_serial, h.cert_expires,
-	h.decommissioned_at, h.update_now_at, h.update_offered, h.update_offered_at,
+	h.decommissioned_at, h.update_now_at, h.update_offered, h.update_offered_at, h.group_id,
 	(SELECT COUNT(*) FROM alerts a WHERE a.host_id = h.id AND a.status IN ('new','in_progress'))`
 
 func scanHost(row interface{ Scan(...any) error }) (*Host, error) {
@@ -78,7 +81,7 @@ func scanHost(row interface{ Scan(...any) error }) (*Host, error) {
 	var revoked, isolated int
 	if err := row.Scan(&h.ID, &h.Kind, &h.Hostname, &info, &status, &labels, &enrolled, &last,
 		&revoked, &isolated, &h.CertSerial, &h.SourceIP, &h.PendingCertSerial, &certExpires,
-		&decommissioned, &updateNow, &h.UpdateOffered, &offeredAt, &h.OpenAlerts); err != nil {
+		&decommissioned, &updateNow, &h.UpdateOffered, &offeredAt, &h.GroupID, &h.OpenAlerts); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -166,6 +169,8 @@ type HostFilter struct {
 	Kind     string
 	IDs      []string
 	Labels   []string // any of
+	// GroupIDs: hosts in any of these groups ("" for hosts in no group).
+	GroupIDs []string
 	// IncludeDecommissioned also returns decommissioned agents (always true when
 	// Status is "decommissioned").
 	IncludeDecommissioned bool
@@ -190,6 +195,12 @@ func (s *Store) ListHosts(ctx context.Context, f HostFilter) ([]*Host, error) {
 	}
 	if !f.IncludeDecommissioned && f.Status != "decommissioned" {
 		q += ` AND h.decommissioned_at IS NULL`
+	}
+	if len(f.GroupIDs) > 0 {
+		q += ` AND h.group_id IN (` + placeholders(len(f.GroupIDs)) + `)`
+		for _, id := range f.GroupIDs {
+			args = append(args, id)
+		}
 	}
 	if len(f.IDs) > 0 {
 		q += ` AND h.id IN (` + placeholders(len(f.IDs)) + `)`

@@ -31,6 +31,9 @@ type Finding struct {
 	// Source and Destination, when known, make the alert searchable by address.
 	Source, Destination *event.Endpoint
 	Data                map[string]any
+	// LinkKey and LinkSource fold the finding with other detectors' alerts about the same
+	// thing (store.AlertInput.LinkKey).
+	LinkKey, LinkSource string
 }
 
 // RaiseFinding stores a finding as an event and sends it through the same path as a rule
@@ -64,6 +67,8 @@ func (c *Core) RaiseFinding(ctx context.Context, f Finding) error {
 		Severity:    f.Severity,
 		Event:       ev,
 		DedupEntity: f.Entity,
+		LinkKey:     f.LinkKey,
+		LinkSource:  f.LinkSource,
 	})
 	return nil
 }

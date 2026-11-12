@@ -6,6 +6,7 @@ import { adguardRoutes } from './adguard'
 import { maintenanceRoutes } from './maintenance'
 import { inboundRoutes } from './inbound'
 import { antivirusRoutes } from './antivirus'
+import { groupRoutes } from './groups'
 import { backupRoutes, retentionRoutes } from './retention'
 
 const NOW = Date.now()
@@ -221,6 +222,7 @@ export function networkRoutes(route: Route, fail: (status: number, message: stri
   maintenanceRoutes(route, fail)
   inboundRoutes(route)
   antivirusRoutes(route, fail)
+  groupRoutes(route, fail)
   retentionRoutes(route, fail)
   backupRoutes(route, fail)
   route('GET', '/api/devices', () => deviceList())

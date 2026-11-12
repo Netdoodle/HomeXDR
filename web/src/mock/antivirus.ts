@@ -9,8 +9,8 @@ type Route = (method: string, path: string, handler: (c: Ctx) => unknown, opts?:
 const NOW = Date.now()
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
 
-const status: AVStatus = {
-  settings: { enabled: true, action: 'quarantine', scan_unknown: true, use_intel: true, max_file_mb: 64, blocked_hashes: [], allowed_hashes: [] },
+export const status: AVStatus = {
+  settings: { enabled: true, action: 'quarantine', scan_unknown: true, use_clamav: true, use_yara: true, use_intel: true, max_file_mb: 64, blocked_hashes: [], allowed_hashes: [] },
   clamd: { configured: true, ok: true, version: 'ClamAV 1.4.6/27450/Fri Nov  6 08:21:00 2026' },
   yara: { configured: true, ok: true, yara_version: '4.5.4', rules: 5128, package: 'YARA Forge core 2026-11-08', custom_files: 1, compiled: ago(3 * 3600_000) },
   verdicts: { clean: 214, known: 1310, malicious: 2, skipped: 3 },
@@ -41,7 +41,7 @@ const status: AVStatus = {
       verdict: 'malicious',
       source: 'yara:tool',
       signature: 'SIGNATURE_BASE_HKTL_Mimikatz_Strings (+2 more)',
-      path: 'C:\Users\alice\Desktop\tools\mk.exe',
+      path: 'C:\\Users\\alice\\Desktop\\tools\\mk.exe',
       host_id: 'h-desk',
       checked_at: ago(3 * 24 * 3600_000),
     },

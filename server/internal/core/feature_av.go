@@ -20,7 +20,8 @@ import (
 const avIssuer = "antivirus"
 
 func (c *Core) initAV(ctx context.Context) {
-	d := av.Deps{State: c.State, Log: c.Log, Lookup: c.avLookup, Fetch: c.avFetch, Detected: c.avDetected}
+	d := av.Deps{State: c.State, Log: c.Log, Lookup: c.avLookup, Fetch: c.avFetch, Detected: c.avDetected,
+		Scanners: c.avScanners}
 	if c.Cfg.ClamdAddr != "" {
 		d.Clamd = &av.Clamd{Addr: c.Cfg.ClamdAddr}
 	}
@@ -42,7 +43,7 @@ func (c *Core) observeAV(host *store.Host, evs []*event.Event) {
 		return
 	}
 	for _, e := range evs {
-		cand := av.Candidate{HostID: host.ID, Hostname: host.Hostname, Platform: host.OS.Platform}
+		cand := av.Candidate{HostID: host.ID, Hostname: host.Hostname, Platform: host.OS.Platform, GroupID: host.GroupID}
 		switch {
 		case slices.Contains(e.Event.Category, event.CategoryProcess) && slices.Contains(e.Event.Type, event.TypeStart) &&
 			e.Process != nil && e.Process.Hash != nil && e.Process.Hash.SHA256 != "":
@@ -171,12 +172,14 @@ func (c *Core) avDetected(ctx context.Context, d av.Detection, set av.Settings) 
 		Description: "HomeXDR's antivirus judged this program to be malware (" + avSourceLabel(d.Source) + "). " +
 			"With automatic response on, the process and its children are stopped and the file is quarantined on the host; " +
 			"a quarantined file can be restored from the host's page.",
-		Tags:     []string{"attack.execution"},
-		Entity:   d.SHA256,
-		HostID:   d.HostID,
-		Hostname: d.Hostname,
-		Dataset:  "homexdr.av",
-		Message:  fmt.Sprintf("%s: %s (%s)", sig, d.Path, action),
+		Tags:       []string{"attack.execution"},
+		Entity:     d.SHA256,
+		HostID:     d.HostID,
+		Hostname:   d.Hostname,
+		Dataset:    "homexdr.av",
+		Message:    fmt.Sprintf("%s: %s (%s)", sig, d.Path, action),
+		LinkKey:    MalwareLinkKey(d.HostID, d.Path),
+		LinkSource: linkSourceAV,
 		Data: map[string]any{
 			"av.sha256": d.SHA256, "av.path": d.Path, "av.signature": sig, "av.source": d.Source,
 			"av.action": action, "av.pid": d.PID, "av.entity_id": d.EntityID,

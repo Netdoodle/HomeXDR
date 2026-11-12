@@ -75,6 +75,9 @@ func (c *Core) normalize(e *event.Event, h *store.Host, now time.Time) {
 }
 
 func (c *Core) detect(ctx context.Context, e *event.Event) {
+	// A Defender detection folds with HomeXDR's antivirus alert for the same file, and
+	// detections of different files on one host stay apart.
+	link := defenderLinkKey(e)
 	for _, r := range c.Engine.Evaluate(e) {
 		in := store.AlertInput{
 			Rule: store.AlertRule{
@@ -84,6 +87,9 @@ func (c *Core) detect(ctx context.Context, e *event.Event) {
 			Mitre:    toStoreMitre(detect.MitreFromTags(r.Tags)),
 			Severity: r.Level,
 			Event:    e,
+		}
+		if link != "" {
+			in.LinkKey, in.LinkSource, in.DedupEntity = link, linkSourceDefender, link
 		}
 		c.recordAlert(ctx, in)
 	}

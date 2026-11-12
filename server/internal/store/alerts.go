@@ -105,6 +105,11 @@ type Alert struct {
 	Event           *event.Event   `json:"event,omitempty"`
 	Events          []*event.Event `json:"events,omitempty"`
 	Notes           []Note         `json:"notes"`
+	// Linked lists other detectors' hits about the same thing that were folded into this
+	// alert (for example Microsoft Defender's detection of a file HomeXDR's antivirus
+	// also caught). LinkKey is what they have in common.
+	Linked  []AlertLink `json:"linked"`
+	LinkKey string      `json:"link_key,omitempty"`
 	// AITriage summarizes the AI analyst's investigation, if there is one.
 	AITriage *TriageSummary `json:"ai_triage,omitempty"`
 	// Suppression says which suppression closed this alert or, when Overridden is set,
@@ -132,6 +137,22 @@ type AlertInput struct {
 	DedupEntity string
 	// Suppression, when set and not overridden, records the hit as suppressed.
 	Suppression *AlertSuppression
+	// LinkKey, when set, names the thing the hit is about across detectors (such as
+	// "malware|<host>|<file path>"): a hit from another rule with the same key folds into
+	// the open alert instead of opening a second one. LinkSource names the detector.
+	LinkKey, LinkSource string
+}
+
+// AlertLink is a hit from another rule folded into an alert by its LinkKey.
+type AlertLink struct {
+	RuleID    string    `json:"rule_id"`
+	Title     string    `json:"title"`
+	Source    string    `json:"source,omitempty"`
+	Severity  string    `json:"severity"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+	Count     int       `json:"count"`
+	EventID   string    `json:"event_id,omitempty"`
 }
 
 // DedupWindow is how long an open alert keeps absorbing repeat hits.
@@ -255,6 +276,12 @@ func (s *Store) RecordAlert(ctx context.Context, in AlertInput) (*Alert, bool, e
 	case !errors.Is(err, sql.ErrNoRows):
 		return nil, false, err
 	}
+	if in.LinkKey != "" && status != AlertSuppressed {
+		a, ok, err := s.foldLinked(ctx, tx, in, at, now)
+		if err != nil || ok {
+			return a, false, err
+		}
+	}
 
 	if in.Mitre == nil {
 		in.Mitre = []Mitre{}
@@ -266,11 +293,11 @@ func (s *Store) RecordAlert(ctx context.Context, in AlertInput) (*Alert, bool, e
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO alerts(id, dedup_key, rule_id, rule, mitre, severity, risk_score, status, host_id, hostname,
 		   process_entity_id, process_name, command_line, user_name, first_seen, last_seen, count, event_ids, event,
-		   created_at, updated_at, suppression)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)`,
+		   created_at, updated_at, suppression, link_key)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)`,
 		id, key, in.Rule.ID, mustJSON(in.Rule), mustJSON(in.Mitre), in.Severity, RiskScore(in.Severity), status,
 		ev.Host.ID, ev.Host.Name, entity, pname, truncate(cmdline, 4096), user, ts(at), ts(at),
-		mustJSON([]string{ev.ID}), mustJSON(ev), ts(now), ts(now), suppression); err != nil {
+		mustJSON([]string{ev.ID}), mustJSON(ev), ts(now), ts(now), suppression, in.LinkKey); err != nil {
 		return nil, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -282,14 +309,14 @@ func (s *Store) RecordAlert(ctx context.Context, in AlertInput) (*Alert, bool, e
 
 const alertCols = `id, created_at, updated_at, first_seen, last_seen, count, status, severity, risk_score,
 	assignee, rule, mitre, host_id, hostname, process_entity_id, process_name, command_line, user_name,
-	event_ids, event, notes, suppression`
+	event_ids, event, notes, suppression, link_key, linked`
 
 func scanAlert(row interface{ Scan(...any) error }) (*Alert, error) {
 	var a Alert
-	var created, updated, first, last, rule, mitre, ids, ev, notes, suppression string
+	var created, updated, first, last, rule, mitre, ids, ev, notes, suppression, linked string
 	if err := row.Scan(&a.ID, &created, &updated, &first, &last, &a.Count, &a.Status, &a.Severity, &a.RiskScore,
 		&a.Assignee, &rule, &mitre, &a.HostID, &a.Hostname, &a.ProcessEntityID, &a.ProcessName, &a.CommandLine,
-		&a.User, &ids, &ev, &notes, &suppression); err != nil {
+		&a.User, &ids, &ev, &notes, &suppression, &a.LinkKey, &linked); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -301,6 +328,10 @@ func scanAlert(row interface{ Scan(...any) error }) (*Alert, error) {
 	unmarshalJSON(mitre, &a.Mitre)
 	unmarshalJSON(ids, &a.EventIDs)
 	unmarshalJSON(notes, &a.Notes)
+	unmarshalJSON(linked, &a.Linked)
+	if a.Linked == nil {
+		a.Linked = []AlertLink{}
+	}
 	if suppression != "" {
 		a.Suppression = &AlertSuppression{}
 		unmarshalJSON(suppression, a.Suppression)
