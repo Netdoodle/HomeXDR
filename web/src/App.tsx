@@ -22,6 +22,7 @@ import { ProcessTreePage } from './pages/ProcessTree'
 import { RuleDetailPage } from './pages/RuleDetail'
 import { RuleEditorPage } from './pages/RuleEditor'
 import { InvestigatePage } from './pages/Investigate'
+import { ThreatMapPage } from './pages/ThreatMap'
 import { RuleReposPage } from './pages/RuleRepos'
 import { RulesPage } from './pages/Rules'
 import { SearchPage } from './pages/Search'
@@ -85,6 +86,7 @@ export function App() {
                 <Route path="devices" element={<DevicesPage />} />
                 <Route path="search" element={<SearchPage />} />
                 <Route path="investigate" element={<InvestigatePage />} />
+                <Route path="threat-map" element={<ThreatMapPage />} />
                 <Route path="rules" element={<RulesPage />} />
                 <Route path="rules/new" element={<RuleEditorPage />} />
                 <Route path="rules/repositories" element={<RuleReposPage />} />
