@@ -17,7 +17,17 @@ import (
 // never from an outside service.
 
 // inboundBase selects firewall log rows of connections arriving at the firewall.
-const inboundBase = `event.dataset:opnsense.filterlog network.direction:inbound`
+//
+// A port forward logs two lines for one packet: the "rdr" translation (to the WAN address)
+// and then the filter rule's pass or block (to the inside address). The rdr line is not a
+// verdict, as a forwarded packet can still be blocked, so it is left out and the filter
+// line that follows counts the attempt once.
+//
+// DHCP replies to the firewall's own lease (server port 67 to client port 68, and 547 to
+// 546 for DHCPv6) are the ISP handing out the WAN address, not someone trying to get in.
+const inboundBase = `event.dataset:opnsense.filterlog network.direction:inbound NOT event.action:rdr` +
+	` NOT (network.transport:udp source.port:67 destination.port:68)` +
+	` NOT (network.transport:udp source.port:547 destination.port:546)`
 
 // notPrivateSource leaves out sources inside the home network (RFC 1918, link-local,
 // loopback, Tailscale's CGNAT range, IPv6 unique-local and link-local). The query language
@@ -136,7 +146,7 @@ func publicAddr(s string) (netip.Addr, bool) {
 	return a, true
 }
 
-func allowedAction(a string) bool { return a == "pass" || a == "rdr" || a == "nat" }
+func allowedAction(a string) bool { return a == "pass" || a == "nat" }
 
 // InboundThreats builds the inbound threats view for the last hours.
 func (c *Core) InboundThreats(ctx context.Context, hours int) (*InboundView, error) {
@@ -343,7 +353,7 @@ const (
 )
 
 // allowedActionsQuery and its negation select connections let in or blocked.
-const allowedActionsQuery = `(event.action:pass OR event.action:rdr OR event.action:nat)`
+const allowedActionsQuery = `(event.action:pass OR event.action:nat)`
 
 // InboundEvents returns the firewall events from one country's internet sources (all,
 // blocked or let in) in the last hours, newest first. The country is looked up per source
