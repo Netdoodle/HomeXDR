@@ -3,6 +3,8 @@ import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type Ke
 import { Link } from 'react-router'
 import { api, type Event, type SearchResponse } from '../api'
 import { FieldTree } from '../components/FieldTree'
+import { InvestigateMenu } from '../components/InvestigateMenu'
+import { investigateTargets } from '../lib/intel'
 import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
 import { ButtonTabs, Pager } from '../components/Misc'
@@ -430,6 +432,7 @@ function EventsPanel({
                                   </Link>
                                 ) : null}
                                 {e.host?.id ? <Link to={`/hosts/${encodeURIComponent(e.host.id)}`}>Host {e.host.name}</Link> : null}
+                                <InvestigateMenu targets={investigateTargets(e)} small align="left" />
                                 <span className="mono xsmall faint">id {e.id}</span>
                               </div>
                               {extra && Object.keys(extra).length ? (

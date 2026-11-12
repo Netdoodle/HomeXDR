@@ -107,6 +107,49 @@ export function flagEmoji(code?: string): string {
 const PRIVATE_IP = /^(10\.|127\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|0\.|::1$|fe[89ab][0-9a-f]:|f[cd][0-9a-f]{2}:)/i
 
 /** The indicators worth investigating in an event: public addresses, domains and hashes. */
+/** Something in an event that the Investigate page can look up. */
+export interface InvestigateTarget {
+  label: string
+  value: string
+  /** A private address: only your own data is searched, nothing is sent out. */
+  local?: boolean
+}
+
+const HASH_VALUE = /^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$/i
+
+/**
+ * Everything in an event worth investigating: its addresses (private ones too, which are
+ * searched in your own data only), domains, URL, file hashes and the host's own address.
+ */
+export function investigateTargets(e?: Event): InvestigateTarget[] {
+  if (!e) return []
+  const out: InvestigateTarget[] = []
+  const add = (label: string, value?: string | null, local?: boolean) => {
+    const v = value?.trim()
+    if (v && !out.some((x) => x.value === v)) out.push({ label, value: v, local })
+  }
+  const ip = (label: string, value?: string) => {
+    if (value && (IPV4.test(value) || IPV6.test(value))) add(label, value, PRIVATE_IP.test(value))
+  }
+  const hashes = (what: string, h?: { md5?: string; sha1?: string; sha256?: string }) => {
+    if (!h) return
+    for (const k of ['sha256', 'sha1', 'md5'] as const) {
+      if (h[k] && HASH_VALUE.test(h[k]!)) add(`${what} ${k.toUpperCase().replace('SHA', 'SHA-')}`, h[k])
+    }
+  }
+  ip('Source', e.source?.ip)
+  ip('Destination', e.destination?.ip)
+  add('Domain', e.destination?.domain)
+  add('DNS query', e.dns?.question?.name)
+  if (e.http?.url && /^https?:\/\//i.test(e.http.url)) add('URL', e.http.url)
+  hashes('Process', e.process?.hash)
+  hashes('Parent process', e.process?.parent?.hash)
+  hashes('File', e.file?.hash)
+  const hostIP = (e.host?.ip ?? []).find((a) => IPV4.test(a) && !a.startsWith('127.') && !a.startsWith('172.17.'))
+  if (hostIP) add(`Host ${e.host?.name ?? ''}`.trim(), hostIP, PRIVATE_IP.test(hostIP))
+  return out
+}
+
 export function eventIndicators(e?: Event): { label: string; value: string }[] {
   if (!e) return []
   const out: { label: string; value: string }[] = []
