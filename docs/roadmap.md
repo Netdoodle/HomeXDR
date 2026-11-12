@@ -73,6 +73,16 @@ Related: agents away from home reach the server over Tailscale. Add the Tailscal
 MagicDNS name to `HOMEXDR_SERVER_NAMES` so the agent certificate covers them, and point those
 agents at the MagicDNS name; the spool covers the gaps.
 
+## macOS agent, next steps
+
+- **Developer ID signing and notarization**, so Full Disk Access survives updates and an
+  MDM profile can grant it (today's ad-hoc signature ties the grant to one build).
+- **DNS sensor**: the shared DNS parser over a pf/BPF capture of port 53 (no process), or
+  mDNSResponder's log.
+- **Login items and background tasks** in `persistence.autoruns` (`sfltool dumpbtm`).
+- **Network events without polling**, through a Network Extension (needs signing).
+- **A `.pkg` installer** for people who don't want to paste a command.
+
 ## Later
 
 - **Map Sysmon's other events.** Network (3), file (11, 23, 26), registry (12-14), DNS (22),
@@ -102,6 +112,9 @@ agents at the MagicDNS name; the spool covers the gaps.
 
 ## Done
 
+- macOS agent (Intel and Apple silicon): eslogger process, auth, file and security events
+  with polling and unified-log fallbacks, lsof network polling, pf isolation, launchd,
+  collectors and six macOS rules: [agent/README.md](../agent/README.md#macos-platform)
 - Threat map: internet sources reaching the firewall by country, network and port
 - Investigate menu on search results, event tables, alerts and hosts: addresses, domains,
   URLs, process and file hashes, the host's address

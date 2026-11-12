@@ -20,6 +20,8 @@ jobs:
           - { module: server, os: ubuntu-latest }
           - { module: agent, os: ubuntu-latest }
           - { module: agent, os: windows-latest }
+          - { module: agent, os: macos-latest } # Apple silicon
+          - { module: agent, os: macos-15-intel }
     defaults:
       run:
         working-directory: ${{ matrix.module }}

@@ -54,20 +54,24 @@ export function agentUrlOptions(settings: Pick<ServerSettings, 'agent_url' | 'se
 
 export interface InstallCommands {
   linux: string
+  macos: string
   windows: string
 }
 
 /**
  * `updateKey` (the release key from the server settings) turns on signed automatic
- * updates on Linux. Windows agents cannot update themselves yet, so it is left out there.
+ * updates on Linux and macOS. Windows agents cannot update themselves yet, so it is left
+ * out there.
  */
 export function buildInstallCommands(agentUrl: string, token: string, caPin: string, updateKey?: string): InstallCommands {
   const base = normalizeAgentUrl(agentUrl)
+  const unix = (script: string) =>
+    `curl -fsSLk ${shellQuote(base + '/v1/install/' + script)} | sudo sh -s -- ` +
+    `--token ${shellQuote(token)} --ca-pin ${shellQuote(caPin)}` +
+    (updateKey ? ` --update-key ${shellQuote(updateKey)}` : '')
   return {
-    linux:
-      `curl -fsSLk ${shellQuote(base + '/v1/install/linux.sh')} | sudo sh -s -- ` +
-      `--token ${shellQuote(token)} --ca-pin ${shellQuote(caPin)}` +
-      (updateKey ? ` --update-key ${shellQuote(updateKey)}` : ''),
+    linux: unix('linux.sh'),
+    macos: unix('macos.sh'),
     windows:
       `homexdr-agent.exe install --server ${psQuote(base)} ` + `--token ${psQuote(token)} --ca-pin ${psQuote(caPin)}`,
   }

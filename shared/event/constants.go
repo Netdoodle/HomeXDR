@@ -78,24 +78,28 @@ const (
 
 // Modules (event.module): the sensor or decoder that produced the event.
 const (
-	ModuleETW       = "etw"       // Windows Event Tracing
-	ModuleEventLog  = "eventlog"  // Windows Event Log channels (Security, Sysmon, PowerShell)
-	ModuleEBPF      = "ebpf"      // Linux eBPF sensor
-	ModuleProcConn  = "procconn"  // Linux netlink proc connector fallback
-	ModuleProcfs    = "procfs"    // Linux /proc polling fallback
-	ModuleFanotify  = "fanotify"  // Linux fanotify file sensor
-	ModuleInotify   = "inotify"   // Linux inotify file sensor fallback
-	ModuleAuthLog   = "authlog"   // Linux auth log / journald
-	ModuleFIM       = "fim"       // file integrity monitoring
-	ModuleInventory = "inventory" // host inventory snapshots
-	ModuleLogfile   = "logfile"   // generic log file tailing
-	ModuleArtifact  = "artifact"  // artifact collection rows
-	ModuleResponse  = "response"  // response action audit events
-	ModuleSyslog    = "syslog"    // generic syslog
-	ModuleOPNsense  = "opnsense"  // OPNsense filterlog
-	ModuleSuricata  = "suricata"  // Suricata EVE JSON
-	ModuleNetFlow   = "netflow"   // NetFlow and IPFIX flow records
-	ModuleDNS       = "dns"       // resolver query logs (Unbound)
-	ModuleDHCP      = "dhcp"      // DHCP server logs (ISC dhcpd, Kea, dnsmasq)
-	ModuleHomeXDR   = "homexdr"   // findings the server itself produces (health, behaviour)
+	ModuleETW        = "etw"        // Windows Event Tracing
+	ModuleEventLog   = "eventlog"   // Windows Event Log channels (Security, Sysmon, PowerShell)
+	ModuleEBPF       = "ebpf"       // Linux eBPF sensor
+	ModuleProcConn   = "procconn"   // Linux netlink proc connector fallback
+	ModuleProcfs     = "procfs"     // Linux /proc polling fallback
+	ModuleFanotify   = "fanotify"   // Linux fanotify file sensor
+	ModuleInotify    = "inotify"    // Linux inotify file sensor fallback
+	ModuleAuthLog    = "authlog"    // Linux auth log / journald
+	ModuleESLogger   = "eslogger"   // macOS Endpoint Security events through Apple's eslogger
+	ModuleSysctl     = "sysctl"     // macOS process table polling fallback
+	ModuleLsof       = "lsof"       // macOS socket table polling
+	ModuleUnifiedLog = "unifiedlog" // macOS unified log (`log stream`) fallback
+	ModuleFIM        = "fim"        // file integrity monitoring
+	ModuleInventory  = "inventory"  // host inventory snapshots
+	ModuleLogfile    = "logfile"    // generic log file tailing
+	ModuleArtifact   = "artifact"   // artifact collection rows
+	ModuleResponse   = "response"   // response action audit events
+	ModuleSyslog     = "syslog"     // generic syslog
+	ModuleOPNsense   = "opnsense"   // OPNsense filterlog
+	ModuleSuricata   = "suricata"   // Suricata EVE JSON
+	ModuleNetFlow    = "netflow"    // NetFlow and IPFIX flow records
+	ModuleDNS        = "dns"        // resolver query logs (Unbound)
+	ModuleDHCP       = "dhcp"       // DHCP server logs (ISC dhcpd, Kea, dnsmasq)
+	ModuleHomeXDR    = "homexdr"    // findings the server itself produces (health, behaviour)
 )

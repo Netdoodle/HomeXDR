@@ -1,0 +1,32 @@
+title: Launch Daemon Or Agent Added On macOS
+id: 4ad43798-2df0-479f-83c3-43bb302592a4
+status: experimental
+description: |
+  A new launch daemon or launch agent was registered with background task management.
+  Launch items are the usual way macOS malware persists. Expected after installing
+  software; check the plist and the program it starts if you did not install anything.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1543/004/
+  - https://attack.mitre.org/techniques/T1543/001/
+tags:
+  - attack.persistence
+  - attack.privilege-escalation
+  - attack.t1543.004
+  - attack.t1543.001
+logsource:
+  product: macos
+  category: configuration
+detection:
+  selection:
+    event.action: 'launch_item_added'
+    item_type:
+      - 'daemon'
+      - 'agent'
+  filter_managed:
+    managed: true
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - Software you installed or updated (Docker Desktop, VPN clients, updaters)
+level: medium

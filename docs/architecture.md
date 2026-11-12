@@ -28,7 +28,7 @@ telemetry from OPNsense and Suricata over syslog.
 | Path | What | Module |
 |---|---|---|
 | `shared/` | Event schema, agent wire protocol, Community ID, version | `github.com/Netdoodle/homexdr/shared` |
-| `agent/` | Endpoint agent (`homexdr-agent`) for Windows and Linux, macOS later | `github.com/Netdoodle/homexdr/agent` |
+| `agent/` | Endpoint agent (`homexdr-agent`) for Windows, Linux and macOS | `github.com/Netdoodle/homexdr/agent` |
 | `server/` | Server (`homexdr-server`): ingest, detection, storage, REST API, syslog | `github.com/Netdoodle/homexdr/server` |
 | `web/` | Web console (React + TypeScript + Vite), embedded into the server image | — |
 | `rules/` | Built-in detection rules in Sigma format | — |

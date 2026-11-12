@@ -175,6 +175,7 @@ release key did not sign.
   until its first successful heartbeat. If it starts more than three times without one,
   the agent moves `<binary>.prev` back, restarts into it and skips that version for 24
   hours. A failed download or check is retried after an hour.
-- **Platforms.** Linux (and macOS once it has a platform layer). Windows agents cannot
+- **Platforms.** Linux and macOS (on macOS a new build loses Full Disk Access, see
+  [agent/README.md](../agent/README.md#macos-platform)). Windows agents cannot
   replace their running executable yet and ignore the offer.
 

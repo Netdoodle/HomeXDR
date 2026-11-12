@@ -1,0 +1,35 @@
+title: Sensitive Privacy Permission Granted On macOS
+id: 9b1e195e-c4df-4b7e-977c-ebeb3515ab6b
+status: experimental
+description: |
+  A program was given Full Disk Access, Accessibility, Screen Recording or Input
+  Monitoring. These let it read every file, control the Mac or watch the screen and
+  keyboard, which is what infostealers and remote-access tools ask for.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1548/006/
+tags:
+  - attack.defense-evasion
+  - attack.privilege-escalation
+  - attack.t1548.006
+logsource:
+  product: macos
+  category: configuration
+detection:
+  selection:
+    event.action: 'tcc_modified'
+    service:
+      - 'SystemPolicyAllFiles'
+      - 'Accessibility'
+      - 'ScreenCapture'
+      - 'ListenEvent'
+      - 'PostEvent'
+  filter_denied:
+    right|contains:
+      - 'denied'
+      - 'unknown'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - You granting these to remote-support, backup, password-manager or security tools
+level: medium

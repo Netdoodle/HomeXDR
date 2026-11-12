@@ -3,7 +3,8 @@
 Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
 
 - **Endpoint detection and response without a kernel driver.** Windows telemetry from ETW
-  and the Event Log; Linux telemetry from eBPF with netlink/procfs fallbacks. macOS is planned.
+  and the Event Log; Linux telemetry from eBPF with netlink/procfs fallbacks; macOS (Intel and Apple
+  silicon) telemetry from Endpoint Security through `eslogger`, with polling fallbacks.
 - **Sigma detections.** Built-in rules plus any SigmaHQ rule, mapped onto an ECS-style schema.
   Import a rule repository such as SigmaHQ from the console (a git repository or a release
   archive) and choose per repository whether new versions install automatically or wait

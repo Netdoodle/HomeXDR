@@ -46,6 +46,7 @@ func New(c *core.Core) *Handler {
 	h.mux.HandleFunc("GET /v1/download/{name}", h.download)
 	h.mux.HandleFunc("GET "+api.PathReleases+"{version}/{name}", h.archivedRelease)
 	h.mux.HandleFunc("GET /v1/install/linux.sh", h.installScript)
+	h.mux.HandleFunc("GET /v1/install/macos.sh", h.installScript)
 	h.mux.HandleFunc("GET /v1/ca.crt", h.caCert)
 	h.mux.Handle("POST "+api.PathHeartbeat, h.agent(h.heartbeat))
 	h.mux.Handle("POST "+api.PathEvents, h.agent(h.events))

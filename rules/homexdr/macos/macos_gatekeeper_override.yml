@@ -1,0 +1,23 @@
+title: Gatekeeper Overridden On macOS
+id: 34edbd31-4356-43e8-9d56-b432c51041fe
+status: experimental
+description: |
+  The user chose to open a file that Gatekeeper blocked (unsigned or not notarized).
+  Fake installers and cracked apps rely on talking the user into exactly this.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1553/001/
+tags:
+  - attack.defense-evasion
+  - attack.t1553.001
+logsource:
+  product: macos
+  category: configuration
+detection:
+  selection:
+    event.action: 'gatekeeper_override'
+  condition: selection
+falsepositives:
+  - Opening an unsigned tool you trust (homebrew builds, open-source apps)
+level: medium

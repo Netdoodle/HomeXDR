@@ -100,6 +100,18 @@ function InstallCommands({ settings, token }: { settings: ServerSettings; token:
         </div>
       </div>
       <div className="field">
+        <span className="label">macOS 13 or later (Terminal, as an administrator)</span>
+        <div className="copy-field">
+          <pre className="codeblock wrap">{cmds.macos}</pre>
+          <CopyButton text={cmds.macos} small />
+        </div>
+        <span className="help">
+          Then give the agent Full Disk Access (System Settings › Privacy &amp; Security › Full Disk Access, add{' '}
+          <span className="mono">/usr/local/bin/homexdr-agent</span>) for process, logon and file events; without it the agent falls back to
+          polling.
+        </span>
+      </div>
+      <div className="field">
         <span className="label">Windows (elevated PowerShell, from the folder with homexdr-agent.exe)</span>
         <div className="copy-field">
           <pre className="codeblock wrap">{cmds.windows}</pre>
@@ -107,8 +119,8 @@ function InstallCommands({ settings, token }: { settings: ServerSettings; token:
         </div>
       </div>
       <p className="muted xsmall" style={{ margin: 0 }}>
-        The <span className="mono">--ca-pin</span> makes the agent verify it is talking to this server before it sends the token. The Linux
-        script is fetched with <span className="mono">-k</span> because the CA is not installed yet; the agent then pins it.
+        The <span className="mono">--ca-pin</span> makes the agent verify it is talking to this server before it sends the token. The Linux and
+        macOS scripts are fetched with <span className="mono">-k</span> because the CA is not installed yet; the agent then pins it.
         {settings.agent_release.signed && settings.update_key ? (
           <>
             {' '}
