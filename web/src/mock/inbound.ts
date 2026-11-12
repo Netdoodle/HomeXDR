@@ -58,6 +58,35 @@ function view(hours: number): InboundView {
 }
 
 export function inboundRoutes(route: Route) {
+  route('GET', '/api/stats/inbound/ids', ({ query }) => {
+    const hours = Number(query?.get('hours') ?? 24) || 24
+    const buckets = 24
+    const now = Date.now()
+    const spark = (seed: number) => Array.from({ length: buckets }, (_, i) => Math.max(0, Math.round(seed * (0.4 + Math.abs(Math.sin(i / 2 + seed))))))
+    const cats = ['Misc Attack', 'Attempted Information Leak', 'Potentially Bad Traffic', 'Attempted Administrator Privilege Gain', 'Web Application Attack']
+    return {
+      hours,
+      span_sec: 3600,
+      buckets: Array.from({ length: buckets }, (_, i) => new Date(now - (buckets - i) * 3600e3).toISOString()),
+      total: 1420,
+      categories: cats,
+      threats: [
+        { name: 'ET CINS Active Threat Intelligence Poor Reputation IP', category: 'Misc Attack', severity: 'medium', count: 812, sources: 640, countries: 41, top_country: 'US', spark: spark(30) },
+        { name: 'ET SCAN Suspicious inbound to MSSQL port 1433', category: 'Potentially Bad Traffic', severity: 'medium', count: 231, sources: 88, countries: 19, top_country: 'CN', spark: spark(9) },
+        { name: 'ET SCAN NMAP -sS window 1024', category: 'Attempted Information Leak', severity: 'medium', count: 184, sources: 52, countries: 14, top_country: 'NL', spark: spark(7) },
+        { name: 'ET EXPLOIT Possible Hikvision Command Injection', category: 'Attempted Administrator Privilege Gain', severity: 'high', count: 116, sources: 12, countries: 5, top_country: 'RU', spark: spark(4) },
+        { name: 'ET WEB_SERVER WebShell Generic - wget http - POST', category: 'Web Application Attack', severity: 'high', count: 77, sources: 9, countries: 4, top_country: 'BG', spark: spark(3) },
+      ],
+      countries: [
+        { code: 'US', total: 420, sources: 260, by_category: { 'Misc Attack': 310, 'Attempted Information Leak': 60, 'Potentially Bad Traffic': 50 } },
+        { code: 'CN', total: 300, sources: 150, by_category: { 'Potentially Bad Traffic': 120, 'Misc Attack': 140, 'Attempted Administrator Privilege Gain': 40 } },
+        { code: 'NL', total: 210, sources: 70, by_category: { 'Attempted Information Leak': 90, 'Misc Attack': 100, 'Web Application Attack': 20 } },
+        { code: 'RU', total: 150, sources: 40, by_category: { 'Attempted Administrator Privilege Gain': 60, 'Misc Attack': 90 } },
+        { code: 'BR', total: 90, sources: 35, by_category: { 'Misc Attack': 90 } },
+        { code: 'BG', total: 60, sources: 9, by_category: { 'Web Application Attack': 50, 'Misc Attack': 10 } },
+      ],
+    }
+  })
   route('GET', '/api/stats/inbound', ({ query }) => view(Number(query?.get('hours') ?? 24) || 24))
   route('GET', '/api/stats/inbound/events', ({ query }) => {
     const kind = query?.get('kind') ?? 'all'

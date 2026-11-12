@@ -1,9 +1,9 @@
 // Threat map: who on the internet is trying to reach the firewall, from where, and at which ports.
 
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router'
-import { getInbound, getInboundEvents, inboundKeys, type InboundCountry, type InboundKind, type InboundSource, type InboundView } from '../api/inbound'
+import { getInbound, getInboundEvents, getInboundIDS, type IDSView, inboundKeys, type InboundCountry, type InboundKind, type InboundSource, type InboundView } from '../api/inbound'
 import { EventTable } from '../components/EventTable'
 import { AttackMap } from '../components/AttackMap'
 import { Icon } from '../components/Icon'
@@ -60,17 +60,20 @@ export function ThreatMapPage() {
 }
 
 function ThreatMapBody({ v }: { v: InboundView }) {
-  const [view, setView] = useState<'map' | 'table'>('map')
+  const [view, setView] = useState<'map' | 'table' | 'threats'>('map')
+  const [mapMode, setMapMode] = useState<'attempts' | 'ids'>('attempts')
+  const ids = useQuery({ queryKey: ['stats', 'inbound', 'ids', v.hours], queryFn: () => getInboundIDS(v.hours), refetchInterval: 60_000 })
+  const catColor = useMemo(() => categoryColors(ids.data?.categories ?? []), [ids.data])
   const [country, setCountry] = useState<string | null>(null)
-  const [drill, setDrill] = useState<{ country: string; kind: InboundKind } | null>(null)
-  const openLogs = (code: string, kind: InboundKind | 'sources') => {
+  const [drill, setDrill] = useState<{ country: string; kind: InboundKind; category?: string } | null>(null)
+  const openLogs = (code: string, kind: InboundKind | 'sources', category?: string) => {
     setCountry(code)
     if (kind === 'sources') {
       setDrill(null)
       document.getElementById('top-sources')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       return
     }
-    setDrill({ country: code, kind })
+    setDrill({ country: code, kind, category })
     setTimeout(() => document.getElementById('threat-logs')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
   if (v.attempts === 0) {
@@ -141,17 +144,99 @@ function ThreatMapBody({ v }: { v: InboundView }) {
               {flagEmoji(country)} {countryName(country)} ✕
             </button>
           ) : null}
+          {view === 'map' ? (
+            <div className="btn-group" role="group" aria-label="What the map shows">
+              <button type="button" className={mapMode === 'attempts' ? 'btn sm active' : 'btn sm'} aria-pressed={mapMode === 'attempts'} onClick={() => setMapMode('attempts')}>
+                Attempts
+              </button>
+              <button type="button" className={mapMode === 'ids' ? 'btn sm active' : 'btn sm'} aria-pressed={mapMode === 'ids'} onClick={() => setMapMode('ids')}>
+                IDS alerts
+              </button>
+            </div>
+          ) : null}
           <div className="btn-group" role="group" aria-label="View">
             <button type="button" className={view === 'map' ? 'btn sm active' : 'btn sm'} aria-pressed={view === 'map'} onClick={() => setView('map')}>
               Map
             </button>
             <button type="button" className={view === 'table' ? 'btn sm active' : 'btn sm'} aria-pressed={view === 'table'} onClick={() => setView('table')}>
-              Table
+              Countries
+            </button>
+            <button type="button" className={view === 'threats' ? 'btn sm active' : 'btn sm'} aria-pressed={view === 'threats'} onClick={() => setView('threats')}>
+              Threats
             </button>
           </div>
         </div>
         <div className="panel-body">
-          {view === 'map' ? (
+          {view === 'map' && mapMode === 'ids' ? (
+            ids.isPending ? (
+              <Loading />
+            ) : ids.isError ? (
+              <ErrorState error={ids.error} onRetry={() => ids.refetch()} />
+            ) : ids.data.total === 0 ? (
+              <EmptyState title="No IDS alerts in this window" compact>
+                Suricata alerts appear here once the firewall's intrusion detection forwards them.
+              </EmptyState>
+            ) : (
+              <>
+                <AttackMap
+                  countries={ids.data.countries.map((c) => ({ code: c.code, attempts: c.total, sources: c.sources, allowed: 0 }))}
+                  selected={country}
+                  onSelect={setCountry}
+                  slices={
+                    new Map(
+                      ids.data.countries.map((c) => [
+                        c.code,
+                        Object.entries(c.by_category)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([cat, n]) => ({ key: cat, value: n, color: catColor(cat) })),
+                      ]),
+                    )
+                  }
+                  cardBody={(code) => {
+                    const c = ids.data.countries.find((x) => x.code === code)
+                    if (!c) return null
+                    return (
+                      <dl className="map-card-stats">
+                        {Object.entries(c.by_category)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([cat, n]) => (
+                            <Fragment key={cat}>
+                              <dt>
+                                <span className="cat-dot" style={{ background: catColor(cat) }} />
+                                {cat}
+                              </dt>
+                              <dd>
+                                <button type="button" className="map-num" title={`Show these ${cat} alerts`} onClick={() => openLogs(code, 'ids', cat)}>
+                                  {formatNumber(n)}
+                                </button>
+                              </dd>
+                            </Fragment>
+                          ))}
+                        <dt>Sources</dt>
+                        <dd>{formatNumber(c.sources)}</dd>
+                      </dl>
+                    )
+                  }}
+                />
+                <div className="cat-legend">
+                  {ids.data.categories.map((cat) => (
+                    <span key={cat}>
+                      <span className="cat-dot" style={{ background: catColor(cat) }} />
+                      {cat}
+                    </span>
+                  ))}
+                </div>
+              </>
+            )
+          ) : view === 'threats' ? (
+            ids.isPending ? (
+              <Loading />
+            ) : ids.isError ? (
+              <ErrorState error={ids.error} onRetry={() => ids.refetch()} />
+            ) : (
+              <ThreatTable v={ids.data} color={catColor} />
+            )
+          ) : view === 'map' ? (
             <AttackMap
               countries={v.countries}
               selected={country}
@@ -178,13 +263,16 @@ function ThreatMapBody({ v }: { v: InboundView }) {
             <CountryTable countries={v.countries} total={v.attempts} onSelect={setCountry} onDrill={openLogs} />
           )}
           <p className="xsmall muted" style={{ margin: '6px 0 0' }}>
-            Bubble size and shading follow the number of attempts; red-ringed bubbles had connections let in. Click a country for its numbers and click a
-            number for its logs. Scroll or use the buttons to zoom, drag to move.
+            {view === 'threats'
+              ? 'Suricata alerts by threat over this window; reputation rules split into numbered groups are joined. Suppressed alerts still count here.'
+              : mapMode === 'ids' && view === 'map'
+                ? 'Each bubble splits IDS alerts by threat category, placed at the remote end of the connection. Click a country, then a number for its logs.'
+                : 'Bubble size and shading follow the number of attempts; red-ringed bubbles had connections let in. Click a country for its numbers and click a number for its logs. Scroll or use the buttons to zoom, drag to move.'}
           </p>
         </div>
       </section>
 
-      {drill ? <ThreatLogs hours={v.hours} country={drill.country} kind={drill.kind} onClose={() => setDrill(null)} /> : null}
+      {drill ? <ThreatLogs hours={v.hours} country={drill.country} kind={drill.kind} category={drill.category} onClose={() => setDrill(null)} /> : null}
 
       <div className="grid grid-2" style={{ alignItems: 'start' }}>
         <section className="panel">
@@ -452,21 +540,21 @@ function axisLabel(iso: string, spanSec: number): string {
   return `${two(d.getHours())}:${two(d.getMinutes())}`
 }
 
-const KIND_LABEL: Record<InboundKind, string> = { all: 'all connections', blocked: 'blocked', allowed: 'let in' }
+const KIND_LABEL: Record<InboundKind, string> = { all: 'all connections', blocked: 'blocked', allowed: 'let in', ids: 'IDS alerts' }
 
 /** The firewall log entries behind a number on the map or the country table. */
-function ThreatLogs({ hours, country, kind, onClose }: { hours: number; country: string; kind: InboundKind; onClose: () => void }) {
+function ThreatLogs({ hours, country, kind, category, onClose }: { hours: number; country: string; kind: InboundKind; category?: string; onClose: () => void }) {
   const [offset, setOffset] = useState(0)
   const q = useQuery({
-    queryKey: ['stats', 'inbound', 'events', hours, country, kind, offset],
-    queryFn: () => getInboundEvents(hours, country, kind, offset),
+    queryKey: ['stats', 'inbound', 'events', hours, country, kind, category ?? '', offset],
+    queryFn: () => getInboundEvents(hours, country, kind, offset, category ?? ''),
   })
   const d = q.data
   return (
     <section className="panel" id="threat-logs">
       <div className="panel-header">
         <h2 className="grow">
-          Logs: {flagEmoji(country)} {countryName(country)} · {KIND_LABEL[kind]} · {rangeLabel(hours)}
+          Logs: {flagEmoji(country)} {countryName(country)} · {category ?? KIND_LABEL[kind]} · {rangeLabel(hours)}
         </h2>
         {d?.query ? (
           <Link className="btn sm" to={`/search?q=${encodeURIComponent(d.query)}`}>
@@ -506,5 +594,90 @@ function ThreatLogs({ hours, country, kind, onClose }: { hours: number; country:
         <EmptyState title="No log entries for this selection" compact />
       )}
     </section>
+  )
+}
+
+/** Distinct colors for threat categories, most frequent first. */
+const CAT_PALETTE = ['#2ec4a6', '#e8875a', '#7aa7ff', '#e5c454', '#c779d0', '#e5484d', '#5bc0de', '#9ccc65', '#ff8fab', '#b0b8c6']
+
+function categoryColors(cats: string[]): (cat: string) => string {
+  const m = new Map(cats.map((c, i) => [c, CAT_PALETTE[i % CAT_PALETTE.length]]))
+  return (cat) => m.get(cat) ?? '#b0b8c6'
+}
+
+/** Search query for one threat: its signatures, numbered groups included. */
+function threatQuery(name: string): string {
+  const escaped = name.replace(/[\\ ()"*?:]/g, (c) => '\\' + c)
+  return `event.module:suricata event.kind:alert rule.name:${escaped}*`
+}
+
+function Sparkline({ values }: { values: number[] }) {
+  const w = 180
+  const h = 26
+  if (!values.length) return null
+  const max = Math.max(1, ...values)
+  const step = values.length > 1 ? w / (values.length - 1) : w
+  const pts = values.map((v, i) => `${(i * step).toFixed(1)} ${(h - (v / max) * (h - 2)).toFixed(1)}`)
+  const d = `M0 ${h}L${pts.join('L')}L${w} ${h}Z`
+  return (
+    <svg className="spark" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+      <path d={d} />
+    </svg>
+  )
+}
+
+function ThreatTable({ v, color }: { v: IDSView; color: (cat: string) => string }) {
+  if (v.threats.length === 0) return <EmptyState title="No IDS alerts in this window" compact />
+  return (
+    <div className="table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Threat</th>
+            <th>Severity</th>
+            <th>Frequency</th>
+            <th className="right">Count</th>
+            <th className="right">Sources</th>
+            <th>Top country</th>
+          </tr>
+        </thead>
+        <tbody>
+          {v.threats.map((t) => (
+            <tr key={t.name}>
+              <td className="copy-cell" style={{ maxWidth: 420 }}>
+                <CopyIcon text={t.name} label="Threat" />
+                <Link to={`/search?q=${encodeURIComponent(threatQuery(t.name))}`} title="Show these alerts in Search">
+                  {t.name}
+                </Link>
+                <div className="xsmall muted">
+                  <span className="cat-dot" style={{ background: color(t.category) }} />
+                  {t.category}
+                </div>
+              </td>
+              <td>
+                <span className={`sev-pill ${t.severity}`}>{t.severity.toUpperCase()}</span>
+              </td>
+              <td>
+                <Sparkline values={t.spark} />
+              </td>
+              <td className="right num">
+                <Link to={`/search?q=${encodeURIComponent(threatQuery(t.name))}`}>{formatNumber(t.count)}</Link>
+              </td>
+              <td className="right num">{formatNumber(t.sources)}</td>
+              <td>
+                {t.top_country ? (
+                  <>
+                    {flagEmoji(t.top_country)} {countryName(t.top_country)}
+                    {t.countries > 1 ? <span className="muted xsmall"> +{t.countries - 1}</span> : null}
+                  </>
+                ) : (
+                  <span className="empty-cell">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

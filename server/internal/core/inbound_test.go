@@ -52,10 +52,10 @@ func TestInboundThreats(t *testing.T) {
 		row("rdr", "198.51.100.7", 27015, 4*time.Hour),
 		inside(row("block", "198.51.100.7", 27015, 4*time.Hour)),
 		dhcp(row("pass", "24.242.191.39", 68, 2*time.Hour)), // the ISP renewing the WAN lease
-		row("block", "192.168.20.151", 445, time.Hour), // a LAN device: not the internet
-		row("block", "100.81.93.1", 22, time.Hour),     // Tailscale
-		row("block", "203.0.113.9", 80, 60*time.Hour),  // outside both windows
-		row("block", "203.0.113.10", 80, 30*time.Hour), // the window before: the trend
+		row("block", "192.168.20.151", 445, time.Hour),      // a LAN device: not the internet
+		row("block", "100.81.93.1", 22, time.Hour),          // Tailscale
+		row("block", "203.0.113.9", 80, 60*time.Hour),       // outside both windows
+		row("block", "203.0.113.10", 80, 30*time.Hour),      // the window before: the trend
 		row("block", "203.0.113.11", 80, 31*time.Hour),
 	)
 	if err := c.Events.Insert(ctx, evs); err != nil {
@@ -105,19 +105,19 @@ func TestInboundThreats(t *testing.T) {
 		t.Fatalf("previous window: %d attempts, %d blocked, %d sources", v.PrevAttempts, v.PrevBlocked, v.PrevSources)
 	}
 	// The events behind the numbers.
-	ev, err := c.InboundEvents(ctx, 24, "US", "allowed", 0)
+	ev, err := c.InboundEvents(ctx, 24, "US", "allowed", "", 0)
 	if err != nil || ev.Total != 1 || ev.Sources != 1 || ev.Query == "" {
 		t.Fatalf("US let in: %+v, %v", ev, err)
 	}
-	ev, _ = c.InboundEvents(ctx, 24, "NL", "blocked", 0)
+	ev, _ = c.InboundEvents(ctx, 24, "NL", "blocked", "", 0)
 	if ev.Total != 11 || ev.Sources != 2 || len(ev.Events) != 11 {
 		t.Fatalf("NL blocked: total %d sources %d events %d", ev.Total, ev.Sources, len(ev.Events))
 	}
-	ev, _ = c.InboundEvents(ctx, 24, "NL", "allowed", 0)
+	ev, _ = c.InboundEvents(ctx, 24, "NL", "allowed", "", 0)
 	if ev.Total != 0 || ev.Sources != 0 {
 		t.Fatalf("NL let in: %+v", ev)
 	}
-	ev, _ = c.InboundEvents(ctx, 24, "US", "blocked", 0)
+	ev, _ = c.InboundEvents(ctx, 24, "US", "blocked", "", 0)
 	if ev.Total != 2 {
 		t.Fatalf("US blocked (the forwarded packet that was blocked counts here): %+v", ev)
 	}

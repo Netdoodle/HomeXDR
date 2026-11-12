@@ -2897,3 +2897,64 @@ main h2 {
 .num-link:hover {
   text-decoration: underline;
 }
+
+/* IDS mode: bubbles split by threat category. */
+.attack-map .pie {
+  cursor: pointer;
+}
+.attack-map .pie path,
+.attack-map .pie circle {
+  stroke: #1b1e24;
+  fill-opacity: 0.95;
+}
+.attack-map .pie:hover path,
+.attack-map .pie:hover circle,
+.attack-map .pie.selected path,
+.attack-map .pie.selected circle,
+.attack-map .pie:focus-visible path {
+  fill-opacity: 1;
+  stroke: #fff;
+  outline: none;
+}
+.cat-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: baseline;
+}
+.cat-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+.spark {
+  display: block;
+}
+.spark path {
+  fill: var(--text-faint);
+  opacity: 0.55;
+}
+.sev-pill {
+  display: inline-block;
+  min-width: 70px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.03em;
+  color: #111;
+}
+.sev-pill.high {
+  background: #ef8a3c;
+}
+.sev-pill.medium {
+  background: #f2c037;
+}
+.sev-pill.low {
+  background: #5cb85c;
+}
