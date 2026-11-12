@@ -4,6 +4,7 @@ import type { BehaviorSettingsUpdate, DetectorSettings, DetectorStatus, Device, 
 import type { NetFlowStats, Role } from '../api/types'
 import { adguardRoutes } from './adguard'
 import { maintenanceRoutes } from './maintenance'
+import { inboundRoutes } from './inbound'
 import { antivirusRoutes } from './antivirus'
 import { backupRoutes, retentionRoutes } from './retention'
 
@@ -218,6 +219,7 @@ type Route = (method: string, path: string, handler: (c: Ctx) => unknown, opts?:
 export function networkRoutes(route: Route, fail: (status: number, message: string) => never) {
   adguardRoutes(route, fail)
   maintenanceRoutes(route, fail)
+  inboundRoutes(route)
   antivirusRoutes(route, fail)
   retentionRoutes(route, fail)
   backupRoutes(route, fail)

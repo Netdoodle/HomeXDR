@@ -15,6 +15,7 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/devices', label: 'Devices', icon: 'network' },
   { to: '/search', label: 'Search', icon: 'search' },
   { to: '/investigate', label: 'Investigate', icon: 'radar' },
+  { to: '/threat-map', label: 'Threat map', icon: 'network' },
 ]
 const NAV2: { to: string; label: string; icon: IconName }[] = [
   { to: '/rules', label: 'Rules', icon: 'rules' },

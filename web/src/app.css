@@ -2713,3 +2713,23 @@ main .panel,
 main h2 {
   scroll-margin-top: 72px;
 }
+
+/* Threat map bubbles, on the dot world map. */
+.threat-map .bubble {
+  fill: var(--accent);
+  fill-opacity: 0.45;
+  stroke: var(--accent);
+  stroke-width: 0.25;
+  cursor: pointer;
+}
+.threat-map .bubble.allowed {
+  fill: var(--danger, #e5484d);
+  stroke: var(--danger, #e5484d);
+}
+.threat-map .bubble:hover,
+.threat-map .bubble:focus-visible,
+.threat-map .bubble.selected {
+  fill-opacity: 0.8;
+  stroke-width: 0.5;
+  outline: none;
+}

@@ -12,6 +12,7 @@ import (
 func (h *Handler) routesMaintenance(viewer, admin string) {
 	h.route("GET /api/settings/maintenance", viewer, h.getMaintenance)
 	h.route("PUT /api/settings/maintenance", admin, h.putMaintenance)
+	h.route("GET /api/stats/inbound", viewer, h.inboundThreats)
 }
 
 func (h *Handler) getMaintenance(w http.ResponseWriter, r *http.Request, _ *store.User) {
@@ -33,6 +34,20 @@ func (h *Handler) putMaintenance(w http.ResponseWriter, r *http.Request, u *stor
 		return
 	}
 	v, err := h.c.SaveMaintenance(r.Context(), in, u.Username)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// inboundThreats is the inbound threats page: internet sources reaching the firewall.
+func (h *Handler) inboundThreats(w http.ResponseWriter, r *http.Request, _ *store.User) {
+	hours := qInt(r, "hours", 24)
+	if hours < 1 || hours > 24*30 {
+		hours = 24
+	}
+	v, err := h.c.InboundThreats(r.Context(), hours)
 	if err != nil {
 		h.fail(w, err)
 		return
