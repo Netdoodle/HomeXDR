@@ -142,7 +142,7 @@ func (c *Core) InboundThreats(ctx context.Context, hours int) (*InboundView, err
 		AllowedIn: []InboundSource{}, Networks: []InboundNetwork{}, Ports: []InboundPort{}, Timeline: []InboundPoint{}}
 
 	// 1. Every source address: count, ports tried, first and last seen, by action.
-	res, err := c.Events.Search(ctx, events.SearchQuery{From: from, To: now, Query: inboundBase +
+	res, err := c.Events.Search(ctx, events.SearchQuery{From: from, Query: inboundBase +
 		` | stats count, dc(destination.port) as ports, min(@timestamp) as first, max(@timestamp) as last by source.ip, event.action` +
 		fmt.Sprintf(` | sort -count | head %d`, inboundMaxSources)})
 	if err != nil {
@@ -238,7 +238,7 @@ func (c *Core) InboundThreats(ctx context.Context, hours int) (*InboundView, err
 
 	// 2. Targeted ports, from internet sources only.
 	public := inboundBase + " " + notPrivateSource
-	if res, err := c.Events.Search(ctx, events.SearchQuery{From: from, To: now, Query: public +
+	if res, err := c.Events.Search(ctx, events.SearchQuery{From: from, Query: public +
 		` | stats count, dc(source.ip) as sources by destination.port, network.transport | sort -count | head 25`}); err == nil {
 		for _, row := range res.Rows {
 			if len(row) < 4 {
@@ -250,7 +250,7 @@ func (c *Core) InboundThreats(ctx context.Context, hours int) (*InboundView, err
 	}
 
 	// 3. Attempts over time.
-	if res, err := c.Events.Search(ctx, events.SearchQuery{From: from, To: now, Query: public +
+	if res, err := c.Events.Search(ctx, events.SearchQuery{From: from, Query: public +
 		` | timechart span=` + span + ` count by event.action`}); err == nil && len(res.Columns) > 0 {
 		for _, row := range res.Rows {
 			if len(row) == 0 {
