@@ -37,6 +37,8 @@ func TestInboundThreats(t *testing.T) {
 			Network:     &event.Network{Direction: "inbound", Transport: "tcp"},
 		}
 	}
+	inside := func(e *event.Event) *event.Event { e.Destination.IP = "192.168.20.22"; return e }
+	dhcp := func(e *event.Event) *event.Event { e.Source.Port = 67; e.Network.Transport = "udp"; return e }
 	var evs []*event.Event
 	for i := 0; i < 10; i++ {
 		evs = append(evs, row("block", "45.141.233.145", 22+i, time.Duration(i)*time.Minute))
@@ -44,7 +46,12 @@ func TestInboundThreats(t *testing.T) {
 	evs = append(evs,
 		row("block", "45.141.233.146", 3389, 2*time.Hour),
 		row("block", "198.51.100.7", 22, 3*time.Hour),
+		// A port forward: the rdr line, then the filter verdict. Counted once, by the verdict.
 		row("rdr", "198.51.100.7", 443, 3*time.Hour),
+		inside(row("pass", "198.51.100.7", 443, 3*time.Hour)),
+		row("rdr", "198.51.100.7", 27015, 4*time.Hour),
+		inside(row("block", "198.51.100.7", 27015, 4*time.Hour)),
+		dhcp(row("pass", "24.242.191.39", 68, 2*time.Hour)), // the ISP renewing the WAN lease
 		row("block", "192.168.20.151", 445, time.Hour), // a LAN device: not the internet
 		row("block", "100.81.93.1", 22, time.Hour),     // Tailscale
 		row("block", "203.0.113.9", 80, 60*time.Hour),  // outside both windows
@@ -60,7 +67,7 @@ func TestInboundThreats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.Attempts != 13 || v.Allowed != 1 || v.Blocked != 12 || v.Sources != 3 || v.NoGeo {
+	if v.Attempts != 14 || v.Allowed != 1 || v.Blocked != 13 || v.Sources != 3 || v.NoGeo {
 		t.Fatalf("totals: attempts %d allowed %d blocked %d sources %d nogeo %v", v.Attempts, v.Allowed, v.Blocked, v.Sources, v.NoGeo)
 	}
 	if len(v.Countries) != 2 || v.Countries[0].Code != "NL" || v.Countries[0].Attempts != 11 || v.Countries[0].Sources != 2 {
@@ -110,7 +117,11 @@ func TestInboundThreats(t *testing.T) {
 	if ev.Total != 0 || ev.Sources != 0 {
 		t.Fatalf("NL let in: %+v", ev)
 	}
-	if tl != 13 {
-		t.Fatalf("timeline total %d, want 13: %+v", tl, v.Timeline)
+	ev, _ = c.InboundEvents(ctx, 24, "US", "blocked", 0)
+	if ev.Total != 2 {
+		t.Fatalf("US blocked (the forwarded packet that was blocked counts here): %+v", ev)
+	}
+	if tl != 14 {
+		t.Fatalf("timeline total %d, want 14: %+v", tl, v.Timeline)
 	}
 }
