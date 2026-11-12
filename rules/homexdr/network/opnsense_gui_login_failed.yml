@@ -1,0 +1,25 @@
+title: OPNsense Web GUI Login Failed
+id: 84cd72e0-8226-420d-acde-dbec9ae868ed
+status: experimental
+description: |
+  A login to the OPNsense web interface failed. Repeated failures, or any from outside your
+  management network, mean someone is trying the firewall's admin account. Needs the OPNsense
+  audit log sent to HomeXDR (System -> Settings -> Logging -> Remote, Applications: audit).
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1110/
+tags:
+  - attack.credential-access
+  - attack.t1110
+logsource:
+  service: audit
+detection:
+  selection:
+    Message|contains:
+      - 'authentication error for user'
+      - 'Web GUI authentication error'
+  condition: selection
+falsepositives:
+  - Mistyped passwords
+level: medium

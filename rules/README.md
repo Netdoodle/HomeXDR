@@ -11,8 +11,13 @@ HomeXDR loads [Sigma](https://sigmahq.io/) rules from three places:
 ## Rules HomeXDR ships
 
 `rules/homexdr/` holds rules for what community rule sets leave out on a homelab: Docker and
-Unraid hosts, SSH, and DNS lookups from a resolver's query log. They load with the server and
-are tested in `server/internal/detect/homexdr_rules_test.go`.
+Unraid hosts, SSH, DNS lookups from a resolver's query log, OPNsense, and attempts to switch
+HomeXDR's own monitoring off. They load with the server and
+are tested in `server/internal/detect/homexdr_rules_test.go` and `homexdr_rules2_test.go`.
+They are also published at [Netdoodle/HomeXDR-SIGMA-rules](https://github.com/Netdoodle/HomeXDR-SIGMA-rules).
+
+The OPNsense rules need its audit log: **System → Settings → Logging → Remote**, add `audit`
+to the destination's Applications.
 
 | Rule | Level | Fires on |
 |---|---|---|
@@ -28,6 +33,21 @@ are tested in `server/internal/detect/homexdr_rules_test.go`.
 | SSH Login From A Public Address | high | a successful SSH login from outside private and Tailscale ranges |
 | Root SSH Login With A Password | medium | root or Administrator logging in over SSH with a password |
 | SSH Login With A Key HomeXDR Does Not Know | low | a key login whose key has no name under Settings -> Maintenance |
+| HomeXDR Agent Stopped Or Removed On Linux | high | `pkill`, `systemctl stop`, `plugin remove` or `uninstall` of the agent |
+| HomeXDR Agent Stopped Or Removed On Windows | high | `sc stop`/`delete`, `Stop-Service`, `taskkill` or `uninstall` of the agent service |
+| Sysmon Or Process Auditing Turned Off | high | `sysmon -u`, `auditpol` disabling or clearing, `wevtutil sl ... /e:false` on the logs HomeXDR reads |
+| Package Installed Inside A Running Container | medium | `apk add`, `apt-get install`, `pip install` and similar after a container's start-up minutes |
+| Download Piped To A Shell Inside A Container | high | `curl ... \| sh` and `sh -c "$(wget ...)"` inside a container |
+| Web Application In A Container Started A Shell Or Network Tool | medium | nginx, PHP-FPM, Node.js, Python or Java in a container starting `sh`, `curl`, `nc` and similar |
+| Interactive Shell Opened In A Container | low | `docker exec ... sh`, including the Unraid console button |
+| SSH Server Configured To Allow Root Or Password Logins | medium | setting `PermitRootLogin`, `PasswordAuthentication` or `PermitEmptyPasswords` to yes |
+| Unraid User Script Or Cron File Written From The Command Line | medium | writing a User Scripts script or a plugin `.cron` file on the flash drive |
+| Virtual Machine Defined From The Command Line | low | `virsh define`/`create`/`autostart` and `virt-install` |
+| DNS Lookup Of A DNS-over-HTTPS Provider | low | dns.google, cloudflare-dns.com, Quad9, NextDNS and other DoH servers |
+| DNS Lookup Of A Dynamic DNS Name | low | duckdns, no-ip, dynu and other free dynamic DNS names |
+| OPNsense Web GUI Login Failed | medium | a failed web interface login (needs the OPNsense audit log) |
+| OPNsense Web GUI Login | low | a web interface login (needs the OPNsense audit log) |
+| OPNsense Configuration Changed | low | any configuration change, with user, address and page (needs the OPNsense audit log) |
 
 The Docker rules match what Unraid's Docker manager runs when it updates a privileged
 container; those commands carry `labels.maintenance: docker-update`, which Settings ->

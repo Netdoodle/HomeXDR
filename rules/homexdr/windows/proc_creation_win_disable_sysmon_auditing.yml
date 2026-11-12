@@ -1,0 +1,50 @@
+title: Sysmon Or Process Auditing Turned Off
+id: 07d6ecd8-36ca-4f19-8d99-92b03eeaa643
+status: experimental
+description: |
+  Sysmon was uninstalled, process creation auditing was switched off or cleared, or one of
+  the logs HomeXDR reads was disabled. Without them, the agent no longer sees processes.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1562/002/
+tags:
+  - attack.defense-evasion
+  - attack.t1562.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  sysmon_img:
+    Image|endswith:
+      - '\Sysmon.exe'
+      - '\Sysmon64.exe'
+  sysmon_cli:
+    CommandLine|re: '\s[-/]u(?:\s|$)'
+  auditpol_img:
+    Image|endswith: '\auditpol.exe'
+  auditpol_cli:
+    CommandLine|contains:
+      - '/clear'
+      - '/remove'
+      - '-clear'
+      - '-remove'
+      - 'disable'
+  wevtutil_img:
+    Image|endswith: '\wevtutil.exe'
+  wevtutil_cli:
+    CommandLine|contains:
+      - '/e:false'
+      - '-e:false'
+      - '/enabled:false'
+  wevtutil_log:
+    CommandLine|contains:
+      - 'Sysmon'
+      - 'Security'
+      - 'OpenSSH'
+      - 'PowerShell'
+      - 'Windows Defender'
+  condition: (sysmon_img and sysmon_cli) or (auditpol_img and auditpol_cli) or (wevtutil_img and wevtutil_cli and wevtutil_log)
+falsepositives:
+  - Reinstalling Sysmon with a new configuration
+level: high

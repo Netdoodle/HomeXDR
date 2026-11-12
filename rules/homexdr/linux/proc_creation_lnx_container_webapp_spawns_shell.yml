@@ -1,0 +1,45 @@
+title: Web Application In A Container Started A Shell Or Network Tool
+id: 98fbc62c-a146-4aa0-a08a-e07989b65f3f
+status: experimental
+description: |
+  A web server or application runtime inside a container (nginx, PHP-FPM, Node.js, Python,
+  Java and similar) started a shell or a network tool. This is what remote code execution in a
+  self-hosted app looks like.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1190/
+  - https://attack.mitre.org/techniques/T1505/003/
+tags:
+  - attack.initial-access
+  - attack.t1190
+  - attack.persistence
+  - attack.t1505.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection_container:
+    container.id|exists: true
+  selection_parent:
+    ParentImage|re: '/(?:nginx|php-fpm[0-9.]*|php[0-9.]*|node|python[0-9.]*|java|gunicorn|uwsgi|apache2|httpd|ruby|puma|caddy|lighttpd)$'
+  selection_child:
+    Image|endswith:
+      - '/sh'
+      - '/bash'
+      - '/dash'
+      - '/ash'
+      - '/zsh'
+      - '/nc'
+      - '/ncat'
+      - '/netcat'
+      - '/socat'
+      - '/curl'
+      - '/wget'
+      - '/perl'
+  filter_maintenance:
+    labels.maintenance|exists: true
+  condition: all of selection_* and not 1 of filter_*
+falsepositives:
+  - Applications that run helper scripts through a shell (media servers, backup tools). Suppress them by container name.
+level: medium

@@ -1,0 +1,47 @@
+title: DNS Lookup Of A DNS-over-HTTPS Provider
+id: 62902b72-7458-4a61-865d-b454239475e4
+status: experimental
+description: |
+  A device looked up a public DNS-over-HTTPS server. Its next lookups go around your resolver
+  (AdGuard Home, Pi-hole) and its block lists, and out of HomeXDR's sight. Browsers do this
+  when secure DNS is on; IoT devices and malware do it to hide.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1572/
+  - https://attack.mitre.org/techniques/T1071/004/
+tags:
+  - attack.command-and-control
+  - attack.t1572
+  - attack.t1071.004
+logsource:
+  category: dns
+detection:
+  selection:
+    QueryName:
+      - 'dns.google'
+      - 'dns.google.com'
+      - 'dns64.dns.google'
+      - 'cloudflare-dns.com'
+      - 'mozilla.cloudflare-dns.com'
+      - 'chrome.cloudflare-dns.com'
+      - '1dot1dot1dot1.cloudflare-dns.com'
+      - 'one.one.one.one'
+      - 'security.cloudflare-dns.com'
+      - 'family.cloudflare-dns.com'
+      - 'dns.quad9.net'
+      - 'dns9.quad9.net'
+      - 'dns10.quad9.net'
+      - 'dns11.quad9.net'
+      - 'doh.opendns.com'
+      - 'dns.nextdns.io'
+      - 'doh.cleanbrowsing.org'
+      - 'dns.adguard-dns.com'
+      - 'unfiltered.adguard-dns.com'
+      - 'doh.mullvad.net'
+      - 'dns.mullvad.net'
+      - 'doh.dns.sb'
+  condition: selection
+falsepositives:
+  - Browsers with secure DNS turned on. Turn it off in the browser, or block these names in your resolver.
+level: low

@@ -1,0 +1,23 @@
+title: Interactive Shell Opened In A Container
+id: 18655ac4-0fff-4182-bff9-97f8394a72e1
+status: experimental
+description: |
+  Someone opened a shell inside a container with docker exec, including the console button in
+  the Unraid web interface. Fine when it is you; worth knowing when it is not.
+author: HomeXDR
+date: 2026-11-12
+references:
+  - https://attack.mitre.org/techniques/T1609/
+tags:
+  - attack.execution
+  - attack.t1609
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re: '\b(?:docker|podman|nerdctl)\s+(?:container\s+)?exec\s.*\s(?:/usr)?(?:/bin/)?(?:ba|z|a|da)?sh(?:\s|$)'
+  condition: selection
+falsepositives:
+  - You using the container console
+level: low
