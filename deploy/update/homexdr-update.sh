@@ -63,6 +63,26 @@ load_conf() {
   export GIT_SSH_COMMAND
 }
 
+# update_yara rebuilds the YARA scanner image (deploy/yara) when the compose file has a
+# yara service (YARA_SERVICE) and restarts the scanner when the image changed. A failure
+# here is only logged: the server is already deployed and the old scanner keeps running.
+update_yara() {
+  local svc="${YARA_SERVICE:-yara}" img="${YARA_IMAGE:-homexdr/yara}" before after
+  [ -f "$SRC_DIR/deploy/yara/Dockerfile" ] || return 0
+  compose config --services 2>/dev/null | grep -qx "$svc" || return 0
+  before=$(docker image inspect -f '{{.Id}}' "$img:local" 2>/dev/null)
+  if ! docker build --pull --progress=plain -f "$SRC_DIR/deploy/yara/Dockerfile" -t "$img:local" "$SRC_DIR"     >>"$STATE_DIR/build.log" 2>&1; then
+    log "WARNING: the YARA scanner image did not build; the running scanner is unchanged"
+    return 0
+  fi
+  after=$(docker image inspect -f '{{.Id}}' "$img:local")
+  if [ "$before" != "$after" ] || [ -z "$(compose ps -q "$svc" 2>/dev/null)" ]; then
+    log "updating the YARA scanner"
+    compose up -d --no-build --no-deps "$svc" >>"$STATE_DIR/build.log" 2>&1 ||
+      log "WARNING: the YARA scanner did not start; see $STATE_DIR/build.log"
+  fi
+}
+
 compose() {
   docker compose --project-directory "$COMPOSE_DIR" -f "$COMPOSE_DIR/docker-compose.yml" "$@"
 }
@@ -210,6 +230,7 @@ main() {
     return 1
   fi
   rm -f "$STATE_DIR/failed"
+  update_yara
   echo "$commit $version $(date -u +%FT%TZ)" >>"$STATE_DIR/history"
   log "deployed $version ($commit)${sig:+, agent release signed}"
   [ "${NOTIFY_SUCCESS:-1}" = 1 ] && notify "HomeXDR updated" "Server and bundled agents are now $version" normal

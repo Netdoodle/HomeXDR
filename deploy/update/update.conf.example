@@ -8,6 +8,11 @@ COMPOSE_DIR=/opt/homexdr/deploy
 SERVICE=homexdr
 IMAGE=homexdr/server
 
+# The YARA scanner (deploy/yara) is rebuilt after each server update and restarted when
+# its image changed, if the compose file has this service (image: homexdr/yara:local).
+#YARA_SERVICE=yara
+#YARA_IMAGE=homexdr/yara
+
 # Where to build from. A private repository needs a read-only deploy key.
 REPO_URL=git@github.com:Netdoodle/HomeXDR.git
 BRANCH=main

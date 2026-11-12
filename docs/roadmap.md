@@ -113,6 +113,8 @@ agents at the MagicDNS name; the spool covers the gaps.
 
 ## Done
 
+- YARA scanning next to ClamAV: YARA Forge core rules updated daily, your own rules,
+  hacking-tool and suspicious matches alert only: [antivirus.md](antivirus.md#yara-rules)
 - macOS agent (Intel and Apple silicon): eslogger process, auth, file and security events
   with polling and unified-log fallbacks, lsof network polling, pf isolation, launchd,
   collectors and six macOS rules: [agent/README.md](../agent/README.md#macos-platform)

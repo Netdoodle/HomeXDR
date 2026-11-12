@@ -23,8 +23,33 @@ export function AntivirusTab() {
   )
 }
 
-const SOURCE_LABEL = (s: string) =>
-  s === 'clamav' ? 'ClamAV' : s === 'blocklist' ? 'Blocklist' : s.startsWith('intel:') ? `Threat intel (${s.slice(6)})` : s
+const SOURCE_NAMES: Record<string, string> = {
+  clamav: 'ClamAV',
+  yara: 'YARA',
+  'yara:tool': 'YARA, hacking tool (alert only)',
+  'yara:suspicious': 'YARA, suspicious (alert only)',
+  blocklist: 'Blocklist',
+}
+
+const SOURCE_LABEL = (s: string) => SOURCE_NAMES[s] ?? (s.startsWith('intel:') ? `Threat intel (${s.slice(6)})` : s)
+
+function YaraStatus({ y }: { y: AVStatus['yara'] }) {
+  if (!y?.configured) return <span className="muted">not set up (HOMEXDR_YARA_ADDR)</span>
+  if (!y.ok) return <span className="sev-text high">not working: {y.error || 'no rules loaded'}</span>
+  return (
+    <span>
+      {formatNumber(y.rules)} rules{y.package ? ` from ${y.package}` : ''}
+      {y.custom_files ? `, ${y.custom_files} custom file${y.custom_files === 1 ? '' : 's'}` : ''}
+      {y.yara_version ? <span className="muted small"> (YARA {y.yara_version})</span> : null}
+      {y.error ? <div className="sev-text medium small">{y.error}</div> : null}
+      {y.custom_error ? (
+        <div className="sev-text medium small">
+          Custom rules not loaded: <span className="mono xsmall">{y.custom_error}</span>
+        </div>
+      ) : null}
+    </span>
+  )
+}
 
 function Status({ status }: { status: AVStatus }) {
   const v = status.verdicts ?? {}
@@ -37,13 +62,14 @@ function Status({ status }: { status: AVStatus }) {
       <div className="panel-body stack" style={{ gap: 12 }}>
         <p className="small muted" style={{ margin: 0 }}>
           Every program that starts on an enrolled host is checked by its SHA-256: against your blocklist, then the threat intel sources, and, when nobody
-          vouches for it, by uploading it to this server and scanning it with ClamAV. Each file is judged once for all hosts. Malware is stopped and
+          vouches for it, by uploading it to this server and scanning it with ClamAV and YARA. Each file is judged once for all hosts. Malware is stopped and
           quarantined within seconds of starting. Without a kernel driver this cannot block a program before it runs, so keep Windows Defender on: the two
           work side by side, and Defender's own detections show up here as alerts.
         </p>
         <KV
           items={[
             ['ClamAV', c.configured ? (c.ok ? c.version : <span className="sev-text high">not answering: {c.error}</span>) : <span className="muted">not set up (HOMEXDR_CLAMD_ADDR)</span>],
+            ['YARA', <YaraStatus y={status.yara} />],
             ['Files judged', `${formatNumber(v.clean ?? 0)} clean, ${formatNumber(v.known ?? 0)} known good, ${formatNumber(v.malicious ?? 0)} malware, ${formatNumber(v.skipped ?? 0)} not scannable`],
             ['Since the server started', `${formatNumber(status.scanned)} scanned, ${formatNumber(status.detected)} detections, ${formatNumber(status.queue)} waiting`],
             ...(status.last_error ? ([['Last problem', <span className="xsmall mono">{status.last_error}</span>]] as [string, React.ReactNode][]) : []),
@@ -91,7 +117,7 @@ function Form({ settings }: { settings: AVSettings }) {
             <option value="quarantine">Stop the process and its children, quarantine the file</option>
             <option value="alert">Alert only</option>
           </select>
-          <span className="help">The response uses the same signed commands as the host page. A quarantined file can be restored from there.</span>
+          <span className="help">The response uses the same signed commands as the host page. A quarantined file can be restored from there. YARA matches for hacking tools and generic suspicious traits only raise an alert.</span>
         </label>
         <div className="row" style={{ gap: 10, alignItems: 'center' }}>
           <Toggle checked={s.use_intel} disabled={ro} onChange={(v) => set({ use_intel: v })} label="Look up hashes" />
@@ -102,7 +128,7 @@ function Form({ settings }: { settings: AVSettings }) {
         <div className="row" style={{ gap: 10, alignItems: 'center' }}>
           <Toggle checked={s.scan_unknown} disabled={ro} onChange={(v) => set({ scan_unknown: v })} label="Scan unknown files" />
           <span>
-            Upload programs nobody vouches for and scan them with ClamAV <span className="muted small">(on this server; the upload is deleted afterwards)</span>
+            Upload programs nobody vouches for and scan them with ClamAV and YARA <span className="muted small">(on this server; the upload is deleted afterwards)</span>
           </span>
         </div>
         <label className="field" style={{ maxWidth: 260 }}>

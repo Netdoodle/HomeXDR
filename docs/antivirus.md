@@ -22,9 +22,48 @@ Windows from Sysmon or computed by the agent, on Linux computed by the agent whe
    Settings → Threat intel: MalwareBazaar, VirusTotal, ThreatFox, OTX with their keys, and
    CIRCL hashlookup without one. A malicious verdict is a detection; a file CIRCL knows
    from a software distribution is "known good" and not uploaded.
-5. **ClamAV.** A program nobody vouches for is uploaded from the host (a `file.get`
-   command issued by `antivirus`, up to the size limit, 64 MB by default) and streamed
-   to a ClamAV daemon next to the server. The upload is deleted after the scan.
+5. **ClamAV and YARA.** A program nobody vouches for is uploaded from the host (a
+   `file.get` command issued by `antivirus`, up to the size limit, 64 MB by default) and
+   scanned by a ClamAV daemon and the YARA scanner, both next to the server. ClamAV's
+   signatures cover known samples; YARA's community rules describe malware families and
+   tools by their code and strings, so they often catch new builds that have no signature
+   yet. The upload is deleted after the scan. If either scanner fails, no verdict is
+   stored and the file is tried again the next time it runs.
+
+## YARA rules
+
+The scanner (`homexdr-yara`, its own container) downloads the [YARA Forge](https://yarahq.github.io/)
+**core** package once a day: about 5,000 rules from public collections that passed YARA
+Forge's quality, score and age checks, chosen for few false positives. A new package
+replaces the old one only after it compiles.
+
+What a match does depends on the kind of rule, read from its name:
+
+| Rule | Example | Verdict source | Response |
+|---|---|---|---|
+| Malware family, exploit, APT tooling | `MALPEDIA_Win_Agent_Tesla_Auto` | `yara` | Like any detection: critical alert, stop and quarantine |
+| Hacking or remote-admin tool (`HKTL`, `Hacktool`, `TOOL`, `PUA`) | `SIGNATURE_BASE_HKTL_Mimikatz` | `yara:tool` | High alert "Hacking tool detected", **never stopped automatically** |
+| Generic suspicious trait (`SUSP`, `INDICATOR`, packed, anomaly) | `SIGNATURE_BASE_SUSP_PS1_JAB_Pattern` | `yara:suspicious` | Medium alert "Suspicious program", **never stopped automatically** |
+
+Tools and generic traits match programs people run on purpose (admin tools, packed
+installers), so HomeXDR leaves those for you to judge: stop and quarantine from the host
+page, or allowlist the hash. When several rules match, the most serious one names the
+detection ("… (+2 more)").
+
+**Your own rules.** Put `*.yar` or `*.yara` files in the folder mounted at `/rules`
+(`deploy/yara-rules` with the stock compose file). They are picked up within a minute, in
+the `custom` namespace, and count as malware unless their name says tool or suspicious as
+above. If they don't compile, the package keeps working without them and Settings →
+Antivirus shows the compiler's error.
+
+Scanner settings (environment of the `yara` service):
+
+| Variable | Default | |
+|---|---|---|
+| `YARA_FORGE_URL` | core package | Another package (`…/yara-forge-rules-extended.zip`, `-full.zip`: more rules, more false positives), or `off` for your rules only |
+| `YARA_UPDATE_HOURS` | 24 | How often to check for a new package |
+| `YARA_MAX_MB` | 100 | Largest file accepted |
+| `YARA_PARALLEL` | 2 | Files scanned at once |
 
 ## Response
 
@@ -35,7 +74,10 @@ page: `process.kill` with the process' entity ID and `tree: true`, then
 never hit, and system-critical Windows processes are refused. A quarantined file can be
 restored from the host's page. Either way a **critical** alert "Malware detected:
 <signature>" is raised (rule `av:malware`, dataset `homexdr.av`), with the hash, path,
-source and what was done in its data. The host's local policy must allow the actions
+source and what was done in its data. YARA matches for hacking tools and suspicious
+traits are the exception: they raise "Hacking tool detected" (`av:hacktool`, high) or
+"Suspicious program" (`av:suspicious`, medium) and are never stopped automatically (see
+[YARA rules](#yara-rules)). The host's local policy must allow the actions
 (`file.get`, `process.kill`, `file.quarantine`; all are allowed by default).
 
 A detection can be undone with **Forget** under Recent detections (for a false
@@ -74,11 +116,14 @@ recorded in the audit log.
 
 ## Setup
 
-`deploy/docker-compose.yml` runs `clamav/clamav` next to the server and sets
-`HOMEXDR_CLAMD_ADDR=clamav:3310`. Without `HOMEXDR_CLAMD_ADDR` there is no file
-scanning; the blocklist, stored verdicts and threat intel still work. ClamAV needs about
-1.5 GB of memory and downloads its signatures (about 110 MB) on first start; `freshclam`
-inside the container keeps them current.
+`deploy/docker-compose.yml` runs `clamav/clamav` and the YARA scanner (built from
+`deploy/yara/Dockerfile`) next to the server, and sets `HOMEXDR_CLAMD_ADDR=clamav:3310`
+and `HOMEXDR_YARA_ADDR=yara:3320`. Either scanner can be left out by removing its service
+and variable; with neither there is no file scanning, but the blocklist, stored verdicts
+and threat intel still work. ClamAV needs about 1.5 GB of memory and downloads its
+signatures (about 110 MB) on first start; `freshclam` inside the container keeps them
+current. The YARA scanner needs about 100 MB and compiles its rules in a few seconds on
+start. The updater (`deploy/update`) rebuilds the scanner image after each server update.
 
 Custom signatures go in ClamAV's database directory as `*.hsb` files (one
 `sha256:size:Name` line per file) and are loaded at clamd's next reload
@@ -88,6 +133,6 @@ Custom signatures go in ClamAV's database directory as `*.hsb` files (one
 
 | Method | Path | Role | |
 |---|---|---|---|
-| GET | `/api/antivirus` | viewer | Settings, ClamAV status, verdict counts, recent detections |
+| GET | `/api/antivirus` | viewer | Settings, ClamAV and YARA status, verdict counts, recent detections |
 | PUT | `/api/settings/antivirus` | admin | Settings: `enabled`, `action` (`quarantine` or `alert`), `scan_unknown`, `use_intel`, `max_file_mb`, `blocked_hashes`, `allowed_hashes` |
 | DELETE | `/api/antivirus/verdicts/{sha256}` | analyst | Forget a verdict |

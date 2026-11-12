@@ -12,6 +12,7 @@ const ago = (ms: number) => new Date(NOW - ms).toISOString()
 const status: AVStatus = {
   settings: { enabled: true, action: 'quarantine', scan_unknown: true, use_intel: true, max_file_mb: 64, blocked_hashes: [], allowed_hashes: [] },
   clamd: { configured: true, ok: true, version: 'ClamAV 1.4.6/27450/Fri Nov  6 08:21:00 2026' },
+  yara: { configured: true, ok: true, yara_version: '4.5.4', rules: 5128, package: 'YARA Forge core 2026-11-08', custom_files: 1, compiled: ago(3 * 3600_000) },
   verdicts: { clean: 214, known: 1310, malicious: 2, skipped: 3 },
   scanned: 37,
   detected: 2,
@@ -34,6 +35,15 @@ const status: AVStatus = {
       path: 'C:\\Users\\bob\\AppData\\Local\\Temp\\setup_x64.exe',
       host_id: 'h-laptop',
       checked_at: ago(26 * 3600_000),
+    },
+    {
+      sha256: '7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b',
+      verdict: 'malicious',
+      source: 'yara:tool',
+      signature: 'SIGNATURE_BASE_HKTL_Mimikatz_Strings (+2 more)',
+      path: 'C:\Users\alice\Desktop\tools\mk.exe',
+      host_id: 'h-desk',
+      checked_at: ago(3 * 24 * 3600_000),
     },
   ],
 }
