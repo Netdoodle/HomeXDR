@@ -14,10 +14,7 @@ function safeNext(next: string | null): string {
 function Brand() {
   return (
     <div className="brand-line">
-      <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
-        <path d="M16 3 5 7.5v7.7c0 6.8 4.6 12 11 14.3 6.4-2.3 11-7.5 11-14.3V7.5L16 3Z" fill="none" stroke="var(--accent)" strokeWidth="2.4" strokeLinejoin="round" />
-        <path d="m11.5 12 9 9m0-9-9 9" stroke="var(--text)" strokeWidth="2.4" strokeLinecap="round" />
-      </svg>
+      <img src="/favicon.svg" width={40} height={40} alt="" aria-hidden="true" />
       HomeXDR
     </div>
   )
