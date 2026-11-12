@@ -39,6 +39,21 @@ services:
     mem_limit: 3g
     # Not published: only the HomeXDR server talks to it.
 
+  yara:
+    # YARA scanner for the antivirus, next to ClamAV (docs/antivirus.md). Downloads the
+    # YARA Forge "core" rule package daily; put your own *.yar files in ./yara-rules.
+    # Remove this service (and HOMEXDR_YARA_ADDR) to go without YARA. About 100 MB of memory.
+    build:
+      context: ..
+      dockerfile: deploy/yara/Dockerfile
+    image: homexdr/yara:local
+    restart: unless-stopped
+    volumes:
+      - yara:/var/lib/homexdr-yara
+      - ./yara-rules:/rules:ro
+    mem_limit: 1g
+    # Not published: only the HomeXDR server talks to it.
+
   homexdr:
     build:
       context: ..
@@ -61,6 +76,8 @@ services:
       HOMEXDR_NETFLOW_ALLOW: ${HOMEXDR_NETFLOW_ALLOW:-}
       # ClamAV daemon for the antivirus (the clamav service above).
       HOMEXDR_CLAMD_ADDR: ${HOMEXDR_CLAMD_ADDR:-clamav:3310}
+      # YARA scanner for the antivirus (the yara service above).
+      HOMEXDR_YARA_ADDR: ${HOMEXDR_YARA_ADDR:-yara:3320}
       # Optional AI analyst API keys (otherwise set them in the console).
       HOMEXDR_ANTHROPIC_API_KEY: ${HOMEXDR_ANTHROPIC_API_KEY:-}
       HOMEXDR_OPENAI_API_KEY: ${HOMEXDR_OPENAI_API_KEY:-}
@@ -84,4 +101,5 @@ services:
 volumes:
   clickhouse:
   clamav:
+  yara:
   data:

@@ -41,6 +41,10 @@ jobs:
         run: |
           GOOS=windows go vet ./...
           GOOS=darwin go vet ./...
+      - name: install yara
+        # The YARA scanner's service test drives the real yara and yarac tools.
+        if: matrix.module == 'server'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq yara
       - name: test
         run: go test ./...
 
@@ -99,3 +103,13 @@ jobs:
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 1; done
           curl -fsS http://127.0.0.1:8080/api/setup/status
           docker logs hx
+      - run: docker build -f deploy/yara/Dockerfile -t homexdr/yara:ci .
+      - name: YARA scanner smoke test
+        # Custom rules only: CI does not download the rule package.
+        run: |
+          mkdir -p /tmp/yr && echo 'rule CI_Marker { strings: $a = "CI-YARA-MARKER" condition: $a }' > /tmp/yr/ci.yar
+          docker run -d --name yr -e YARA_FORGE_URL=off -v /tmp/yr:/rules:ro -p 3320:3320 homexdr/yara:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:3320/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:3320/status
+          echo "x CI-YARA-MARKER x" | curl -fsS --data-binary @- http://127.0.0.1:3320/scan | grep -q CI_Marker
+          docker logs yr

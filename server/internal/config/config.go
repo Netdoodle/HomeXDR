@@ -20,7 +20,8 @@ type Config struct {
 	SyslogAllow       []netip.Prefix // HOMEXDR_SYSLOG_ALLOW: comma list of CIDRs/IPs allowed to send syslog
 	NetFlowAddr       string         // HOMEXDR_NETFLOW_ADDR: UDP NetFlow/IPFIX; "" disables (the default)
 	NetFlowAllow      []netip.Prefix // HOMEXDR_NETFLOW_ALLOW: exporters allowed to send flows (default: SyslogAllow)
-	ClamdAddr         string         // HOMEXDR_CLAMD_ADDR: host:port of a ClamAV clamd for the antivirus; "" disables file scanning
+	ClamdAddr         string         // HOMEXDR_CLAMD_ADDR: host:port of a ClamAV clamd for the antivirus; "" disables ClamAV scanning
+	YaraAddr          string         // HOMEXDR_YARA_ADDR: host:port (or URL) of the homexdr-yara scanner; "" disables YARA scanning
 	ServerNames       []string       // HOMEXDR_SERVER_NAMES: DNS names / IPs for the agent TLS cert
 	AgentURL          string         // HOMEXDR_AGENT_URL: URL agents use to reach AgentAddr
 	EventStore        string         // HOMEXDR_EVENT_STORE: sqlite | clickhouse
@@ -77,6 +78,7 @@ func Load() (Config, error) {
 	}
 	c.NetFlowAddr = strings.TrimSpace(os.Getenv("HOMEXDR_NETFLOW_ADDR"))
 	c.ClamdAddr = strings.TrimSpace(os.Getenv("HOMEXDR_CLAMD_ADDR"))
+	c.YaraAddr = strings.TrimSpace(os.Getenv("HOMEXDR_YARA_ADDR"))
 	if c.NetFlowAllow, err = parseAllow("HOMEXDR_NETFLOW_ALLOW"); err != nil {
 		return c, err
 	}

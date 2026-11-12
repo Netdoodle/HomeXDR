@@ -73,7 +73,7 @@ export const PLATFORM_PLACES: PlatformPlace[] = [
   { crumbs: [S, 'Network', 'NetFlow / IPFIX intake'], path: '/settings/network', section: 'NetFlow / IPFIX intake', admin: true, keywords: ['netflow', 'ipfix', 'flows'] },
   { crumbs: [S, 'AI analyst'], path: '/settings/ai', admin: true, keywords: ['claude', 'triage', 'mcp', 'llm'] },
   { crumbs: [S, 'AI analyst', 'MCP access'], path: '/settings/ai', section: 'MCP access', admin: true },
-  { crumbs: [S, 'Antivirus'], path: '/settings/antivirus', section: 'Antivirus', keywords: ['clamav', 'malware', 'quarantine', 'blocklist'] },
+  { crumbs: [S, 'Antivirus'], path: '/settings/antivirus', section: 'Antivirus', keywords: ['clamav', 'yara', 'malware', 'quarantine', 'blocklist'] },
   { crumbs: [S, 'Antivirus', 'Recent detections'], path: '/settings/antivirus', section: 'Recent detections' },
   { crumbs: [S, 'Threat intel'], path: '/settings/intel', admin: true, keywords: ['virustotal', 'abuseipdb', 'api keys', 'feeds'] },
   { crumbs: [S, 'Offline lists'], path: '/settings/lists', admin: true, keywords: ['blocklists', 'feeds', 'ioc lists'] },

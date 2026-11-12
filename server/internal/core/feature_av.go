@@ -24,6 +24,9 @@ func (c *Core) initAV(ctx context.Context) {
 	if c.Cfg.ClamdAddr != "" {
 		d.Clamd = &av.Clamd{Addr: c.Cfg.ClamdAddr}
 	}
+	if c.Cfg.YaraAddr != "" {
+		d.Yara = av.NewYara(c.Cfg.YaraAddr)
+	}
 	c.AV = av.New(d)
 	if err := c.AV.Load(ctx); err != nil {
 		c.Log.Error("load antivirus settings", "err", err)
@@ -129,7 +132,10 @@ func (c *Core) avFetch(ctx context.Context, cand av.Candidate, maxBytes int64) (
 // and quarantines the file with signed commands, the same ones a person can send.
 func (c *Core) avDetected(ctx context.Context, d av.Detection, set av.Settings) {
 	action := "alert only: automatic response is off"
-	if set.Action == av.ActionQuarantine {
+	if d.AlertOnly() {
+		action = "alert only: YARA rules for hacking tools and suspicious traits are not stopped automatically"
+	}
+	if set.Action == av.ActionQuarantine && !d.AlertOnly() {
 		var done, failed []string
 		h, err := c.State.GetHost(ctx, d.HostID)
 		if err != nil {
@@ -176,6 +182,18 @@ func (c *Core) avDetected(ctx context.Context, d av.Detection, set av.Settings) 
 			"av.action": action, "av.pid": d.PID, "av.entity_id": d.EntityID,
 		},
 	}
+	switch d.Source {
+	case av.SourceYaraTool:
+		f.RuleID, f.Title, f.Severity = "av:hacktool", "Hacking tool detected: "+sig, store.SevHigh
+		f.Description = "A YARA rule for a hacking or remote-administration tool matched this program. Such tools are " +
+			"used by attackers and by administrators alike, so it is not stopped automatically: if nobody here runs it on " +
+			"purpose, stop it and quarantine the file from the host's page; if it is expected, add its hash to the allowlist."
+	case av.SourceYaraSuspicious:
+		f.RuleID, f.Title, f.Severity = "av:suspicious", "Suspicious program: "+sig, store.SevMedium
+		f.Description = "A YARA rule for a generic suspicious trait (packing, evasion, unusual structure) matched this " +
+			"program. That alone is not proof of malware, so it is not stopped automatically: check where it came from, " +
+			"and add its hash to the allowlist when it is fine."
+	}
 	if err := c.RaiseFinding(ctx, f); err != nil {
 		c.Log.Error("antivirus: raise alert", "err", err)
 	}
@@ -186,6 +204,8 @@ func avSourceLabel(s string) string {
 	switch {
 	case s == "clamav":
 		return "ClamAV signature match"
+	case s == av.SourceYara:
+		return "YARA rule match"
 	case s == "blocklist":
 		return "the hash is on the antivirus blocklist"
 	case strings.HasPrefix(s, "intel:"):

@@ -8,7 +8,7 @@
 //  3. Files outside the operating system's own folders are looked up with the threat
 //     intel sources (MalwareBazaar, VirusTotal, ... and CIRCL's list of known files).
 //  4. Files nobody vouches for are fetched from the host (file.get) and scanned with
-//     ClamAV on the server. The upload is deleted after the scan.
+//     ClamAV and YARA on the server. The upload is deleted after the scan.
 //
 // There is no kernel driver, so this happens after a program starts, within seconds,
 // rather than before; Windows Defender (or another real-time scanner) stays in place.
@@ -50,7 +50,7 @@ type Settings struct {
 	Enabled bool   `json:"enabled"`
 	Action  string `json:"action"`
 	// ScanUnknown fetches programs no reputation source vouches for and scans them with
-	// ClamAV (needs HOMEXDR_CLAMD_ADDR).
+	// ClamAV and YARA (needs HOMEXDR_CLAMD_ADDR or HOMEXDR_YARA_ADDR).
 	ScanUnknown bool `json:"scan_unknown"`
 	// UseIntel looks hashes up with the threat intel sources configured under Settings →
 	// Threat intel (only hashes are sent, never files).
@@ -136,9 +136,12 @@ type Reputation struct {
 // Detection is a candidate found to be malware.
 type Detection struct {
 	Candidate
-	Source    string // blocklist, intel:<source>, clamav
+	Source    string // blocklist, intel:<source>, clamav, yara, yara:tool, yara:suspicious
 	Signature string
 }
+
+// AlertOnly: the detection raises an alert but is not stopped automatically.
+func (d Detection) AlertOnly() bool { return AlertOnly(d.Source) }
 
 // ErrSkip means a file cannot be fetched for a lasting reason (too large, gone, not
 // allowed); the verdict "skipped" is stored so it is not fetched again and again.
@@ -148,7 +151,8 @@ var ErrSkip = errors.New("file cannot be scanned")
 type Deps struct {
 	State *store.Store
 	Log   *slog.Logger
-	Clamd *Clamd // nil: no file scanning
+	Clamd *Clamd // nil: no ClamAV scanning
+	Yara  *Yara  // nil: no YARA scanning
 	// Lookup asks the threat intel sources about a hash; nil: none.
 	Lookup func(ctx context.Context, sha256 string) (Reputation, error)
 	// Fetch uploads the file from its host and returns the local path; the service
@@ -352,7 +356,7 @@ func (s *Service) judge(ctx context.Context, c Candidate) (*Detection, error) {
 			return nil, err
 		}
 	}
-	if !set.ScanUnknown || s.d.Clamd == nil || s.d.Fetch == nil {
+	if !set.ScanUnknown || (s.d.Clamd == nil && s.d.Yara == nil) || s.d.Fetch == nil {
 		return nil, nil
 	}
 	fctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
@@ -366,21 +370,67 @@ func (s *Service) judge(ctx context.Context, c Candidate) (*Detection, error) {
 		return nil, fmt.Errorf("fetch %s from %s: %w", c.Path, c.Hostname, err)
 	}
 	defer os.Remove(path)
-	f, err := os.Open(path)
+	source, sig, err := s.scanFile(fctx, path)
 	if err != nil {
-		return nil, err
-	}
-	sig, err := s.d.Clamd.Scan(fctx, f)
-	f.Close()
-	if err != nil {
-		return nil, fmt.Errorf("clamav scan of %s: %w", c.Path, err)
+		return nil, fmt.Errorf("scan of %s: %w", c.Path, err)
 	}
 	s.scanned.Add(1)
 	if sig != "" {
-		return s.verdict(ctx, c, store.AVMalicious, "clamav", sig)
+		return s.verdict(ctx, c, store.AVMalicious, source, sig)
 	}
-	_, err = s.verdict(ctx, c, store.AVClean, "clamav", "")
+	_, err = s.verdict(ctx, c, store.AVClean, source, "")
 	return nil, err
+}
+
+// scanFile runs a fetched file through ClamAV and YARA. On a match it returns the
+// verdict source and signature; when every scanner finds it clean, the scanners that
+// ran ("clamav+yara") and no signature. A scanner that fails means no verdict, so the
+// file is tried again the next time it runs.
+func (s *Service) scanFile(ctx context.Context, path string) (source, sig string, err error) {
+	var errs []error
+	var ran []string
+	scan := func(name string, fn func(f *os.File) (string, string, error)) (string, string, bool) {
+		f, err := os.Open(path)
+		if err != nil {
+			errs = append(errs, err)
+			return "", "", false
+		}
+		defer f.Close()
+		src, sig, err := fn(f)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("%s: %w", name, err))
+		case sig != "":
+			return src, sig, true
+		default:
+			ran = append(ran, name)
+		}
+		return "", "", false
+	}
+	if s.d.Clamd != nil {
+		if src, sig, hit := scan("clamav", func(f *os.File) (string, string, error) {
+			sig, err := s.d.Clamd.Scan(ctx, f)
+			return "clamav", sig, err
+		}); hit {
+			return src, sig, nil
+		}
+	}
+	if s.d.Yara != nil {
+		if src, sig, hit := scan("yara", func(f *os.File) (string, string, error) {
+			ms, err := s.d.Yara.Scan(ctx, f)
+			if err != nil || len(ms) == 0 {
+				return "", "", err
+			}
+			src, sig := yaraVerdict(ms)
+			return src, sig, nil
+		}); hit {
+			return src, sig, nil
+		}
+	}
+	if len(errs) > 0 {
+		return "", "", errors.Join(errs...)
+	}
+	return strings.Join(ran, "+"), "", nil
 }
 
 func (s *Service) verdict(ctx context.Context, c Candidate, verdict, source, sig string) (*Detection, error) {
@@ -466,6 +516,7 @@ type ClamdStatus struct {
 type View struct {
 	Settings   Settings           `json:"settings"`
 	Clamd      ClamdStatus        `json:"clamd"`
+	Yara       YaraStatus         `json:"yara"`
 	Verdicts   map[string]int     `json:"verdicts"`
 	Scanned    uint64             `json:"scanned"`  // files scanned since the server started
 	Detected   uint64             `json:"detected"` // detections since the server started
@@ -489,6 +540,17 @@ func (s *Service) Status(ctx context.Context) View {
 			v.Clamd.Error = err.Error()
 		} else {
 			v.Clamd.OK, v.Clamd.Version = true, ver
+		}
+	}
+	if s.d.Yara != nil {
+		v.Yara.Configured = true
+		cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		st, err := s.d.Yara.Status(cctx)
+		cancel()
+		if err != nil {
+			v.Yara.Error = err.Error()
+		} else {
+			v.Yara = st
 		}
 	}
 	v.Verdicts, _ = s.d.State.AVVerdictCounts(ctx)

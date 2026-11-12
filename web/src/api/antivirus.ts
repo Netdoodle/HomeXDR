@@ -27,6 +27,17 @@ export interface AVVerdict {
 export interface AVStatus {
   settings: AVSettings
   clamd: { configured: boolean; ok: boolean; version?: string; error?: string }
+  yara?: {
+    configured: boolean
+    ok: boolean
+    yara_version?: string
+    rules: number
+    package?: string
+    custom_files: number
+    compiled?: string
+    error?: string
+    custom_error?: string
+  }
   verdicts: Record<string, number> | null
   scanned: number
   detected: number
