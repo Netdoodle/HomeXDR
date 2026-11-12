@@ -8,6 +8,8 @@ import { eventCategories, eventSummary } from '../lib/fields'
 import { addTerm } from '../lib/query'
 import { formatTimestamp } from '../lib/time'
 import { FieldTree } from './FieldTree'
+import { InvestigateMenu } from './InvestigateMenu'
+import { investigateTargets } from '../lib/intel'
 import { Icon } from './Icon'
 
 export function EventTable({
@@ -105,6 +107,11 @@ export function EventTable({
                             <Link to={`/search?q=${encodeURIComponent(`process.entity_id:${e.process.entity_id}`)}`}>
                               <Icon name="search" size={12} /> Events of this process
                             </Link>
+                          </div>
+                        ) : null}
+                        {investigateTargets(e).length ? (
+                          <div className="row small">
+                            <InvestigateMenu targets={investigateTargets(e)} small align="left" />
                           </div>
                         ) : null}
                         <FieldTree value={e} onFilter={filter} />

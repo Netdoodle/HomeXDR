@@ -7,6 +7,7 @@ import { AlertCount, AlertStatusBadge, OsLabel, SeverityBadge, StatusDot, Tags, 
 import { EventTable } from '../components/EventTable'
 import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
+import { InvestigateMenu } from '../components/InvestigateMenu'
 import { CopyIcon, KV, LabelEditor, LinkTabs, RelTime } from '../components/Misc'
 import { ConfirmDialog } from '../components/Modal'
 import { EmptyState, ErrorState, Loading, QueryView, Spinner } from '../components/States'
@@ -79,6 +80,13 @@ export function HostDetailPage() {
             </span>
             <span className="mono">{h.ips[0]}</span>
           </span>
+        }
+        actions={
+          <InvestigateMenu
+            targets={h.ips
+              .filter((ip) => !ip.startsWith('127.') && !ip.startsWith('172.17.') && ip !== '::1' && !/^fe80:/i.test(ip))
+              .map((ip) => ({ label: 'Address', value: ip, local: /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|f[cd]|fe80)/i.test(ip) }))}
+          />
         }
       />
       <LinkTabs tabs={tabs} active={tab} href={(t) => `/hosts/${encodeURIComponent(h.id)}${t === 'overview' ? '' : `?tab=${t}`}`} />

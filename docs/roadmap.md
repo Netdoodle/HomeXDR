@@ -50,6 +50,29 @@ A scanner in the style of commercial vulnerability management tools, in four ste
 Limits: findings on devices without the agent rest mostly on version matching, so they are
 marked confirmed or likely.
 
+## Offline protection
+
+Today an agent without a connection to the server only records: the antivirus verdict, kill
+and quarantine are decided on the server, and events wait in the agent's spool until it
+reconnects. Microsoft Defender keeps protecting Windows hosts on its own. The plan is for the
+agent to enforce a signed policy bundle by itself while offline:
+
+- **Hash blocklist and verdict cache.** Known-bad hashes are killed and quarantined on
+  launch; the server's recent verdicts (good and bad) travel with the bundle, so a file it
+  already judged is not re-checked.
+- **IOC firewall rules.** Known-bad addresses and domains blocked in the host's own firewall
+  (Windows Filtering Platform, nftables), from the threat feeds and the server's lists.
+- **Sticky isolation.** An isolated host stays isolated across reboots and lost connections
+  until the server releases it.
+- **Local detections.** A small set of high-confidence rules evaluated on the agent, raised
+  as alerts when it reconnects.
+- The bundle is signed with the release key, has an expiry, and the agent reports which
+  version it enforces.
+
+Related: agents away from home reach the server over Tailscale. Add the Tailscale address and
+MagicDNS name to `HOMEXDR_SERVER_NAMES` so the agent certificate covers them, and point those
+agents at the MagicDNS name; the spool covers the gaps.
+
 ## Later
 
 - **Map Sysmon's other events.** Network (3), file (11, 23, 26), registry (12-14), DNS (22),
@@ -78,6 +101,10 @@ marked confirmed or likely.
 - Memory scanning for injected code (needs a protected, specially signed driver).
 
 ## Done
+
+- Threat map: internet sources reaching the firewall by country, network and port
+- Investigate menu on search results, event tables, alerts and hosts: addresses, domains,
+  URLs, process and file hashes, the host's address
 
 - Maintenance tuning: SSH key names and maintenance suppressions per key, Docker update and
   appdata backup tagging, container start-up window: [maintenance.md](maintenance.md)

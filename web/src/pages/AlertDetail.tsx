@@ -16,7 +16,8 @@ import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
 import { formatNumber } from '../lib/format'
 import { useDocumentTitle } from '../lib/hooks'
-import { eventIndicators, investigateHref } from '../lib/intel'
+import { investigateHref, investigateTargets } from '../lib/intel'
+import { InvestigateMenu } from '../components/InvestigateMenu'
 import { hasRole } from '../lib/roles'
 import { formFromAlert, type SuppressForm } from '../lib/suppressions'
 import { ALERT_STATUS_LABEL } from '../lib/severity'
@@ -62,6 +63,7 @@ function AlertView({ alert: a }: { alert: Alert }) {
   })
 
   const ev = a.event ?? a.events?.[0]
+  const indicators = investigateTargets(ev).filter((t) => !t.label.startsWith('Host'))
   const treeHref = a.process_entity_id ? `/hosts/${encodeURIComponent(a.host_id)}/process/${encodeURIComponent(a.process_entity_id)}` : undefined
 
   return (
@@ -97,6 +99,7 @@ function AlertView({ alert: a }: { alert: Alert }) {
         }
         actions={
           <>
+            <InvestigateMenu targets={investigateTargets(ev)} />
             {canSuppress && a.status !== 'suppressed' ? (
               <button type="button" className="btn" onClick={() => setSuppressing(formFromAlert(a))}>
                 <Icon name="filter" size={14} /> Suppress similar
@@ -270,21 +273,24 @@ function AlertView({ alert: a }: { alert: Alert }) {
         </div>
 
         <div className="stack">
-          {eventIndicators(a.event).length ? (
+          {indicators.length ? (
             <section className="panel">
               <div className="panel-header">
                 <h2>Indicators</h2>
               </div>
               <div className="panel-body stack" style={{ gap: 6 }}>
-                {eventIndicators(a.event).map((i) => (
+                {indicators.map((i) => (
                   <div key={i.value}>
                     <div className="row small" style={{ justifyContent: 'space-between', gap: 10 }}>
-                    <span className="muted nowrap">{i.label}</span>
+                    <span className="muted nowrap">
+                      {i.label}
+                      {i.local ? <span className="xsmall"> · your network</span> : null}
+                    </span>
                     <Link className="mono truncate-inline" to={investigateHref(i.value)} title={`Investigate ${i.value}`}>
                       {i.value}
                     </Link>
                     </div>
-                    <IndicatorFacts value={i.value} />
+                    {i.local ? null : <IndicatorFacts value={i.value} />}
                   </div>
                 ))}
               </div>

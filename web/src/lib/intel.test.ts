@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Event, IntelResult } from '../api/types'
-import { coverageLine, eventIndicators, flagEmoji, indicatorInField, investigateHref, sortedResults, worldDotsPath, worldPoint } from './intel'
+import { coverageLine, eventIndicators, flagEmoji, indicatorInField, investigateHref, investigateTargets, sortedResults, worldDotsPath, worldPoint } from './intel'
 
 describe('indicators in event fields', () => {
   it('offers network indicators', () => {
@@ -88,5 +88,29 @@ describe('indicators in an alert', () => {
       expect(eventIndicators({ destination: { ip } } as unknown as Event)).toEqual([])
     }
     expect(eventIndicators({ destination: { ip: '172.32.0.1' } } as unknown as Event)).toHaveLength(1)
+  })
+})
+
+describe('investigateTargets', () => {
+  it('lists addresses, hashes and the host, marking private ones', () => {
+    const t = investigateTargets({
+      id: 'x',
+      '@timestamp': '2026-11-12T09:03:27Z',
+      source: { ip: '192.168.20.178' },
+      destination: { ip: '8.219.91.229', domain: 'example.org' },
+      process: { name: 'md5sum', hash: { sha256: 'a'.repeat(64), md5: 'b'.repeat(32) } },
+      host: { name: 'Tower2', ip: ['127.0.0.1', '172.17.0.1', '192.168.20.20'] },
+    } as never)
+    expect(t.map((x) => [x.label, x.value, !!x.local])).toEqual([
+      ['Source', '192.168.20.178', true],
+      ['Destination', '8.219.91.229', false],
+      ['Domain', 'example.org', false],
+      ['Process SHA-256', 'a'.repeat(64), false],
+      ['Process MD5', 'b'.repeat(32), false],
+      ['Host Tower2', '192.168.20.20', true],
+    ])
+  })
+  it('skips values that are not indicators', () => {
+    expect(investigateTargets({ id: 'x', '@timestamp': '', process: { hash: { md5: 'nope' } } } as never)).toEqual([])
   })
 })
