@@ -42,6 +42,19 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
 
 > Status: early development. Not ready for production use.
 
+## Why this was built
+
+There is no simple, single deployment for EDR in a homelab.
+
+- **Commercial EDR is hard to license for a few hosts.** The large vendors sell to businesses, and small asset counts are often not offered at all, or not at a price a homelab can justify.
+- **Open-source options fall short in other ways.** Some are not updated regularly. Others are hard to deploy, or take constant upkeep once they are running.
+
+HomeXDR is meant to close that gap:
+
+- **One deployment.** `docker compose up` starts the server, event store and console, and each host installs its agent with one command copied from the console.
+- **Low maintenance.** The server rebuilds itself from git with health checks and rollback, agents update themselves from signed releases, and certificates renew on their own.
+- **Free for any fleet size.** Apache-2.0, with no seat minimums or license keys.
+
 ## Quick start
 
 ```bash
