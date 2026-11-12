@@ -2792,39 +2792,142 @@ main h2 {
 .attack-map svg.zoomed:active {
   cursor: grabbing;
 }
+.attack-map {
+  background: #15171c;
+}
 .attack-map .ocean {
-  fill: #1b1e24;
+  fill: #1c2027;
+}
+.attack-map .outline {
+  fill: none;
+  stroke: #2c323d;
 }
 .attack-map .country {
-  fill: #3a3f49;
-  stroke: #1b1e24;
-  cursor: pointer;
+  fill: #343a45;
+  stroke: #1c2027;
+  cursor: default;
 }
 .attack-map .country.hit {
-  fill: color-mix(in srgb, #e5484d calc(var(--heat, 0) * 100%), #3a3f49);
-}
-.attack-map .country:hover,
-.attack-map .country.selected {
-  fill: #4a505c;
+  fill: #3b424e;
+  cursor: pointer;
 }
 .attack-map .country.hit:hover,
-.attack-map .country.hit.selected {
-  fill: color-mix(in srgb, #e5484d calc(var(--heat, 0) * 100% + 15%), #4a505c);
+.attack-map .country.selected {
+  fill: #4b5361;
 }
 .attack-map .bubble {
-  fill: #e5533f;
-  fill-opacity: 0.92;
-  stroke: #1b1e24;
+  fill-opacity: 0.72;
+  stroke: rgba(255, 255, 255, 0.55);
   cursor: pointer;
+  transition: fill-opacity 0.15s;
 }
 .attack-map .bubble.allowed {
   stroke: #ffd166;
+  stroke-opacity: 1;
 }
 .attack-map .bubble:hover,
 .attack-map .bubble:focus-visible,
-.attack-map .bubble.selected {
-  fill: #ff6a55;
+.attack-map .bubble-g.selected .bubble {
+  fill-opacity: 0.95;
   outline: none;
+}
+.attack-map .pulse {
+  pointer-events: none;
+}
+.attack-map .arc {
+  fill: none;
+  stroke-opacity: 0.55;
+  stroke-linecap: round;
+  stroke-dasharray: 4 6;
+  animation: hx-arc-flow 1.6s linear infinite;
+  pointer-events: none;
+}
+@keyframes hx-arc-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .attack-map .arc {
+    animation: none;
+  }
+}
+.attack-map .map-label {
+  fill: #e6e9ef;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: rgba(15, 18, 24, 0.85);
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.map-live {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  gap: 6px;
+}
+.map-live .live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.map-live.on .live-dot {
+  background: #e5484d;
+  box-shadow: 0 0 0 0 rgba(229, 72, 77, 0.6);
+  animation: hx-live 1.6s infinite;
+}
+@keyframes hx-live {
+  70% {
+    box-shadow: 0 0 0 6px rgba(229, 72, 77, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(229, 72, 77, 0);
+  }
+}
+.map-tip {
+  position: absolute;
+  transform: translate(12px, -50%);
+  padding: 6px 9px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 4;
+}
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 18px;
+  padding: 8px 4px 2px;
+  font-size: 12px;
+}
+.map-legend .legend-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+}
+.legend-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.legend-circle {
+  display: inline-block;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(143, 163, 191, 0.35);
+}
+.cat-dot.ring {
+  background: transparent;
+  border: 2px solid #ffd166;
+  box-sizing: border-box;
 }
 .map-zoom {
   position: absolute;

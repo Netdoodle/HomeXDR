@@ -7,6 +7,7 @@ export interface InboundCountry {
   attempts: number
   sources: number
   allowed: number
+  last?: string
 }
 
 export interface InboundSource {
@@ -53,6 +54,7 @@ export interface InboundView {
   prev_blocked: number
   prev_sources: number
   no_geo?: boolean
+  home_country?: string
   truncated?: boolean
 }
 
@@ -89,6 +91,7 @@ export interface IDSCountry {
   total: number
   sources: number
   by_category: Record<string, number>
+  max_severity?: 'high' | 'medium' | 'low'
 }
 
 export interface IDSView {

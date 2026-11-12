@@ -53,6 +53,8 @@ type InboundCountry struct {
 	Attempts int64  `json:"attempts"`
 	Sources  int    `json:"sources"`
 	Allowed  int64  `json:"allowed"`
+	// Last is the newest attempt from the country.
+	Last time.Time `json:"last"`
 }
 
 // InboundSource is one address that tried to connect.
@@ -113,6 +115,9 @@ type InboundView struct {
 	PrevSources  int64 `json:"prev_sources"`
 	// NoGeo is set when the offline IP network list is not loaded, so no country is known.
 	NoGeo bool `json:"no_geo,omitempty"`
+	// HomeCountry is the country of the firewall's own public address, where the map's
+	// arcs end.
+	HomeCountry string `json:"home_country,omitempty"`
 	// Truncated is set when there were more sources than one query returns; the rarest are left out.
 	Truncated bool `json:"truncated,omitempty"`
 }
@@ -182,6 +187,9 @@ func (c *Core) InboundThreats(ctx context.Context, hours int) (*InboundView, err
 		cc.Attempts += s.Attempts
 		cc.Allowed += s.Allowed
 		cc.Sources++
+		if s.Last.After(cc.Last) {
+			cc.Last = s.Last
+		}
 		if s.ASN != 0 {
 			nw := networks[s.ASN]
 			if nw == nil {
@@ -195,6 +203,16 @@ func (c *Core) InboundThreats(ctx context.Context, hours int) (*InboundView, err
 	v.Blocked = v.Attempts - v.Allowed
 	v.Sources = len(all)
 	v.NoGeo = len(all) > 0 && !geo
+	if c.Enrich != nil {
+		for a := range c.firewallOwn() {
+			if _, ok := publicAddr(a); ok {
+				if cc := c.Enrich.IP(a).Country; cc != "" {
+					v.HomeCountry = cc
+					break
+				}
+			}
+		}
+	}
 	sort.Slice(all, func(i, j int) bool { return all[i].Attempts > all[j].Attempts })
 	for _, s := range all {
 		if len(v.TopSources) < 50 {

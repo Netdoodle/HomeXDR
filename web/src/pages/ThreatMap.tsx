@@ -64,6 +64,8 @@ function ThreatMapBody({ v }: { v: InboundView }) {
   const [mapMode, setMapMode] = useState<'attempts' | 'ids'>('attempts')
   const ids = useQuery({ queryKey: ['stats', 'inbound', 'ids', v.hours], queryFn: () => getInboundIDS(v.hours), refetchInterval: 60_000 })
   const catColor = useMemo(() => categoryColors(ids.data?.categories ?? []), [ids.data])
+  // The worst IDS alert per country colors the attempts bubbles.
+  const idsSeverity = useMemo(() => new Map((ids.data?.countries ?? []).map((c) => [c.code, c.max_severity])), [ids.data])
   const [country, setCountry] = useState<string | null>(null)
   const [drill, setDrill] = useState<{ country: string; kind: InboundKind; category?: string } | null>(null)
   const openLogs = (code: string, kind: InboundKind | 'sources', category?: string) => {
@@ -179,7 +181,9 @@ function ThreatMapBody({ v }: { v: InboundView }) {
             ) : (
               <>
                 <AttackMap
-                  countries={ids.data.countries.map((c) => ({ code: c.code, attempts: c.total, sources: c.sources, allowed: 0 }))}
+                  unit="IDS alerts"
+                  home={v.home_country}
+                  countries={ids.data.countries.map((c) => ({ code: c.code, attempts: c.total, sources: c.sources, allowed: 0, severity: c.max_severity }))}
                   selected={country}
                   onSelect={setCountry}
                   slices={
@@ -238,7 +242,8 @@ function ThreatMapBody({ v }: { v: InboundView }) {
             )
           ) : view === 'map' ? (
             <AttackMap
-              countries={v.countries}
+              home={v.home_country}
+              countries={v.countries.map((c) => ({ ...c, severity: idsSeverity.get(c.code) }))}
               selected={country}
               onSelect={setCountry}
               onDrill={openLogs}
@@ -267,7 +272,7 @@ function ThreatMapBody({ v }: { v: InboundView }) {
               ? 'Suricata alerts by threat over this window; reputation rules split into numbered groups are joined. Suppressed alerts still count here.'
               : mapMode === 'ids' && view === 'map'
                 ? 'Each bubble splits IDS alerts by threat category, placed at the remote end of the connection. Click a country, then a number for its logs.'
-                : 'Bubble size and shading follow the number of attempts; red-ringed bubbles had connections let in. Click a country for its numbers and click a number for its logs. Scroll or use the buttons to zoom, drag to move.'}
+                : 'Bubble size follows the number of attempts and color the worst IDS alert from that country; a yellow ring means connections were let in. Hover for numbers, click a country for its card and a number for its logs. Scroll or use the buttons to zoom, drag to move. Live pulses countries active in the last 5 minutes and draws arcs to home.'}
           </p>
         </div>
       </section>
