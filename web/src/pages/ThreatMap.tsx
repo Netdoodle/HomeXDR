@@ -3,8 +3,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { getInbound, inboundKeys, type InboundCountry, type InboundSource, type InboundView } from '../api/inbound'
+import { getInbound, getInboundEvents, inboundKeys, type InboundCountry, type InboundKind, type InboundSource, type InboundView } from '../api/inbound'
+import { EventTable } from '../components/EventTable'
 import { AttackMap } from '../components/AttackMap'
+import { Icon } from '../components/Icon'
 import { BarList, niceMax, useWidth } from '../components/Charts'
 import { PageHeader } from '../components/Layout'
 import { CopyIcon, RelTime } from '../components/Misc'
@@ -60,6 +62,17 @@ export function ThreatMapPage() {
 function ThreatMapBody({ v }: { v: InboundView }) {
   const [view, setView] = useState<'map' | 'table'>('map')
   const [country, setCountry] = useState<string | null>(null)
+  const [drill, setDrill] = useState<{ country: string; kind: InboundKind } | null>(null)
+  const openLogs = (code: string, kind: InboundKind | 'sources') => {
+    setCountry(code)
+    if (kind === 'sources') {
+      setDrill(null)
+      document.getElementById('top-sources')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+    setDrill({ country: code, kind })
+    setTimeout(() => document.getElementById('threat-logs')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
   if (v.attempts === 0) {
     return (
       <EmptyState title="No connections from the internet in this window">
@@ -137,6 +150,7 @@ function ThreatMapBody({ v }: { v: InboundView }) {
               countries={v.countries}
               selected={country}
               onSelect={setCountry}
+              onDrill={openLogs}
               details={(code) => {
                 const top = v.top_sources.filter((s) => (s.country ?? '') === code).slice(0, 3)
                 return top.length ? (
@@ -155,14 +169,16 @@ function ThreatMapBody({ v }: { v: InboundView }) {
               }}
             />
           ) : (
-            <CountryTable countries={v.countries} total={v.attempts} onSelect={setCountry} />
+            <CountryTable countries={v.countries} total={v.attempts} onSelect={setCountry} onDrill={openLogs} />
           )}
           <p className="xsmall muted" style={{ margin: '6px 0 0' }}>
-            Bubble size and shading follow the number of attempts; red-ringed bubbles had connections let in. Click a country for its numbers, scroll or use
-            the buttons to zoom, drag to move.
+            Bubble size and shading follow the number of attempts; red-ringed bubbles had connections let in. Click a country for its numbers and click a
+            number for its logs. Scroll or use the buttons to zoom, drag to move.
           </p>
         </div>
       </section>
+
+      {drill ? <ThreatLogs hours={v.hours} country={drill.country} kind={drill.kind} onClose={() => setDrill(null)} /> : null}
 
       <div className="grid grid-2" style={{ alignItems: 'start' }}>
         <section className="panel">
@@ -240,7 +256,7 @@ function ThreatMapBody({ v }: { v: InboundView }) {
 
       <section className="panel">
         <div className="panel-header">
-          <h2 className="grow">Top sources{country !== null ? ` from ${countryName(country)}` : ''}</h2>
+          <h2 className="grow" id="top-sources">Top sources{country !== null ? ` from ${countryName(country)}` : ''}</h2>
           {v.truncated ? <span className="small muted">The rarest sources are left out</span> : null}
         </div>
         {sources.length ? <SourceTable rows={sources} /> : <EmptyState title="No sources in the top 50 from this country" compact />}
@@ -249,7 +265,30 @@ function ThreatMapBody({ v }: { v: InboundView }) {
   )
 }
 
-function CountryTable({ countries, total, onSelect }: { countries: InboundCountry[]; total: number; onSelect: (c: string) => void }) {
+function CountryTable({
+  countries,
+  total,
+  onSelect,
+  onDrill,
+}: {
+  countries: InboundCountry[]
+  total: number
+  onSelect: (c: string) => void
+  onDrill: (c: string, kind: InboundKind) => void
+}) {
+  const num = (n: number, code: string, kind: InboundKind, title: string) => (
+    <button
+      type="button"
+      className="num-link"
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation()
+        onDrill(code, kind)
+      }}
+    >
+      {formatNumber(n)}
+    </button>
+  )
   return (
     <div className="table-wrap">
       <table className="table">
@@ -268,10 +307,12 @@ function CountryTable({ countries, total, onSelect }: { countries: InboundCountr
               <td>
                 {flagEmoji(c.code)} {countryName(c.code)} <span className="muted xsmall mono">{c.code}</span>
               </td>
-              <td className="right num">{formatNumber(c.attempts)}</td>
+              <td className="right num">{num(c.attempts, c.code, 'all', 'Show these connections')}</td>
               <td className="right num">{((c.attempts / total) * 100).toFixed(1)}%</td>
               <td className="right num">{formatNumber(c.sources)}</td>
-              <td className={c.allowed ? 'right num danger-text' : 'right num muted'}>{formatNumber(c.allowed)}</td>
+              <td className={c.allowed ? 'right num danger-text' : 'right num muted'}>
+                {c.allowed ? num(c.allowed, c.code, 'allowed', 'Show the connections let in') : formatNumber(0)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -442,4 +483,61 @@ function axisLabel(iso: string, spanSec: number): string {
   const d = new Date(iso)
   if (spanSec >= 6 * 3600) return `${MONTHS[d.getMonth()]} ${d.getDate()}`
   return `${two(d.getHours())}:${two(d.getMinutes())}`
+}
+
+const KIND_LABEL: Record<InboundKind, string> = { all: 'all connections', blocked: 'blocked', allowed: 'let in' }
+
+/** The firewall log entries behind a number on the map or the country table. */
+function ThreatLogs({ hours, country, kind, onClose }: { hours: number; country: string; kind: InboundKind; onClose: () => void }) {
+  const [offset, setOffset] = useState(0)
+  const q = useQuery({
+    queryKey: ['stats', 'inbound', 'events', hours, country, kind, offset],
+    queryFn: () => getInboundEvents(hours, country, kind, offset),
+  })
+  const d = q.data
+  return (
+    <section className="panel" id="threat-logs">
+      <div className="panel-header">
+        <h2 className="grow">
+          Logs: {flagEmoji(country)} {countryName(country)} · {KIND_LABEL[kind]} · {rangeLabel(hours)}
+        </h2>
+        {d?.query ? (
+          <Link className="btn sm" to={`/search?q=${encodeURIComponent(d.query)}`}>
+            <Icon name="search" size={12} /> Open in Search
+          </Link>
+        ) : null}
+        <button type="button" className="btn ghost sm" aria-label="Close the logs" onClick={onClose}>
+          <Icon name="close" size={12} />
+        </button>
+      </div>
+      {q.isPending ? (
+        <Loading />
+      ) : q.isError ? (
+        <ErrorState error={q.error} onRetry={() => q.refetch()} />
+      ) : d && d.total > 0 ? (
+        <>
+          <div className="panel-body small muted" style={{ paddingBottom: 0 }}>
+            {formatNumber(d.total)} {d.total === 1 ? 'entry' : 'entries'} from {formatNumber(d.sources)} {d.sources === 1 ? 'address' : 'addresses'}, newest
+            first.{d.query ? null : ' Too many addresses for a Search link; they are all shown here.'}
+          </div>
+          <EventTable events={d.events} processLinks={false} />
+          {d.total > 100 ? (
+            <div className="panel-body row" style={{ gap: 8 }}>
+              <button type="button" className="btn sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 100))}>
+                Newer
+              </button>
+              <span className="small muted">
+                {formatNumber(offset + 1)}–{formatNumber(Math.min(offset + 100, d.total))} of {formatNumber(d.total)}
+              </span>
+              <button type="button" className="btn sm" disabled={offset + 100 >= d.total || offset + 100 > 10000} onClick={() => setOffset(offset + 100)}>
+                Older
+              </button>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <EmptyState title="No log entries for this selection" compact />
+      )}
+    </section>
+  )
 }

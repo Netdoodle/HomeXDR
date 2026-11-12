@@ -25,12 +25,15 @@ export function AttackMap({
   selected,
   onSelect,
   details,
+  onDrill,
 }: {
   countries: MapCountry[]
   selected: string | null
   onSelect: (code: string | null) => void
   /** Extra lines for the selected country's card. */
   details?: (code: string) => ReactNode
+  /** Opens the logs behind a number on the card. */
+  onDrill?: (code: string, kind: 'all' | 'blocked' | 'allowed' | 'sources') => void
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const svg = useRef<SVGSVGElement>(null)
@@ -204,17 +207,43 @@ export function AttackMap({
           </div>
           <dl className="map-card-stats">
             <dt>Attempts</dt>
-            <dd>{formatNumber(sel.attempts)}</dd>
+            <dd>
+              <Num value={formatNumber(sel.attempts)} title="Show these connections" onClick={onDrill && (() => onDrill(card.code, 'all'))} />
+            </dd>
             <dt>Blocked</dt>
-            <dd className={sel.allowed ? 'danger-text' : 'ok-text'}>{(((sel.attempts - sel.allowed) / sel.attempts) * 100).toFixed(sel.allowed ? 2 : 0)}%</dd>
+            <dd className={sel.allowed ? 'danger-text' : 'ok-text'}>
+              <Num
+                value={`${(((sel.attempts - sel.allowed) / sel.attempts) * 100).toFixed(sel.allowed ? 2 : 0)}%`}
+                title="Show the blocked connections"
+                onClick={onDrill && (() => onDrill(card.code, 'blocked'))}
+              />
+            </dd>
             <dt>Sources</dt>
-            <dd>{formatNumber(sel.sources)}</dd>
+            <dd>
+              <Num value={formatNumber(sel.sources)} title="Show the sources" onClick={onDrill && (() => onDrill(card.code, 'sources'))} />
+            </dd>
             <dt>Let in</dt>
-            <dd className={sel.allowed ? 'danger-text' : undefined}>{formatNumber(sel.allowed)}</dd>
+            <dd className={sel.allowed ? 'danger-text' : undefined}>
+              <Num
+                value={formatNumber(sel.allowed)}
+                title="Show the connections let in"
+                onClick={sel.allowed && onDrill ? () => onDrill(card.code, 'allowed') : undefined}
+              />
+            </dd>
           </dl>
           {details ? details(card.code) : null}
         </div>
       ) : null}
     </div>
+  )
+}
+
+/** A number on the card that opens its logs when clicked. */
+function Num({ value, title, onClick }: { value: string; title: string; onClick?: () => void }) {
+  if (!onClick) return <>{value}</>
+  return (
+    <button type="button" className="map-num" title={title} onClick={onClick}>
+      {value}
+    </button>
   )
 }
