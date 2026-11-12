@@ -97,6 +97,19 @@ func TestInboundThreats(t *testing.T) {
 	if v.PrevAttempts != 2 || v.PrevBlocked != 2 || v.PrevSources != 2 {
 		t.Fatalf("previous window: %d attempts, %d blocked, %d sources", v.PrevAttempts, v.PrevBlocked, v.PrevSources)
 	}
+	// The events behind the numbers.
+	ev, err := c.InboundEvents(ctx, 24, "US", "allowed", 0)
+	if err != nil || ev.Total != 1 || ev.Sources != 1 || ev.Query == "" {
+		t.Fatalf("US let in: %+v, %v", ev, err)
+	}
+	ev, _ = c.InboundEvents(ctx, 24, "NL", "blocked", 0)
+	if ev.Total != 11 || ev.Sources != 2 || len(ev.Events) != 11 {
+		t.Fatalf("NL blocked: total %d sources %d events %d", ev.Total, ev.Sources, len(ev.Events))
+	}
+	ev, _ = c.InboundEvents(ctx, 24, "NL", "allowed", 0)
+	if ev.Total != 0 || ev.Sources != 0 {
+		t.Fatalf("NL let in: %+v", ev)
+	}
 	if tl != 13 {
 		t.Fatalf("timeline total %d, want 13: %+v", tl, v.Timeline)
 	}

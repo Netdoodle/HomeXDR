@@ -147,54 +147,19 @@ func (c *Core) InboundThreats(ctx context.Context, hours int) (*InboundView, err
 		AllowedIn: []InboundSource{}, Networks: []InboundNetwork{}, Ports: []InboundPort{}, Timeline: []InboundPoint{}}
 
 	// 1. Every source address: count, ports tried, first and last seen, by action.
-	res, err := c.Events.Search(ctx, events.SearchQuery{From: from, Query: inboundBase +
-		` | stats count, dc(destination.port) as ports, min(@timestamp) as first, max(@timestamp) as last by source.ip, event.action` +
-		fmt.Sprintf(` | sort -count | head %d`, inboundMaxSources)})
+	bySrc, truncated, err := c.inboundSources(ctx, from)
 	if err != nil {
 		return nil, err
 	}
-	v.Truncated = res.Truncated || len(res.Rows) >= inboundMaxSources
-	bySrc := map[string]*InboundSource{}
-	for _, row := range res.Rows {
-		if len(row) < 6 {
-			continue
-		}
-		ip := fmt.Sprint(row[0])
-		if _, ok := publicAddr(ip); !ok {
-			continue
-		}
-		s := bySrc[ip]
-		if s == nil {
-			s = &InboundSource{IP: ip}
-			bySrc[ip] = s
-		}
-		n := toInt64(row[2])
-		s.Attempts += n
-		if allowedAction(fmt.Sprint(row[1])) {
-			s.Allowed += n
-		}
-		if p := toInt64(row[3]); p > s.Ports {
-			s.Ports = p // distinct ports per action; the larger is a fair floor
-		}
-		if t, ok := toTime(row[4]); ok && (s.First.IsZero() || t.Before(s.First)) {
-			s.First = t
-		}
-		if t, ok := toTime(row[5]); ok && t.After(s.Last) {
-			s.Last = t
-		}
-	}
+	v.Truncated = truncated
 
 	geo := false
 	countries := map[string]*InboundCountry{}
 	networks := map[int]*InboundNetwork{}
 	all := make([]*InboundSource, 0, len(bySrc))
 	for _, s := range bySrc {
-		if c.Enrich != nil {
-			info := c.Enrich.IP(s.IP)
-			s.Country, s.ASN, s.ASName = info.Country, info.ASN, info.ASName
-			if info.Country != "" || info.ASN != 0 {
-				geo = true
-			}
+		if s.Country != "" || s.ASN != 0 {
+			geo = true
 		}
 		all = append(all, s)
 		v.Attempts += s.Attempts
@@ -311,4 +276,142 @@ func (c *Core) InboundThreats(ctx context.Context, hours int) (*InboundView, err
 		}
 	}
 	return v, nil
+}
+
+// inboundSources aggregates the internet sources seen since from, with their country and
+// network. truncated is set when there were more sources than one query returns.
+func (c *Core) inboundSources(ctx context.Context, from time.Time) (map[string]*InboundSource, bool, error) {
+	res, err := c.Events.Search(ctx, events.SearchQuery{From: from, Query: inboundBase +
+		` | stats count, dc(destination.port) as ports, min(@timestamp) as first, max(@timestamp) as last by source.ip, event.action` +
+		fmt.Sprintf(` | sort -count | head %d`, inboundMaxSources)})
+	if err != nil {
+		return nil, false, err
+	}
+	bySrc := map[string]*InboundSource{}
+	for _, row := range res.Rows {
+		if len(row) < 6 {
+			continue
+		}
+		ip := fmt.Sprint(row[0])
+		if _, ok := publicAddr(ip); !ok {
+			continue
+		}
+		s := bySrc[ip]
+		if s == nil {
+			s = &InboundSource{IP: ip}
+			bySrc[ip] = s
+		}
+		n := toInt64(row[2])
+		s.Attempts += n
+		if allowedAction(fmt.Sprint(row[1])) {
+			s.Allowed += n
+		}
+		if p := toInt64(row[3]); p > s.Ports {
+			s.Ports = p // distinct ports per action; the larger is a fair floor
+		}
+		if t, ok := toTime(row[4]); ok && (s.First.IsZero() || t.Before(s.First)) {
+			s.First = t
+		}
+		if t, ok := toTime(row[5]); ok && t.After(s.Last) {
+			s.Last = t
+		}
+	}
+	if c.Enrich != nil {
+		for _, s := range bySrc {
+			info := c.Enrich.IP(s.IP)
+			s.Country, s.ASN, s.ASName = info.Country, info.ASN, info.ASName
+		}
+	}
+	return bySrc, res.Truncated || len(res.Rows) >= inboundMaxSources, nil
+}
+
+// InboundEventsView is a page of the firewall events behind one number on the threat map.
+type InboundEventsView struct {
+	Events []any `json:"events"`
+	Total  int64 `json:"total"`
+	// Sources is how many internet addresses the selection covers.
+	Sources int `json:"sources"`
+	// Query reproduces the selection on the Search page; empty when it would name too many
+	// addresses to fit in a link.
+	Query string `json:"query,omitempty"`
+}
+
+const (
+	inboundEventsPage   = 100
+	inboundQueryMaxIPs  = 60
+	inboundEventsMaxIPs = 5000
+)
+
+// allowedActionsQuery and its negation select connections let in or blocked.
+const allowedActionsQuery = `(event.action:pass OR event.action:rdr OR event.action:nat)`
+
+// InboundEvents returns the firewall events from one country's internet sources (all,
+// blocked or let in) in the last hours, newest first. The country is looked up per source
+// address, the way the map counts it, and turned into a list of addresses for the search.
+func (c *Core) InboundEvents(ctx context.Context, hours int, country, kind string, offset int) (*InboundEventsView, error) {
+	from := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
+	bySrc, _, err := c.inboundSources(ctx, from)
+	if err != nil {
+		return nil, err
+	}
+	var ips []string
+	for _, s := range bySrc {
+		if s.Country != country {
+			continue
+		}
+		switch kind {
+		case "allowed":
+			if s.Allowed == 0 {
+				continue
+			}
+		case "blocked":
+			if s.Attempts-s.Allowed == 0 {
+				continue
+			}
+		}
+		ips = append(ips, s.IP)
+	}
+	v := &InboundEventsView{Events: []any{}, Sources: len(ips)}
+	if len(ips) == 0 {
+		return v, nil
+	}
+	if len(ips) > inboundEventsMaxIPs {
+		// The busiest sources: enough to show events, and keeps the query bounded.
+		sort.Slice(ips, func(i, j int) bool { return bySrc[ips[i]].Attempts > bySrc[ips[j]].Attempts })
+		ips = ips[:inboundEventsMaxIPs]
+	}
+	sort.Strings(ips)
+	terms := make([]string, len(ips))
+	for i, ip := range ips {
+		terms[i] = "source.ip:" + quoteValue(ip)
+	}
+	q := inboundBase
+	switch kind {
+	case "allowed":
+		q += " " + allowedActionsQuery
+	case "blocked":
+		q += " NOT " + allowedActionsQuery
+	}
+	q += " (" + strings.Join(terms, " OR ") + ")"
+	res, err := c.Events.Search(ctx, events.SearchQuery{From: from, Query: q, Limit: inboundEventsPage, Offset: offset})
+	if err != nil {
+		return nil, err
+	}
+	v.Total = res.Total
+	for _, e := range res.Events {
+		v.Events = append(v.Events, e)
+	}
+	if len(ips) <= inboundQueryMaxIPs {
+		v.Query = q
+	}
+	return v, nil
+}
+
+// quoteValue quotes a search value when it holds characters the query language reads
+// specially (IPv6 colons).
+func quoteValue(s string) string {
+	if strings.ContainsAny(s, ` :()"*?`) {
+		return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
+	}
+	return s
 }

@@ -59,3 +59,16 @@ export interface InboundView {
 export const inboundKeys = { view: (hours: number) => ['stats', 'inbound', hours] as const }
 
 export const getInbound = (hours: number) => http.get<InboundView>(`/api/stats/inbound?hours=${hours}`)
+
+export type InboundKind = 'all' | 'blocked' | 'allowed'
+
+export interface InboundEvents {
+  events: import('./types').Event[]
+  total: number
+  sources: number
+  /** The same selection as a Search query; absent when it names too many addresses. */
+  query?: string
+}
+
+export const getInboundEvents = (hours: number, country: string, kind: InboundKind, offset = 0) =>
+  http.get<InboundEvents>(`/api/stats/inbound/events?hours=${hours}&country=${encodeURIComponent(country)}&kind=${kind}&offset=${offset}`)

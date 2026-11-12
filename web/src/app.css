@@ -2925,3 +2925,30 @@ main h2 {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+.map-num {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.map-num:hover,
+.map-num:focus-visible {
+  color: var(--accent);
+  text-decoration-style: solid;
+}
+.num-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.num-link:hover {
+  text-decoration: underline;
+}

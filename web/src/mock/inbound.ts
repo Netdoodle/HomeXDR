@@ -59,4 +59,26 @@ function view(hours: number): InboundView {
 
 export function inboundRoutes(route: Route) {
   route('GET', '/api/stats/inbound', ({ query }) => view(Number(query?.get('hours') ?? 24) || 24))
+  route('GET', '/api/stats/inbound/events', ({ query }) => {
+    const kind = query?.get('kind') ?? 'all'
+    const country = query?.get('country') ?? ''
+    const ips = country === 'US' ? ['104.28.212.9', '167.94.138.44'] : ['45.141.233.145', '80.82.77.139']
+    const n = kind === 'allowed' ? (country === 'US' ? 3 : 0) : 12
+    const events = Array.from({ length: n }, (_, i) => ({
+      id: `mock-fw-${country}-${kind}-${i}`,
+      '@timestamp': new Date(Date.now() - i * 97_000).toISOString(),
+      event: { module: 'opnsense', dataset: 'opnsense.filterlog', action: kind === 'allowed' ? 'rdr' : 'block', category: ['network'] },
+      host: { id: 'fw', name: 'OPNsense.home.example' },
+      source: { ip: ips[i % 2], port: 40000 + i },
+      destination: { ip: '203.0.113.86', port: kind === 'allowed' ? 443 : [22, 23, 3389][i % 3] },
+      network: { direction: 'inbound', transport: 'tcp' },
+      message: `${kind === 'allowed' ? 'rdr' : 'block'} tcp ${ips[i % 2]} -> 203.0.113.86`,
+    }))
+    return {
+      events,
+      total: n,
+      sources: n ? 2 : 0,
+      query: n ? `event.dataset:opnsense.filterlog network.direction:inbound (source.ip:${ips[0]} OR source.ip:${ips[1]})` : undefined,
+    }
+  })
 }
