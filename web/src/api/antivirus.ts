@@ -11,6 +11,8 @@ export interface AVSettings {
   /** global scanner switches; Settings → Groups can override them per group */
   use_clamav: boolean
   use_yara: boolean
+  /** Windows App Control for confirmed malware; groups can override it */
+  app_control: 'off' | 'audit' | 'enforce'
   use_intel: boolean
   max_file_mb: number
   blocked_hashes: string[] | null
@@ -50,6 +52,29 @@ export interface AVStatus {
 }
 
 export const avKeys = { status: ['antivirus'] as const }
+
+export interface AppControlHost {
+  host_id: string
+  hostname: string
+  mode: string
+  mode_from?: string
+  status: 'off' | 'applied' | 'pending' | 'offline' | 'failed' | 'not_allowed' | string
+  desired?: string
+  applied?: string
+  applied_mode?: string
+  rules: number
+  message?: string
+  updated_at?: string
+}
+
+export interface AppControlView {
+  mode: string
+  rules: { sha256: string; auth_sha256: string; name: string; signature?: string; source: string; path?: string; checked_at: string }[]
+  hosts: AppControlHost[]
+}
+
+export const appControlKeys = { status: ['appcontrol'] as const }
+export const getAppControl = () => http.get<AppControlView>('/api/appcontrol')
 
 export const getAV = () => http.get<AVStatus>('/api/antivirus')
 export const putAV = (s: AVSettings) => http.put<AVStatus>('/api/settings/antivirus', s)

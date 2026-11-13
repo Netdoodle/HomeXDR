@@ -10,7 +10,7 @@ const NOW = Date.now()
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
 
 export const status: AVStatus = {
-  settings: { enabled: true, action: 'quarantine', scan_unknown: true, use_clamav: true, use_yara: true, use_intel: true, max_file_mb: 64, blocked_hashes: [], allowed_hashes: [] },
+  settings: { enabled: true, action: 'quarantine', scan_unknown: true, use_clamav: true, use_yara: true, app_control: 'off', use_intel: true, max_file_mb: 64, blocked_hashes: [], allowed_hashes: [] },
   clamd: { configured: true, ok: true, version: 'ClamAV 1.4.6/27450/Fri Nov  6 08:21:00 2026' },
   yara: { configured: true, ok: true, yara_version: '4.5.4', rules: 5128, package: 'YARA Forge core 2026-11-08', custom_files: 1, compiled: ago(3 * 3600_000) },
   verdicts: { clean: 214, known: 1310, malicious: 2, skipped: 3 },
@@ -51,6 +51,24 @@ export const status: AVStatus = {
 /** Registers the antivirus routes on the mock server. */
 export function antivirusRoutes(route: Route, fail: (status: number, message: string) => never) {
   route('GET', '/api/antivirus', () => status)
+  route('GET', '/api/appcontrol', () => ({
+    mode: status.settings.app_control,
+    rules: [
+      {
+        sha256: '9f3c1a7e5b2d4c6f8a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f',
+        auth_sha256: '1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f9f3c1a7e5b2d4c6f8a0b',
+        name: 'invoice_2026.exe',
+        signature: 'Win.Trojan.AgentTesla-9876543-0',
+        source: 'clamav',
+        path: 'C:\\Users\\alice\\Downloads\\invoice_2026.exe',
+        checked_at: ago(42 * 60_000),
+      },
+    ],
+    hosts: [
+      { host_id: 'h-desk', hostname: 'DESKTOP-7QK2M4', mode: 'audit', mode_from: 'DTS Assets', status: 'applied', rules: 1, message: 'audit mode: Windows logs (CodeIntegrity event 3076) but still runs 1 blocked file(s)', updated_at: ago(5 * 60_000) },
+      { host_id: 'h-laptop', hostname: 'LAPTOP-ALICE', mode: 'off', status: 'off', rules: 0 },
+    ],
+  }))
   route(
     'PUT',
     '/api/settings/antivirus',

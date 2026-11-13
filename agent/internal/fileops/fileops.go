@@ -16,6 +16,7 @@ import (
 	"github.com/Netdoodle/homexdr/agent/internal/fsutil"
 	"github.com/Netdoodle/homexdr/agent/internal/globs"
 	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/authenticode"
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
@@ -121,8 +122,12 @@ func (s *Store) Quarantine(path string) (api.QuarantineResult, error) {
 	}
 	// Remove all permissions so the quarantined copy cannot be executed or read by
 	// accident. (On Windows this only sets the read-only attribute.)
+	res := api.QuarantineResult{ID: id, OriginalPath: path, SHA256: sum, Size: fi.Size()}
+	if h, err := authenticode.File(dst); err == nil {
+		res.AuthSHA256, res.AuthSHA1 = h.SHA256, h.SHA1
+	}
 	_ = os.Chmod(dst, noPerm())
-	return api.QuarantineResult{ID: id, OriginalPath: path, SHA256: sum, Size: fi.Size()}, nil
+	return res, nil
 }
 
 func noPerm() os.FileMode {

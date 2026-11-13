@@ -282,7 +282,47 @@ const (
 	// CmdDefender drives Microsoft Defender Antivirus on Windows (DefenderParams): a
 	// fixed set of operations, not a way to run commands.
 	CmdDefender = "defender.action"
+	// CmdAppControl applies HomeXDR's Windows App Control (WDAC) block list
+	// (AppControlParams): an "allow everything, deny these files" policy, or removes it.
+	CmdAppControl = "appcontrol.apply"
 )
+
+// App Control modes (AppControlParams.Mode).
+const (
+	AppControlOff     = "off"     // no HomeXDR policy: remove it if present
+	AppControlAudit   = "audit"   // the policy only logs what it would block (CodeIntegrity event 3076)
+	AppControlEnforce = "enforce" // Windows refuses to run the listed files (event 3077)
+)
+
+// AppControlPolicyID is the fixed ID of HomeXDR's App Control policy, so each update
+// replaces the previous one and removal finds it.
+const AppControlPolicyID = "{E4AB46CA-CD05-4CB9-8AEB-D62DFD1225F2}"
+
+// AppControlMaxRules caps the files in one policy.
+const AppControlMaxRules = 10000
+
+// AppControlParams for CmdAppControl.
+type AppControlParams struct {
+	Mode string `json:"mode"`
+	// Version identifies the rule set; the agent reports it back once applied.
+	Version string           `json:"version"`
+	Rules   []AppControlRule `json:"rules,omitempty"`
+}
+
+// AppControlRule denies one file by its Authenticode hashes (lower-case hex).
+type AppControlRule struct {
+	Name   string `json:"name,omitempty"` // shown in the policy and in CodeIntegrity events
+	SHA256 string `json:"sha256"`         // Authenticode SHA-256
+	SHA1   string `json:"sha1,omitempty"` // Authenticode SHA-1
+}
+
+// AppControlResult is the output of CmdAppControl.
+type AppControlResult struct {
+	Mode    string `json:"mode"`
+	Version string `json:"version"`
+	Rules   int    `json:"rules"`
+	Message string `json:"message"`
+}
 
 // Defender operations (DefenderParams.Action).
 const (
@@ -342,7 +382,7 @@ type DefenderThreatInfo struct {
 // DefaultAllowedActions is the local policy used when the agent config does not set one.
 var DefaultAllowedActions = []string{
 	CmdProcessKill, CmdHostIsolate, CmdHostRelease, CmdFileQuarantine,
-	CmdFileRestore, CmdFileGet, CmdFileHash, CmdArtifact, CmdDefender,
+	CmdFileRestore, CmdFileGet, CmdFileHash, CmdArtifact, CmdDefender, CmdAppControl,
 }
 
 // SignedCommand is what the server hands an agent. Payload is the exact JSON encoding of
@@ -418,6 +458,10 @@ type QuarantineResult struct {
 	OriginalPath string `json:"original_path"`
 	SHA256       string `json:"sha256"`
 	Size         int64  `json:"size"`
+	// AuthSHA256 and AuthSHA1 are the Authenticode hashes of a Windows PE file, which
+	// App Control rules use.
+	AuthSHA256 string `json:"auth_sha256,omitempty"`
+	AuthSHA1   string `json:"auth_sha1,omitempty"`
 }
 
 // RestoreParams for CmdFileRestore. The result output is the restored file's

@@ -200,6 +200,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		Log:        a.log,
 		Platform:   a.plat.Name(),
 	}
+	if ac, ok := a.plat.(platform.AppControl); ok {
+		a.handler.AppControl = ac
+	}
 	if d, ok := a.plat.(platform.Defender); ok {
 		a.handler.Defender = d
 	}

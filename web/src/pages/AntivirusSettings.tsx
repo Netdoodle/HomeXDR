@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
+import { AppControlPanel } from './AppControlPanel'
 import { errorMessage } from '../api'
 import { avKeys, forgetAVVerdict, getAV, putAV, type AVSettings, type AVStatus } from '../api/antivirus'
 import { useCan } from '../components/Auth'
@@ -19,6 +20,7 @@ export function AntivirusTab() {
     <div className="stack" style={{ maxWidth: 980 }}>
       <Status status={q.data} />
       <Form key={JSON.stringify(q.data.settings)} settings={q.data.settings} />
+      <AppControlPanel />
       <Detections status={q.data} />
     </div>
   )
@@ -145,6 +147,17 @@ function Form({ settings }: { settings: AVSettings }) {
             For every host, unless its group says otherwise (<Link to="/settings/groups">Settings → Groups</Link>).
           </span>
         </div>
+        <label className="field" style={{ maxWidth: 420 }}>
+          <span className="label">Windows App Control for confirmed malware</span>
+          <select className="input" value={s.app_control} disabled={ro} onChange={(e) => set({ app_control: e.target.value as AVSettings['app_control'] })}>
+            <option value="off">Off</option>
+            <option value="audit">Audit: Windows logs what it would block</option>
+            <option value="enforce">Enforce: Windows refuses to run it</option>
+          </select>
+          <span className="help">
+            For every Windows host unless its group says otherwise. Start with Audit and check the CodeIntegrity log before enforcing.
+          </span>
+        </label>
         <label className="field" style={{ maxWidth: 260 }}>
           <span className="label">Largest file to upload (MB)</span>
           <input className="input" type="number" min={1} max={100} value={s.max_file_mb} disabled={ro} onChange={(e) => set({ max_file_mb: Number(e.target.value) })} />

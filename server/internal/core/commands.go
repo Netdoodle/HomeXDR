@@ -136,6 +136,18 @@ func validateParams(h *store.Host, typ string, params json.RawMessage) (json.Raw
 			return nil, invalid("unknown Defender action %q", p.Action)
 		}
 		v = p
+	case api.CmdAppControl:
+		var p api.AppControlParams
+		if err := decodeStrict(params, &p); err != nil {
+			return nil, err
+		}
+		if h.OS.Platform != "windows" {
+			return nil, invalid("App Control is only available on Windows hosts")
+		}
+		if len(p.Rules) > api.AppControlMaxRules {
+			return nil, invalid("at most %d App Control rules", api.AppControlMaxRules)
+		}
+		v = p
 	case api.CmdFileGet:
 		var p api.FileGetParams
 		if err := decodeStrict(params, &p); err != nil {

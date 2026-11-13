@@ -5,13 +5,6 @@ them. When one ships, move it to "Done" with its commit and a link to its docs.
 
 ## Next up
 
-### Windows: block known malware before it runs (App Control)
-Turn the antivirus blocklist and confirmed malware hashes into a Windows App Control
-(WDAC) deny policy ("allow everything, deny these hashes"), pushed to each PC with
-`CiTool` so it applies without a reboot. Windows' own code integrity then refuses to start
-those files. Test on the VM first: edition support on Pro, policy size limits, and a
-one-click way to remove the policy.
-
 ### Defender health and hardening
 - Alerts when Defender's real-time protection is off or signatures are more than a few days old.
 - Hardening profiles in the agent config, audit mode first: Attack Surface Reduction rules,
@@ -113,6 +106,11 @@ agents at the MagicDNS name; the spool covers the gaps.
 
 ## Done
 
+- Windows App Control: confirmed malware becomes an "allow everything, deny these files"
+  policy applied with CiTool (no reboot), Off/Audit/Enforce globally or per group:
+  [antivirus.md](antivirus.md#windows-app-control)
+- Groups: enrollment tokens with a group, group filters on Hosts and Alerts, malware
+  response and AI analyst overrides: [groups.md](groups.md)
 - Host groups (organisation › parent › child) with per-group ClamAV and YARA switches:
   [groups.md](groups.md); Defender and HomeXDR detections of one file share one alert:
   [antivirus.md](antivirus.md#microsoft-defender-and-homexdr-on-the-same-file)

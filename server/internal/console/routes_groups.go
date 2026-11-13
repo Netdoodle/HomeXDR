@@ -35,6 +35,8 @@ type groupsView struct {
 		YARA   bool   `json:"yara"`
 		Action string `json:"action"`
 		AIAuto bool   `json:"ai_auto"`
+		// AppControl is the Windows App Control mode.
+		AppControl string `json:"app_control"`
 	} `json:"global"`
 	Groups    []groupView `json:"groups"`
 	Ungrouped int         `json:"ungrouped"` // hosts in no group
@@ -48,6 +50,7 @@ func (h *Handler) groupsView(r *http.Request) (*groupsView, error) {
 	v := &groupsView{Org: h.c.GetOrg(r.Context()), Groups: []groupView{}}
 	set := h.c.AV.Settings()
 	v.Global.ClamAV, v.Global.YARA, v.Global.Action, v.Global.AIAuto = set.UseClamAV, set.UseYARA, set.Action, true
+	v.Global.AppControl = set.AppControl
 	for _, g := range gs {
 		v.Groups = append(v.Groups, groupView{HostGroup: g, Effective: h.c.ResolveAV(g.ID)})
 	}
@@ -132,8 +135,12 @@ func (h *Handler) patchGroup(w http.ResponseWriter, r *http.Request, u *store.Us
 			if a := in.Policy.AV.Action; a != nil {
 				action = *a
 			}
+			ac := "inherit"
+			if a := in.Policy.AV.AppControl; a != nil {
+				ac = *a
+			}
 			parts = append(parts, "ClamAV "+onOffInherit(in.Policy.AV.ClamAV), "YARA "+onOffInherit(in.Policy.AV.YARA),
-				"antivirus response "+action, "AI auto-investigation "+onOffInherit(in.Policy.AI.Auto))
+				"antivirus response "+action, "App Control "+ac, "AI auto-investigation "+onOffInherit(in.Policy.AI.Auto))
 		}
 		h.c.Audit(r.Context(), u.Username, "group.update", g.ID, g.Name+": "+strings.Join(parts, ", "))
 	}
