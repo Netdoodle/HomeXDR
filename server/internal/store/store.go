@@ -238,6 +238,7 @@ var columnMigrations = []struct{ table, column, def string }{
 	{"alerts", "linked", `TEXT NOT NULL DEFAULT '[]'`},
 	// Host groups.
 	{"hosts", "group_id", `TEXT NOT NULL DEFAULT ''`},
+	{"enrollment_tokens", "group_id", `TEXT NOT NULL DEFAULT ''`},
 }
 
 // postMigrate runs after the column migrations (indexes on added columns).

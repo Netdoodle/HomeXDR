@@ -21,6 +21,8 @@ type EnrollmentToken struct {
 	MaxUses   *int       `json:"max_uses,omitempty"`
 	Uses      int        `json:"uses"`
 	Labels    []string   `json:"labels"`
+	// GroupID puts hosts enrolled with the token in that host group ("" for none).
+	GroupID string `json:"group_id"`
 }
 
 // Enrollment token errors.
@@ -61,7 +63,7 @@ func scanToken(row interface{ Scan(...any) error }) (*EnrollmentToken, error) {
 	var created, labels string
 	var exp sql.NullString
 	var maxUses sql.NullInt64
-	if err := row.Scan(&t.ID, &t.Name, &created, &t.CreatedBy, &exp, &maxUses, &t.Uses, &labels); err != nil {
+	if err := row.Scan(&t.ID, &t.Name, &created, &t.CreatedBy, &exp, &maxUses, &t.Uses, &labels, &t.GroupID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -80,7 +82,20 @@ func scanToken(row interface{ Scan(...any) error }) (*EnrollmentToken, error) {
 	return &t, nil
 }
 
-const tokenCols = `id, name, created_at, created_by, expires_at, max_uses, uses, labels`
+const tokenCols = `id, name, created_at, created_by, expires_at, max_uses, uses, labels, group_id`
+
+// SetTokenGroup sets the host group new hosts enrolled with a token go into.
+func (s *Store) SetTokenGroup(ctx context.Context, id, groupID string) error {
+	if groupID != "" {
+		if _, err := s.GetGroup(ctx, groupID); errors.Is(err, ErrNotFound) {
+			return &GroupError{"the group does not exist"}
+		} else if err != nil {
+			return err
+		}
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE enrollment_tokens SET group_id = ? WHERE id = ?`, groupID, id)
+	return err
+}
 
 // ListTokens returns all tokens, newest first.
 func (s *Store) ListTokens(ctx context.Context) ([]*EnrollmentToken, error) {

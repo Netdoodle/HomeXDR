@@ -5,6 +5,7 @@ import { api, queryKeys, type HostFilter } from '../api'
 import { AlertCount, OsLabel, StatusDot, Tags, UpdateBadge } from '../components/Badges'
 import { shortVersion } from '../lib/agents'
 import { PageHeader } from '../components/Layout'
+import { GroupFilter, HostGroupName } from './GroupsSettings'
 import { CopyIcon, RelTime } from '../components/Misc'
 import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
 import { plural } from '../lib/format'
@@ -29,6 +30,7 @@ export function HostsPage() {
     status: sp.get('status') || undefined,
     label: sp.get('label') || undefined,
     platform: sp.get('platform') || undefined,
+    group: sp.get('group') || undefined,
   }
   const q = useQuery({
     queryKey: queryKeys.hosts(filter),
@@ -71,6 +73,7 @@ export function HostsPage() {
           <option value="darwin">macOS</option>
           <option value="network">Network device</option>
         </select>
+        <GroupFilter value={filter.group ?? ''} onChange={(g) => patch({ group: g })} />
         <select className="select" value={filter.label ?? ''} onChange={(e) => patch({ label: e.target.value })} aria-label="Label">
           <option value="">Any label</option>
           {labels.map((l) => (
@@ -86,7 +89,7 @@ export function HostsPage() {
         ) : q.isError ? (
           <ErrorState error={q.error} onRetry={() => q.refetch()} />
         ) : q.data.hosts.length === 0 ? (
-          filter.q || filter.status || filter.label || filter.platform ? (
+          filter.q || filter.status || filter.label || filter.platform || filter.group ? (
             <EmptyState title="No hosts match these filters" />
           ) : (
             <EmptyState title="No hosts enrolled yet" action={<Link to="/settings/tokens">Create an enrollment token</Link>}>
@@ -129,7 +132,7 @@ export function HostsPage() {
                       <Link to={`/hosts/${encodeURIComponent(h.id)}`} onClick={(e) => e.stopPropagation()}>
                         {h.hostname}
                       </Link>
-                      {h.kind === 'network' ? <div className="xsmall muted">syslog source</div> : null}
+                      {h.kind === 'network' ? <div className="xsmall muted">syslog source</div> : <HostGroupName id={h.group_id} />}
                     </td>
                     <td className="truncate copy-cell">
                       <CopyIcon text={[h.os.name, h.os.version].filter(Boolean).join(' ')} label="Operating system" />

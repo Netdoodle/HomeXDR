@@ -12,7 +12,7 @@ func (h *Handler) listAlerts(w http.ResponseWriter, r *http.Request, _ *store.Us
 	q := r.URL.Query()
 	alerts, total, err := h.c.State.ListAlerts(r.Context(), store.AlertFilter{
 		Statuses: qList(r, "status"), Severities: qList(r, "severity"),
-		HostID: q.Get("host_id"), RuleID: q.Get("rule_id"), Q: q.Get("q"),
+		HostID: q.Get("host_id"), RuleID: q.Get("rule_id"), Q: q.Get("q"), GroupIDs: h.groupFilter(r),
 		Limit: qInt(r, "limit", 100), Offset: qInt(r, "offset", 0),
 	})
 	if err != nil {

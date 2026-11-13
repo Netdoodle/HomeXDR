@@ -213,6 +213,13 @@ func (h *Handler) enroll(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	if tok.GroupID != "" {
+		if _, err := h.c.State.SetHostsGroup(r.Context(), []string{agentID}, tok.GroupID); err != nil {
+			h.c.Log.Warn("enroll: put host in the token's group", "err", err, "group", tok.GroupID)
+		} else {
+			host.GroupID = tok.GroupID
+		}
+	}
 	h.c.Audit(r.Context(), "token:"+tok.Name, "agent.enroll", agentID, fmt.Sprintf("%s (%s) from %s", req.Host.Hostname, req.Host.OS.Platform, clientIP(r)))
 	h.c.Log.Info("agent enrolled", "id", agentID, "hostname", host.Hostname, "platform", host.OS.Platform)
 	writeJSON(w, http.StatusOK, api.EnrollResponse{

@@ -86,6 +86,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 		c.Release.SetArchive(cfg.ReleasesDir, cfg.ReleasesKeep, c.pinnedVersions)
 	}
 	c.Triage = triage.New(st, ev, log)
+	c.Triage.SetHostFilter(c.aiAutoForHost)
 	c.Intel = intel.New(st, ev, log)
 	c.Triage.SetIndicatorLookup(c.Intel.ForAI)
 	c.Rules = NewRuleSet(c)

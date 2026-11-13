@@ -2,6 +2,7 @@
 // conventions as the real server: session required, CSRF header on non-GET, roles,
 // `{"error": ...}` bodies.
 
+import { matchesGroupFilter } from './groups'
 import type {
   AIReport,
   AISettings,
@@ -360,6 +361,7 @@ route('GET', '/api/hosts', ({ query }) => {
       (withDecommissioned || h.status !== 'decommissioned') &&
       (!q || h.hostname.toLowerCase().includes(q) || h.ips.some((ip) => ip.includes(q))) &&
       (!status.length || status.includes(h.status)) &&
+      matchesGroupFilter(h.group_id, query.get('group')) &&
       (!label || h.labels.includes(label)) &&
       (!platform || h.os.platform === platform),
   )
@@ -868,6 +870,7 @@ route('GET', '/api/alerts', ({ query }) => {
       (status.length ? status.includes(a.status) : a.status !== 'suppressed') &&
       (!sev.length || sev.includes(a.severity)) &&
       (!hostId || a.host_id === hostId) &&
+      matchesGroupFilter(hosts.find((h) => h.id === a.host_id)?.group_id, query.get('group')) &&
       (!ruleId || a.rule.id === ruleId) &&
       (!q || alertMatches(a, q)),
   )

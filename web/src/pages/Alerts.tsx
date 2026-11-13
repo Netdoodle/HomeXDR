@@ -8,6 +8,7 @@ import { AlertStatusBadge, MitreTag, SeverityBadge } from '../components/Badges'
 import { Icon } from '../components/Icon'
 import { TopRepeatingPanel } from '../components/TopRepeating'
 import { PageHeader } from '../components/Layout'
+import { GroupFilter } from './GroupsSettings'
 import { CopyIcon, Pager, RelTime } from '../components/Misc'
 import { EmptyState, ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
@@ -52,6 +53,7 @@ export function AlertsPage() {
     severity: severities.join(',') || undefined,
     host_id: hostId || undefined,
     rule_id: ruleId || undefined,
+    group: sp.get('group') || undefined,
     q: sp.get('q') || undefined,
     limit: LIMIT,
     offset,
@@ -151,13 +153,14 @@ export function AlertsPage() {
             </button>
           </span>
         ) : null}
-        {statusParam || severities.length || hostId || ruleId || sp.get('q') ? (
+        <GroupFilter value={sp.get('group') ?? ''} onChange={(g) => patch({ group: g || undefined, offset: undefined })} />
+        {statusParam || severities.length || hostId || ruleId || sp.get('q') || sp.get('group') ? (
           <button
             type="button"
             className="btn ghost sm"
             onClick={() => {
               setText('')
-              patch({ status: undefined, severity: undefined, host: undefined, rule: undefined, q: undefined, offset: undefined })
+              patch({ status: undefined, severity: undefined, host: undefined, rule: undefined, q: undefined, group: undefined, offset: undefined })
             }}
           >
             Reset filters

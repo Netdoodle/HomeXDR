@@ -13,7 +13,13 @@ Netdoodle (Global: the organisation)
 The top is your organisation (rename it from "Global" with **Rename** on its row). Under
 it are parent groups, and under those child groups; groups go two levels deep. Each host
 is in one group, or in none (it then follows the organisation's settings). Put hosts in a
-group from the group's **Hosts** button or from the **Group** panel on the host page.
+group from the group's **Hosts** button or from the **Group** panel on the host page, or
+have them land there when they enroll: an enrollment token can name a group (Settings →
+Enrollment, "Group for enrolled hosts").
+
+The Hosts and Alerts pages filter by group; a parent group includes its child groups, and
+"Netdoodle (no group)" shows hosts in none. The host count on the Groups page links to the
+filtered Hosts page.
 
 ## Settings that groups override
 
@@ -21,16 +27,19 @@ group from the group's **Hosts** button or from the **Group** panel on the host 
 |---|---|---|
 | Antivirus: scan with ClamAV | Settings → Antivirus | Inherit, On or Off |
 | Antivirus: scan with YARA | Settings → Antivirus | Inherit, On or Off |
+| Antivirus: malware response | Settings → Antivirus ("When malware is found") | Inherit, Stop and quarantine, or Alert only |
+| AI analyst: investigate alerts automatically | Investigate (whenever the AI analyst is set up and automatic investigations are on) | Inherit, Investigate or Off |
 
 A group set to **Inherit** takes the value from its parent group; a parent group set to
 Inherit takes it from the organisation. The nearest group that sets a value wins, so
 Marketing Dept can turn YARA back on even when DTS Assets turned it off. The host page
 shows each value and the group it comes from.
 
-Turning a scanner **off** in a group that would otherwise adopt **on** from above asks
-first: the dialog names where the setting comes from, how many hosts stop being scanned
-(child groups that set the scanner themselves are not affected) and that scanner's
-detections stop raising alerts for those hosts.
+Choosing weaker protection than a group would adopt from above (a scanner off, alert only
+instead of stop and quarantine, AI investigations off) asks first: the dialog names where
+the setting comes from, how many hosts it affects (child groups that set it themselves are
+not) and what they lose. A group's AI analyst switch can only narrow what Settings → AI
+analyst allows: it never turns the AI analyst on.
 
 What a switch changes:
 
@@ -54,6 +63,8 @@ only be deleted once it has no child groups. Every change is in the audit log
 | GET | `/api/groups` | viewer | Organisation, global values, groups in tree order with host counts and effective settings |
 | PUT | `/api/org` | admin | `{"name"}` |
 | POST | `/api/groups` | admin | `{"name", "parent_id"}` (`""` for a parent group) |
-| PATCH | `/api/groups/{id}` | admin | `{"name"}`, `{"parent_id"}`, `{"policy": {"av": {"clamav": false}}}` (leave a key out to inherit) |
+| PATCH | `/api/groups/{id}` | admin | `{"name"}`, `{"parent_id"}`, `{"policy": {"av": {"clamav": false, "yara": true, "action": "alert"}, "ai": {"auto": false}}}` (leave a key out to inherit) |
+| GET | `/api/hosts?group=`, `/api/alerts?group=` | viewer | A group ID (with its child groups) or `none` |
+| POST | `/api/enrollment-tokens` | admin | `group_id` puts enrolled hosts in that group |
 | DELETE | `/api/groups/{id}` | admin | Hosts move up a level |
 | PUT | `/api/hosts/group` | admin | `{"host_ids": [...], "group_id"}` (`""` for no group) |

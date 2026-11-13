@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -198,5 +199,26 @@ func TestScannersResolverReadsSettings(t *testing.T) {
 	h.run(t, Candidate{HostID: "h", Platform: "windows", Path: `C:\a\evil.exe`, SHA256: sha('a'), PID: 9})
 	if len(h.detected) != 1 {
 		t.Fatalf("detected %+v", h.detected)
+	}
+}
+
+// A host group's response overrides the global one for its hosts only.
+func TestGroupAction(t *testing.T) {
+	h := newHarness(t)
+	var actions []string
+	h.s.d.Detected = func(_ context.Context, d Detection, s Settings) { actions = append(actions, d.GroupID+"="+s.Action) }
+	h.s.d.Scanners = func(group string) Scanners {
+		if group == "lab" {
+			return Scanners{ClamAV: true, Action: ActionAlert}
+		}
+		return Scanners{ClamAV: true}
+	}
+	h.files[`C:\a\evil.exe`] = "EVIL"
+	h.run(t,
+		Candidate{HostID: "h1", Platform: "windows", Path: `C:\a\evil.exe`, SHA256: sha('a'), PID: 1, EntityID: "1", GroupID: "lab"},
+		Candidate{HostID: "h2", Platform: "windows", Path: `C:\a\evil.exe`, SHA256: sha('a'), PID: 2, EntityID: "2", GroupID: "office"})
+	got := strings.Join(actions, ",")
+	if got != "lab=alert,office=quarantine" && got != "office=quarantine,lab=alert" {
+		t.Fatalf("actions = %s", got)
 	}
 }

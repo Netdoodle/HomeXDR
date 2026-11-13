@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/shared/api"
 	"github.com/Netdoodle/homexdr/shared/event"
 )
@@ -108,5 +109,77 @@ func TestGroups(t *testing.T) {
 	}
 	if got := c.ResolveAV(ids["DTS Assets"]); got.YARA.Value || got.YARA.GroupName != "DTS Assets" {
 		t.Errorf("DTS Assets after delete: %+v", got)
+	}
+}
+
+// Enrollment tokens with a group, ?group= filters on hosts and alerts, and the response
+// and AI overrides.
+func TestGroupsFiltersAndPolicies(t *testing.T) {
+	ctx := context.Background()
+	c, srv := setup(t)
+	admin := newClient(t, srv)
+	admin.do("POST", "/api/setup", map[string]string{"username": "admin", "password": "a long enough password"}, true)
+	parent, err := c.State.CreateGroup(ctx, "Infrastructure Assets", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, _ := c.State.CreateGroup(ctx, "Linux Servers", parent.ID)
+	c.ReloadGroups(ctx)
+
+	code, tok := admin.do("POST", "/api/enrollment-tokens", map[string]any{"name": "linux", "group_id": child.ID}, true)
+	if code != 201 || tok["group_id"] != child.ID {
+		t.Fatalf("token = %d %v", code, tok)
+	}
+	if code, _ := admin.do("POST", "/api/enrollment-tokens", map[string]any{"name": "bad", "group_id": "nope"}, true); code != 400 {
+		t.Fatalf("token with a missing group = %d", code)
+	}
+	toks, _ := c.State.ListTokens(ctx)
+	if len(toks) != 1 || toks[0].GroupID != child.ID {
+		t.Fatalf("stored token = %+v", toks)
+	}
+
+	for _, h := range []struct{ id, name, group string }{{"h1", "web-1", child.ID}, {"h2", "infra-1", parent.ID}, {"h3", "loose", ""}} {
+		if _, err := c.State.CreateEndpoint(ctx, h.id, api.HostInfo{Hostname: h.name, OS: event.OS{Platform: "linux"}}, nil, h.id); err != nil {
+			t.Fatal(err)
+		}
+		c.State.SetHostsGroup(ctx, []string{h.id}, h.group)
+		ev := &event.Event{ID: event.NewID(), Host: event.Host{ID: h.id, Name: h.name}}
+		c.State.RecordAlert(ctx, store.AlertInput{Rule: store.AlertRule{ID: "r", Title: "r"}, Severity: store.SevLow, Event: ev})
+	}
+	count := func(path string) int {
+		t.Helper()
+		code, b := admin.do("GET", path, nil, false)
+		if code != 200 {
+			t.Fatalf("%s = %d", path, code)
+		}
+		return int(b["total"].(float64))
+	}
+	if n := count("/api/hosts?group=" + parent.ID); n != 2 {
+		t.Errorf("hosts in the parent group and its child = %d", n)
+	}
+	if n := count("/api/hosts?group=" + child.ID); n != 1 {
+		t.Errorf("hosts in the child group = %d", n)
+	}
+	if n := count("/api/hosts?group=none"); n != 1 {
+		t.Errorf("hosts in no group = %d", n)
+	}
+	if n := count("/api/alerts?group=" + parent.ID); n != 2 {
+		t.Errorf("alerts in the parent group = %d", n)
+	}
+
+	// Response and AI overrides inherit like the scanners.
+	alert, off := "alert", false
+	if code, b := admin.do("PATCH", "/api/groups/"+parent.ID, map[string]any{"policy": map[string]any{"av": map[string]any{"action": alert}, "ai": map[string]any{"auto": off}}}, true); code != 200 {
+		t.Fatalf("policy = %d %v", code, b)
+	}
+	if code, _ := admin.do("PATCH", "/api/groups/"+parent.ID, map[string]any{"policy": map[string]any{"av": map[string]any{"action": "nuke"}}}, true); code != 400 {
+		t.Fatalf("bad action = %d", code)
+	}
+	e := c.ResolveAV(child.ID)
+	if e.Action.Value != "alert" || e.Action.GroupName != "Infrastructure Assets" || e.AIAuto.Value {
+		t.Fatalf("child = %+v", e)
+	}
+	if e := c.ResolveAV(""); e.Action.Value != "quarantine" || !e.AIAuto.Value {
+		t.Fatalf("global = %+v", e)
 	}
 }

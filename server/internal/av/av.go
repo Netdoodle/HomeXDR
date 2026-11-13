@@ -131,10 +131,16 @@ type Candidate struct {
 	GroupID                    string // the host's group, for per-group scanner switches
 }
 
-// Scanners says which file scanners apply to a host.
-type Scanners struct{ ClamAV, YARA bool }
+// Scanners says which file scanners apply to a host, and its response to malware
+// (Action; "" for the global setting).
+type Scanners struct {
+	ClamAV, YARA bool
+	Action       string
+}
 
-func (a Scanners) or(b Scanners) Scanners { return Scanners{a.ClamAV || b.ClamAV, a.YARA || b.YARA} }
+func (a Scanners) or(b Scanners) Scanners {
+	return Scanners{ClamAV: a.ClamAV || b.ClamAV, YARA: a.YARA || b.YARA}
+}
 
 // covers reports whether a stored clean verdict's source ("clamav", "yara",
 // "clamav+yara") includes every scanner in want.
@@ -369,12 +375,17 @@ func (s *Service) process(ctx context.Context, hash string) {
 		return
 	}
 	for _, c := range cands {
-		if !s.scannersFor(c, set).allows(det.Source) {
+		sc := s.scannersFor(c, set)
+		if !sc.allows(det.Source) {
 			continue
 		}
 		d := *det
 		d.Candidate = c
-		s.respond(ctx, d, set)
+		cs := set
+		if sc.Action != "" {
+			cs.Action = sc.Action // the host's group decides the response
+		}
+		s.respond(ctx, d, cs)
 	}
 }
 

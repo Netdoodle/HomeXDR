@@ -31,8 +31,10 @@ type groupsView struct {
 	Org core.Org `json:"org"`
 	// Global holds the organisation-wide values (Settings → Antivirus).
 	Global struct {
-		ClamAV bool `json:"clamav"`
-		YARA   bool `json:"yara"`
+		ClamAV bool   `json:"clamav"`
+		YARA   bool   `json:"yara"`
+		Action string `json:"action"`
+		AIAuto bool   `json:"ai_auto"`
 	} `json:"global"`
 	Groups    []groupView `json:"groups"`
 	Ungrouped int         `json:"ungrouped"` // hosts in no group
@@ -45,7 +47,7 @@ func (h *Handler) groupsView(r *http.Request) (*groupsView, error) {
 	}
 	v := &groupsView{Org: h.c.GetOrg(r.Context()), Groups: []groupView{}}
 	set := h.c.AV.Settings()
-	v.Global.ClamAV, v.Global.YARA = set.UseClamAV, set.UseYARA
+	v.Global.ClamAV, v.Global.YARA, v.Global.Action, v.Global.AIAuto = set.UseClamAV, set.UseYARA, set.Action, true
 	for _, g := range gs {
 		v.Groups = append(v.Groups, groupView{HostGroup: g, Effective: h.c.ResolveAV(g.ID)})
 	}
@@ -126,7 +128,12 @@ func (h *Handler) patchGroup(w http.ResponseWriter, r *http.Request, u *store.Us
 			parts = append(parts, "now "+h.groupPath(r, g))
 		}
 		if in.Policy != nil {
-			parts = append(parts, "ClamAV "+onOffInherit(in.Policy.AV.ClamAV), "YARA "+onOffInherit(in.Policy.AV.YARA))
+			action := "inherit"
+			if a := in.Policy.AV.Action; a != nil {
+				action = *a
+			}
+			parts = append(parts, "ClamAV "+onOffInherit(in.Policy.AV.ClamAV), "YARA "+onOffInherit(in.Policy.AV.YARA),
+				"antivirus response "+action, "AI auto-investigation "+onOffInherit(in.Policy.AI.Auto))
 		}
 		h.c.Audit(r.Context(), u.Username, "group.update", g.ID, g.Name+": "+strings.Join(parts, ", "))
 	}
@@ -168,6 +175,19 @@ func (h *Handler) setHostsGroup(w http.ResponseWriter, r *http.Request, u *store
 		h.c.Audit(r.Context(), u.Username, "host.group", in.GroupID, fmt.Sprintf("%d hosts moved to %s", n, name))
 	}
 	h.groupResult(w, r, err)
+}
+
+// groupFilter reads ?group=: a group ID (with its child groups) or "none" for hosts in
+// no group. No parameter: no filter.
+func (h *Handler) groupFilter(r *http.Request) []string {
+	g := r.URL.Query().Get("group")
+	switch g {
+	case "":
+		return nil
+	case "none":
+		return []string{""}
+	}
+	return h.c.GroupAndChildren(g)
 }
 
 // groupPath names a group with its parent: "DTS Assets > Marketing Dept".
