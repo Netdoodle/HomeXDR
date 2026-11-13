@@ -18,6 +18,7 @@ func (h *Handler) listHosts(w http.ResponseWriter, r *http.Request, _ *store.Use
 	q := r.URL.Query()
 	hosts, err := h.c.State.ListHosts(r.Context(), store.HostFilter{
 		Q: q.Get("q"), Status: q.Get("status"), Label: q.Get("label"), Platform: q.Get("platform"), Kind: q.Get("kind"),
+		GroupIDs:              h.groupFilter(r),
 		IncludeDecommissioned: q.Get("include_decommissioned") == "1" || q.Get("include_decommissioned") == "true",
 	})
 	if err != nil {

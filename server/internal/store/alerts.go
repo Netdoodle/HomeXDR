@@ -372,10 +372,12 @@ type AlertFilter struct {
 	HostID     string
 	RuleID     string
 	EntityIDs  []string
-	Q          string
-	Since      *time.Time
-	Limit      int
-	Offset     int
+	// GroupIDs: alerts on hosts in any of these groups ("" for hosts in no group).
+	GroupIDs []string
+	Q        string
+	Since    *time.Time
+	Limit    int
+	Offset   int
 }
 
 // ListAlerts returns alerts newest-last_seen first, and the total matching count.
@@ -404,6 +406,12 @@ func (s *Store) ListAlerts(ctx context.Context, f AlertFilter) ([]*Alert, int, e
 	if f.RuleID != "" {
 		where += ` AND rule_id = ?`
 		args = append(args, f.RuleID)
+	}
+	if len(f.GroupIDs) > 0 {
+		where += ` AND host_id IN (SELECT id FROM hosts WHERE group_id IN (` + placeholders(len(f.GroupIDs)) + `))`
+		for _, v := range f.GroupIDs {
+			args = append(args, v)
+		}
 	}
 	if len(f.EntityIDs) > 0 {
 		where += ` AND process_entity_id IN (` + placeholders(len(f.EntityIDs)) + `)`

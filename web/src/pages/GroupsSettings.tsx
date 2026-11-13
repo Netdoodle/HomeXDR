@@ -1,24 +1,28 @@
 // Settings → Groups: the organisation (Global), parent groups and child groups, which
-// hosts are in them, and per-group overrides of the antivirus' file scanners.
+// hosts are in them, and the settings each group overrides.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState, type FormEvent } from 'react'
+import { Fragment, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { api, errorMessage, queryKeys } from '../api'
 import {
+  choiceLabel,
   createGroup,
   deleteGroup,
+  effectiveValue,
   getGroups,
+  globalValue,
   groupKeys,
   groupPath,
   inheritedValue,
+  isWeaker,
   putOrg,
-  SCANNER_LABEL,
   setHostsGroup,
+  SETTINGS,
   updateGroup,
   type GroupsView,
   type HostGroup,
-  type Scanner,
+  type SettingDef,
 } from '../api/groups'
 import { useCan } from '../components/Auth'
 import { ConfirmDialog, Modal } from '../components/Modal'
@@ -26,7 +30,13 @@ import { ErrorState, Loading } from '../components/States'
 import { useToast } from '../components/Toast'
 import { formatNumber } from '../lib/format'
 
-const SCANNERS: Scanner[] = ['clamav', 'yara']
+/** Where each setting's global value is changed. */
+const GLOBAL_LINK: Record<string, string> = {
+  clamav: '/settings/antivirus',
+  yara: '/settings/antivirus',
+  action: '/settings/antivirus',
+  ai_auto: '/settings/ai',
+}
 
 export function GroupsTab() {
   const q = useQuery({ queryKey: groupKeys.all, queryFn: getGroups })
@@ -50,7 +60,8 @@ function useGroupMutation<A>(fn: (a: A) => Promise<GroupsView>, done?: string) {
   })
 }
 
-type PendingOff = { g: HostGroup; scanner: Scanner; from: string }
+/** A change to weaker protection than the group would inherit, waiting for confirmation. */
+type PendingWeaker = { g: HostGroup; def: SettingDef; value: string; from: string; fromValue: string }
 
 function Groups({ v }: { v: GroupsView }) {
   const isAdmin = useCan('admin')
@@ -58,29 +69,29 @@ function Groups({ v }: { v: GroupsView }) {
   const [renaming, setRenaming] = useState<HostGroup | 'org' | null>(null)
   const [deleting, setDeleting] = useState<HostGroup | null>(null)
   const [hostsOf, setHostsOf] = useState<HostGroup | null>(null)
-  const [pendingOff, setPendingOff] = useState<PendingOff | null>(null)
-  const policy = useGroupMutation(({ g, scanner, value }: { g: HostGroup; scanner: Scanner; value: boolean | undefined }) =>
-    updateGroup(g.id, { policy: { av: { ...g.policy.av, [scanner]: value } } }),
+  const [pending, setPending] = useState<PendingWeaker | null>(null)
+  const policy = useGroupMutation(({ g, def, value }: { g: HostGroup; def: SettingDef; value: string | undefined }) =>
+    updateGroup(g.id, { policy: def.set(g.policy, value) }),
   )
   const del = useGroupMutation((id: string) => deleteGroup(id), 'Group deleted')
 
   const children = (id: string) => v.groups.filter((g) => g.parent_id === id)
   const parents = children('')
 
-  const change = (g: HostGroup, scanner: Scanner, choice: string) => {
-    const value = choice === 'on' ? true : choice === 'off' ? false : undefined
-    // Turning a scanner off where it is on above asks first: the group stops adopting
-    // the setting from Global or its parent group.
-    const inh = inheritedValue(v, g, scanner)
-    if (value === false && inh.value) {
-      setPendingOff({ g, scanner, from: inh.from })
+  const change = (g: HostGroup, def: SettingDef, choice: string) => {
+    const value = choice === 'inherit' ? undefined : choice
+    // Weaker protection than the group would adopt from Global or its parent group asks
+    // first: the group stops adopting that setting.
+    const inh = inheritedValue(v, g, def.key)
+    if (value !== undefined && isWeaker(def, value, inh.value)) {
+      setPending({ g, def, value, from: inh.from, fromValue: inh.value })
       return
     }
-    policy.mutate({ g, scanner, value })
+    policy.mutate({ g, def, value })
   }
 
   return (
-    <div className="stack" style={{ maxWidth: 1100 }}>
+    <div className="stack" style={{ maxWidth: 1400 }}>
       <div className="panel">
         <div className="panel-header">
           <h2>Host groups</h2>
@@ -93,22 +104,22 @@ function Groups({ v }: { v: GroupsView }) {
         <div className="panel-body stack" style={{ gap: 12 }}>
           <p className="small muted" style={{ margin: 0 }}>
             Your organisation is at the top, with parent groups under it and child groups under those, for example{' '}
-            <em>{v.org.name} › DTS Assets › Marketing Dept</em>. Each host is in one group. A group can turn the antivirus' file scanners on or off for
-            its hosts and its child groups; set to <strong>Inherit</strong>, it takes the value from its parent group, and parent groups take it from{' '}
-            {v.org.name} (<Link to="/settings/antivirus">Settings → Antivirus</Link>).
+            <em>{v.org.name} › DTS Assets › Marketing Dept</em>. Each host is in one group. A group can override settings for its hosts and its child
+            groups; set to <strong>Inherit</strong>, it takes the value from its parent group, and parent groups take it from {v.org.name}. New hosts go
+            into the group their enrollment token names (<Link to="/settings/tokens">Enrollment</Link>).
           </p>
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
                   <th>Group</th>
-                  <th style={{ width: 90 }}>Hosts</th>
-                  {SCANNERS.map((s) => (
-                    <th key={s} style={{ width: 230 }}>
-                      {SCANNER_LABEL[s]}
+                  <th style={{ width: 70 }}>Hosts</th>
+                  {SETTINGS.map((d) => (
+                    <th key={d.key} style={{ width: 210 }}>
+                      {d.label}
                     </th>
                   ))}
-                  {isAdmin ? <th style={{ width: 230 }} /> : null}
+                  {isAdmin ? <th style={{ width: 200 }} /> : null}
                 </tr>
               </thead>
               <tbody>
@@ -116,11 +127,14 @@ function Groups({ v }: { v: GroupsView }) {
                   <td>
                     <strong>{v.org.name}</strong> <span className="muted small">(Global)</span>
                   </td>
-                  <td title="Hosts in no group">{formatNumber(v.ungrouped)}</td>
-                  {SCANNERS.map((s) => (
-                    <td key={s}>
-                      <OnOff on={v.global[s]} />{' '}
-                      <Link className="small" to="/settings/antivirus">
+                  <td title="Hosts in no group">
+                    <Link to="/hosts?group=none">{formatNumber(v.ungrouped)}</Link>
+                  </td>
+                  {SETTINGS.map((d) => (
+                    <td key={d.key}>
+                      {choiceLabel(d, globalValue(v, d.key))}
+                      {d.key === 'ai_auto' ? <span className="muted xsmall"> (when the AI analyst is on)</span> : null}{' '}
+                      <Link className="small" to={GLOBAL_LINK[d.key]}>
                         change
                       </Link>
                     </td>
@@ -150,7 +164,7 @@ function Groups({ v }: { v: GroupsView }) {
                 ))}
                 {parents.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? 5 : 4} className="muted small">
+                    <td colSpan={2 + SETTINGS.length + (isAdmin ? 1 : 0)} className="muted small">
                       No groups yet. Every host follows the {v.org.name} settings.
                     </td>
                   </tr>
@@ -180,33 +194,33 @@ function Groups({ v }: { v: GroupsView }) {
         ) : null}
       </ConfirmDialog>
       <ConfirmDialog
-        open={!!pendingOff}
-        onClose={() => setPendingOff(null)}
-        title={pendingOff ? `Stop adopting ${SCANNER_LABEL[pendingOff.scanner]} from ${pendingOff.from}?` : ''}
+        open={!!pending}
+        onClose={() => setPending(null)}
+        title={pending ? `Stop adopting ${pending.def.label} from ${pending.from}?` : ''}
         danger
-        confirmLabel={pendingOff ? `Turn ${SCANNER_LABEL[pendingOff.scanner]} off for ${pendingOff.g.name}` : 'Turn off'}
-        onConfirm={() => pendingOff && policy.mutateAsync({ g: pendingOff.g, scanner: pendingOff.scanner, value: false })}
+        confirmLabel={pending ? `Set ${pending.def.label} to ${choiceLabel(pending.def, pending.value)} for ${pending.g.name}` : 'Change'}
+        onConfirm={() => pending && policy.mutateAsync({ g: pending.g, def: pending.def, value: pending.value })}
       >
-        {pendingOff ? <OffWarning v={v} p={pendingOff} /> : null}
+        {pending ? <WeakerWarning v={v} p={pending} /> : null}
       </ConfirmDialog>
     </div>
   )
 }
 
-function OffWarning({ v, p }: { v: GroupsView; p: PendingOff }) {
-  const name = SCANNER_LABEL[p.scanner]
+function WeakerWarning({ v, p }: { v: GroupsView; p: PendingWeaker }) {
+  const name = p.def.label
   const kids = v.groups.filter((g) => g.parent_id === p.g.id)
-  // Child groups that set the scanner themselves are not affected.
-  const kidsOwn = kids.filter((k) => k.policy.av[p.scanner] !== undefined)
-  const followers = kids.filter((k) => k.policy.av[p.scanner] === undefined)
+  // Child groups that set the value themselves are not affected.
+  const kidsOwn = kids.filter((k) => p.def.get(k.policy) !== undefined)
+  const followers = kids.filter((k) => p.def.get(k.policy) === undefined)
   const hosts = p.g.hosts + followers.reduce((n, k) => n + k.hosts, 0)
   return (
     <div className="stack" style={{ gap: 8 }}>
       <p style={{ margin: 0 }}>
-        {name} is <strong>on</strong> for <strong>{p.from}</strong>, and <strong>{groupPath(v, p.g.id)}</strong> adopts that setting today. Turning it
-        off here overrides it: {formatNumber(hosts)} host{hosts === 1 ? '' : 's'}
-        {followers.length ? ` in this group and ${followers.length} of its child groups` : ' in this group'} will no longer have
-        programs scanned with {name}, and {name} detections will not raise alerts for them.
+        {name} is <strong>{choiceLabel(p.def, p.fromValue)}</strong> for <strong>{p.from}</strong>, and <strong>{groupPath(v, p.g.id)}</strong> adopts
+        that setting today. Setting it to <strong>{choiceLabel(p.def, p.value)}</strong> here overrides it: {formatNumber(hosts)} host
+        {hosts === 1 ? '' : 's'}
+        {followers.length ? ` in this group and ${followers.length} of its child groups` : ' in this group'} {p.def.weaker(name)}.
       </p>
       {kidsOwn.length ? (
         <p className="small muted" style={{ margin: 0 }}>
@@ -215,14 +229,10 @@ function OffWarning({ v, p }: { v: GroupsView; p: PendingOff }) {
         </p>
       ) : null}
       <p className="small muted" style={{ margin: 0 }}>
-        Other groups keep {name}. Set this group back to Inherit to adopt the setting again.
+        Other groups are not affected. Set this group back to Inherit to adopt the setting again.
       </p>
     </div>
   )
-}
-
-function OnOff({ on }: { on: boolean }) {
-  return on ? <span className="sev-text low">On</span> : <span className="muted">Off</span>
 }
 
 function GroupRows({
@@ -241,7 +251,7 @@ function GroupRows({
   v: GroupsView
   kids: HostGroup[]
   isAdmin: boolean
-  onChange: (g: HostGroup, s: Scanner, choice: string) => void
+  onChange: (g: HostGroup, d: SettingDef, choice: string) => void
   onAdd: () => void
   onRename: (g: HostGroup) => void
   onDelete: (g: HostGroup) => void
@@ -254,29 +264,34 @@ function GroupRows({
         {child ? <span className="muted">└ </span> : null}
         {x.name}
       </td>
-      <td>{formatNumber(x.hosts)}</td>
-      {SCANNERS.map((s) => {
-        const own = x.policy.av[s]
-        const inh = inheritedValue(v, x, s)
+      <td>
+        <Link to={`/hosts?group=${x.id}`}>{formatNumber(x.hosts)}</Link>
+      </td>
+      {SETTINGS.map((d) => {
+        const own = d.get(x.policy)
+        const inh = inheritedValue(v, x, d.key)
         return (
-          <td key={s}>
+          <td key={d.key}>
             {isAdmin ? (
               <select
                 className="input small"
-                value={own === undefined ? 'inherit' : own ? 'on' : 'off'}
+                value={own ?? 'inherit'}
                 disabled={busy}
-                aria-label={`${SCANNER_LABEL[s]} for ${x.name}`}
-                onChange={(e) => onChange(x, s, e.target.value)}
+                aria-label={`${d.label} for ${x.name}`}
+                onChange={(e) => onChange(x, d, e.target.value)}
               >
                 <option value="inherit">
-                  Inherit ({inh.value ? 'on' : 'off'}, from {inh.from})
+                  Inherit ({choiceLabel(d, inh.value).toLowerCase()}, from {inh.from})
                 </option>
-                <option value="on">On</option>
-                <option value="off">Off</option>
+                {d.choices.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
               </select>
             ) : (
               <span>
-                <OnOff on={x.effective[s].value} />{' '}
+                {choiceLabel(d, effectiveValue(x.effective, d.key))}{' '}
                 <span className="muted small">{own === undefined ? `from ${inh.from}` : 'set here'}</span>
               </span>
             )}
@@ -296,7 +311,12 @@ function GroupRows({
           <button className="btn small ghost" onClick={() => onRename(x)}>
             Rename
           </button>
-          <button className="btn small ghost danger" onClick={() => onDelete(x)} disabled={!child && kids.length > 0} title={!child && kids.length > 0 ? 'Delete its child groups first' : undefined}>
+          <button
+            className="btn small ghost danger"
+            onClick={() => onDelete(x)}
+            disabled={!child && kids.length > 0}
+            title={!child && kids.length > 0 ? 'Delete its child groups first' : undefined}
+          >
             Delete
           </button>
         </td>
@@ -480,35 +500,77 @@ export function HostGroupPicker({ hostId, groupId }: { hostId: string; groupId?:
   return (
     <div className="stack" style={{ gap: 8 }}>
       {isAdmin ? (
-        <select
-          className="input"
+        <GroupSelect
+          v={v}
           value={groupId ?? ''}
           disabled={save.isPending}
-          aria-label="Host group"
-          onChange={(e) => save.mutate(e.target.value, { onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.host(hostId) }) })}
-        >
-          <option value="">{v.org.name} (no group)</option>
-          {v.groups.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.parent_id ? '   ' : ''}
-              {groupPath(v, g.id)}
-            </option>
-          ))}
-        </select>
+          label="Host group"
+          onChange={(id) => save.mutate(id, { onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.host(hostId) }) })}
+        />
       ) : (
         <span>{groupId ? groupPath(v, groupId) : `${v.org.name} (no group)`}</span>
       )}
-      <span className="small muted">
-        {SCANNERS.map((s) => {
-          const e = eff?.[s] ?? { value: v.global[s] }
-          return (
-            <span key={s} style={{ marginRight: 14 }}>
-              {SCANNER_LABEL[s]} <OnOff on={e.value} /> <span className="xsmall">from {e.group_name ?? v.org.name}</span>
+      <div className="small muted" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px' }}>
+        {SETTINGS.map((d) => (
+          <Fragment key={d.key}>
+            <span>{d.label}</span>
+            <span>
+              <span style={{ color: 'var(--text)' }}>{choiceLabel(d, eff ? effectiveValue(eff, d.key) : globalValue(v, d.key))}</span>{' '}
+              <span className="xsmall">from {(eff?.[d.key].group_name) ?? v.org.name}</span>
             </span>
-          )
-        })}
-        <Link to="/settings/groups">Groups</Link>
-      </span>
+          </Fragment>
+        ))}
+      </div>
+      <Link className="small" to="/settings/groups">
+        Edit groups
+      </Link>
     </div>
   )
+}
+
+/** A select of the organisation and its groups. With anyLabel, "" means no filter and
+ * "none" means hosts in no group. */
+export function GroupSelect({
+  v,
+  value,
+  onChange,
+  disabled,
+  label,
+  anyLabel,
+  className = 'input',
+}: {
+  v: GroupsView
+  value: string
+  onChange: (id: string) => void
+  disabled?: boolean
+  label: string
+  anyLabel?: string
+  className?: string
+}) {
+  return (
+    <select className={className} value={value} disabled={disabled} aria-label={label} onChange={(e) => onChange(e.target.value)}>
+      {anyLabel ? <option value="">{anyLabel}</option> : null}
+      <option value={anyLabel ? 'none' : ''}>{v.org.name} (no group)</option>
+      {v.groups.map((g) => (
+        <option key={g.id} value={g.id}>
+          {g.parent_id ? '   ' : ''}
+          {groupPath(v, g.id)}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+/** A host's group under its name in lists; nothing when there are no groups. */
+export function HostGroupName({ id }: { id?: string }) {
+  const q = useQuery({ queryKey: groupKeys.all, queryFn: getGroups, staleTime: 60_000 })
+  if (!q.data || q.data.groups.length === 0 || !id) return null
+  return <div className="xsmall muted truncate">{groupPath(q.data, id)}</div>
+}
+
+/** The group filter for the Hosts and Alerts pages; renders nothing until groups exist. */
+export function GroupFilter({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const q = useQuery({ queryKey: groupKeys.all, queryFn: getGroups, staleTime: 60_000 })
+  if (!q.data || q.data.groups.length === 0) return null
+  return <GroupSelect v={q.data} value={value} onChange={onChange} label="Group" anyLabel="Any group" className="select" />
 }

@@ -43,9 +43,16 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request, u *store.U
 		ExpiresHours int      `json:"expires_hours"`
 		MaxUses      *int     `json:"max_uses"`
 		Labels       []string `json:"labels"`
+		GroupID      string   `json:"group_id"`
 	}
 	if !decode(w, r, &req) {
 		return
+	}
+	if req.GroupID != "" {
+		if _, err := h.c.State.GetGroup(r.Context(), req.GroupID); err != nil {
+			writeErr(w, http.StatusBadRequest, "the group does not exist")
+			return
+		}
 	}
 	var exp *time.Time
 	if req.ExpiresHours > 0 {
@@ -59,6 +66,13 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request, u *store.U
 	if err != nil {
 		h.fail(w, err)
 		return
+	}
+	if req.GroupID != "" {
+		if err := h.c.State.SetTokenGroup(r.Context(), tok.ID, req.GroupID); err != nil {
+			h.fail(w, err)
+			return
+		}
+		tok.GroupID = req.GroupID
 	}
 	h.c.Audit(r.Context(), u.Username, "token.create", tok.ID, tok.Name)
 	writeJSON(w, http.StatusCreated, tok)

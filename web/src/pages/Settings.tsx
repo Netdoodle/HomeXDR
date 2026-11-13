@@ -17,7 +17,8 @@ import { formatDateTime, formatTimestamp } from '../lib/time'
 import { AgentConfigEditor } from './AgentConfigEditor'
 import { ThreatIntelTab } from './ThreatIntelSettings'
 import { AntivirusTab } from './AntivirusSettings'
-import { GroupsTab } from './GroupsSettings'
+import { GroupSelect, GroupsTab } from './GroupsSettings'
+import { getGroups, groupKeys, groupPath } from '../api/groups'
 import { AgentLifecycleTab } from './AgentLifecycle'
 import { AIAnalystTab } from './AISettings'
 import { NotificationsTab } from './NotificationSettings'
@@ -145,6 +146,8 @@ function TokensTab() {
   const [expires, setExpires] = useState('168')
   const [maxUses, setMaxUses] = useState('')
   const [labels, setLabels] = useState('')
+  const [group, setGroup] = useState('')
+  const groupsQ = useQuery({ queryKey: groupKeys.all, queryFn: getGroups, staleTime: 60_000 })
   const [created, setCreated] = useState<EnrollmentToken | null>(null)
   const [deleting, setDeleting] = useState<EnrollmentToken | null>(null)
 
@@ -155,6 +158,7 @@ function TokensTab() {
         expires_hours: expires ? Number(expires) : undefined,
         max_uses: maxUses ? Number(maxUses) : undefined,
         labels: splitList(labels).map((l) => l.toLowerCase()),
+        group_id: group || undefined,
       }),
     onSuccess: (t) => {
       setCreated(t)
@@ -205,6 +209,12 @@ function TokensTab() {
               <label htmlFor="tok-labels">Labels for enrolled hosts</label>
               <input id="tok-labels" className="input" placeholder="server, dmz" value={labels} onChange={(e) => setLabels(e.target.value)} />
             </div>
+            {groupsQ.data && groupsQ.data.groups.length ? (
+              <div className="field">
+                <label htmlFor="tok-group">Group for enrolled hosts</label>
+                <GroupSelect v={groupsQ.data} value={group} onChange={setGroup} label="Group for enrolled hosts" className="select" />
+              </div>
+            ) : null}
           </div>
           <div className="row" style={{ marginTop: 12 }}>
             <button type="submit" className="btn primary" disabled={!name.trim() || !maxValid || create.isPending}>
@@ -226,6 +236,7 @@ function TokensTab() {
                   <tr>
                     <th>Name</th>
                     <th>Labels</th>
+                    <th>Group</th>
                     <th className="right">Uses</th>
                     <th>Expires</th>
                     <th>Created</th>
@@ -243,6 +254,7 @@ function TokensTab() {
                           {expired || used ? <span className="badge" style={{ marginLeft: 6 }}>{expired ? 'expired' : 'used up'}</span> : null}
                         </td>
                         <td>{t.labels.length ? t.labels.map((l) => <span key={l} className="tag" style={{ marginRight: 4 }}>{l}</span>) : <span className="empty-cell">—</span>}</td>
+                        <td>{t.group_id && groupsQ.data ? groupPath(groupsQ.data, t.group_id) : <span className="empty-cell">—</span>}</td>
                         <td className="right num">
                           {t.uses}
                           {t.max_uses !== undefined ? ` / ${t.max_uses}` : ''}

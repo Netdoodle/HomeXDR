@@ -94,6 +94,8 @@ export interface HostFilter {
   status?: string
   label?: string
   platform?: string
+  /** a group ID (with its child groups) or "none" */
+  group?: string
   include_decommissioned?: boolean
 }
 
@@ -589,6 +591,8 @@ export interface AlertFilter {
   severity?: string
   host_id?: string
   rule_id?: string
+  /** a group ID (with its child groups) or "none" */
+  group?: string
   q?: string
   limit?: number
   offset?: number
@@ -949,6 +953,8 @@ export interface EnrollmentToken {
   max_uses?: number
   uses: number
   labels: string[]
+  /** host group new hosts go into; "" for none */
+  group_id?: string
 }
 
 export interface EnrollmentTokenCreate {
@@ -956,6 +962,7 @@ export interface EnrollmentTokenCreate {
   expires_hours?: number
   max_uses?: number
   labels?: string[]
+  group_id?: string
 }
 
 export interface AuditEntry {

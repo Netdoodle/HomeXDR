@@ -285,6 +285,9 @@ type Service struct {
 	newProvider func(s Settings, key string) (provider, error)
 	// lookup asks threat intelligence services about an indicator (nil: no such tool).
 	lookup func(ctx context.Context, indicator string) (string, error)
+	// autoHost reports whether a host's group allows automatic investigations (nil:
+	// every host does).
+	autoHost func(ctx context.Context, hostID string) bool
 
 	mu      sync.Mutex
 	running string // alert being investigated
@@ -436,6 +439,9 @@ func (s *Service) AlertCreated(ctx context.Context, a *store.Alert) {
 	}
 	if s.skipHost(ctx, a.HostID, set.SkipLabels) {
 		return
+	}
+	if s.autoHost != nil && !s.autoHost(ctx, a.HostID) {
+		return // the host's group turned automatic investigations off
 	}
 	if set.Engine == store.EngineMCP && !set.MCPAutoTrigger {
 		return // MCP investigations run on request only
@@ -713,6 +719,10 @@ func (s *Service) Running() string {
 	defer s.mu.Unlock()
 	return s.running
 }
+
+// SetHostFilter sets the check for whether a host's group allows automatic
+// investigations.
+func (s *Service) SetHostFilter(f func(ctx context.Context, hostID string) bool) { s.autoHost = f }
 
 // skipHost reports whether an alert's host carries one of the labels the AI analyst
 // leaves alone (test machines, labs).

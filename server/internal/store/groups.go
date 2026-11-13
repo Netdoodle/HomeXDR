@@ -35,12 +35,29 @@ const MaxGroupDepth = 2
 // GroupPolicy holds a group's overrides. A nil field inherits.
 type GroupPolicy struct {
 	AV AVGroupPolicy `json:"av"`
+	AI AIGroupPolicy `json:"ai"`
 }
 
-// AVGroupPolicy switches the antivirus' file scanners for a group.
+// AVGroupPolicy switches the antivirus' file scanners and response for a group.
 type AVGroupPolicy struct {
 	ClamAV *bool `json:"clamav,omitempty"`
 	YARA   *bool `json:"yara,omitempty"`
+	// Action is the response to malware: "quarantine" or "alert".
+	Action *string `json:"action,omitempty"`
+}
+
+// AIGroupPolicy: whether the AI analyst investigates the group's alerts on its own
+// (when the AI analyst is set up and automatic investigations are on).
+type AIGroupPolicy struct {
+	Auto *bool `json:"auto,omitempty"`
+}
+
+// Validate checks the policy's values.
+func (p GroupPolicy) Validate() error {
+	if a := p.AV.Action; a != nil && *a != "quarantine" && *a != "alert" {
+		return &GroupError{"the antivirus response is quarantine or alert"}
+	}
+	return nil
 }
 
 // HostGroup is one group.
@@ -231,6 +248,9 @@ func (s *Store) UpdateGroup(ctx context.Context, id string, u GroupUpdate) (*Hos
 	}
 	policy := g.Policy
 	if u.Policy != nil {
+		if err := u.Policy.Validate(); err != nil {
+			return nil, err
+		}
 		policy = *u.Policy
 	}
 	if _, err := s.db.ExecContext(ctx, `UPDATE host_groups SET name = ?, parent_id = ?, policy = ? WHERE id = ?`,
@@ -259,6 +279,9 @@ func (s *Store) DeleteGroup(ctx context.Context, id string) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `UPDATE hosts SET group_id = ? WHERE group_id = ?`, g.ParentID, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE enrollment_tokens SET group_id = ? WHERE group_id = ?`, g.ParentID, id); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM host_groups WHERE id = ?`, id); err != nil {

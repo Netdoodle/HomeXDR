@@ -92,19 +92,37 @@ type SettingSource struct {
 	GroupName string `json:"group_name,omitempty"`
 }
 
-// EffectiveAV is a group's antivirus scanners after inheritance.
+// StringSource is a string-valued effective setting and where it comes from.
+type StringSource struct {
+	Value     string `json:"value"`
+	GroupID   string `json:"group_id,omitempty"`
+	GroupName string `json:"group_name,omitempty"`
+}
+
+// EffectiveAV is a group's antivirus settings after inheritance.
 type EffectiveAV struct {
 	ClamAV SettingSource `json:"clamav"`
 	YARA   SettingSource `json:"yara"`
+	Action StringSource  `json:"action"`
+	// AIAuto: whether the AI analyst investigates the group's alerts on its own (when it
+	// is set up and automatic investigations are on globally).
+	AIAuto SettingSource `json:"ai_auto"`
 }
 
 // ResolveAV works out which file scanners apply to hosts in a group ("" for hosts in
 // no group).
 func (c *Core) ResolveAV(groupID string) EffectiveAV {
 	set := c.AV.Settings()
-	eff := EffectiveAV{ClamAV: SettingSource{Value: set.UseClamAV}, YARA: SettingSource{Value: set.UseYARA}}
-	var clamDone, yaraDone bool
+	eff := EffectiveAV{ClamAV: SettingSource{Value: set.UseClamAV}, YARA: SettingSource{Value: set.UseYARA},
+		Action: StringSource{Value: set.Action}, AIAuto: SettingSource{Value: true}}
+	var clamDone, yaraDone, actionDone, aiDone bool
 	for _, g := range c.groupChain(groupID) {
+		if p := g.Policy.AV.Action; p != nil && !actionDone {
+			eff.Action, actionDone = StringSource{Value: *p, GroupID: g.ID, GroupName: g.Name}, true
+		}
+		if p := g.Policy.AI.Auto; p != nil && !aiDone {
+			eff.AIAuto, aiDone = SettingSource{Value: *p, GroupID: g.ID, GroupName: g.Name}, true
+		}
 		if p := g.Policy.AV.ClamAV; p != nil && !clamDone {
 			eff.ClamAV, clamDone = SettingSource{Value: *p, GroupID: g.ID, GroupName: g.Name}, true
 		}
@@ -118,5 +136,31 @@ func (c *Core) ResolveAV(groupID string) EffectiveAV {
 // avScanners is the antivirus' view of ResolveAV.
 func (c *Core) avScanners(groupID string) av.Scanners {
 	e := c.ResolveAV(groupID)
-	return av.Scanners{ClamAV: e.ClamAV.Value, YARA: e.YARA.Value}
+	return av.Scanners{ClamAV: e.ClamAV.Value, YARA: e.YARA.Value, Action: e.Action.Value}
+}
+
+// GroupAndChildren returns a group's ID and its child groups' IDs.
+func (c *Core) GroupAndChildren(id string) []string {
+	out := []string{id}
+	c.groups.mu.RLock()
+	defer c.groups.mu.RUnlock()
+	for _, g := range c.groups.byID {
+		if g.ParentID == id {
+			out = append(out, g.ID)
+		}
+	}
+	return out
+}
+
+// aiAutoForHost reports whether the host's group lets the AI analyst investigate its
+// alerts on its own.
+func (c *Core) aiAutoForHost(ctx context.Context, hostID string) bool {
+	if hostID == "" || hostID == ServerHostID {
+		return true
+	}
+	h, err := c.State.GetHost(ctx, hostID)
+	if err != nil {
+		return true
+	}
+	return c.ResolveAV(h.GroupID).AIAuto.Value
 }

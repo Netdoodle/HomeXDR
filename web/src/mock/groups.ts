@@ -1,7 +1,7 @@
 // Mock host groups: Netdoodle › DTS Assets › Marketing Dept and
 // Netdoodle › Infrastructure Assets › Linux Servers.
 
-import type { GroupPolicy, GroupsView, HostGroup, Scanner, SettingSource } from '../api/groups'
+import type { Effective, GroupPolicy, GroupsView, HostGroup, SettingKey, SettingSource } from '../api/groups'
 import type { Role } from '../api/types'
 import { status as avStatus } from './antivirus'
 import { ago, DAY, hosts, LAPTOP_ID, LINUX_ID, PI_ID, WIN_ID } from './hosts'
@@ -16,7 +16,7 @@ let seq = 0
 const groups: G[] = [
   { id: 'g-dts', name: 'DTS Assets', parent_id: '', policy: { av: {} }, created_at: ago(9 * DAY) },
   { id: 'g-mkt', name: 'Marketing Dept', parent_id: 'g-dts', policy: { av: { yara: false } }, created_at: ago(9 * DAY) },
-  { id: 'g-infra', name: 'Infrastructure Assets', parent_id: '', policy: { av: { clamav: true } }, created_at: ago(8 * DAY) },
+  { id: 'g-infra', name: 'Infrastructure Assets', parent_id: '', policy: { av: { clamav: true, action: 'alert' }, ai: { auto: false } }, created_at: ago(8 * DAY) },
   { id: 'g-linux', name: 'Linux Servers', parent_id: 'g-infra', policy: { av: {} }, created_at: ago(8 * DAY) },
 ]
 const member: Record<string, string> = { [WIN_ID]: 'g-mkt', [LAPTOP_ID]: 'g-dts', [LINUX_ID]: 'g-linux', [PI_ID]: 'g-linux' }
@@ -28,12 +28,33 @@ function chain(id: string): G[] {
   return out
 }
 
-function effective(id: string, s: Scanner): SettingSource {
-  for (const g of chain(id)) {
-    const v = g.policy.av[s]
-    if (v !== undefined) return { value: v, group_id: g.id, group_name: g.name }
+function own(g: G, k: SettingKey): boolean | string | undefined {
+  switch (k) {
+    case 'clamav':
+      return g.policy.av.clamav
+    case 'yara':
+      return g.policy.av.yara
+    case 'action':
+      return g.policy.av.action
+    case 'ai_auto':
+      return g.policy.ai?.auto
   }
-  return { value: s === 'clamav' ? avStatus.settings.use_clamav : avStatus.settings.use_yara }
+}
+
+function globalOf(k: SettingKey): boolean | string {
+  const s = avStatus.settings
+  return k === 'clamav' ? s.use_clamav : k === 'yara' ? s.use_yara : k === 'action' ? s.action : true
+}
+
+function effective(id: string): Effective {
+  const one = (k: SettingKey): SettingSource<boolean | string> => {
+    for (const g of chain(id)) {
+      const v = own(g, k)
+      if (v !== undefined) return { value: v, group_id: g.id, group_name: g.name }
+    }
+    return { value: globalOf(k) }
+  }
+  return { clamav: one('clamav'), yara: one('yara'), action: one('action'), ai_auto: one('ai_auto') } as Effective
 }
 
 function view(): GroupsView {
@@ -45,11 +66,11 @@ function view(): GroupsView {
   const out: HostGroup[] = ordered.map((g) => ({
     ...g,
     hosts: hosts.filter((h) => h.group_id === g.id).length,
-    effective: { clamav: effective(g.id, 'clamav'), yara: effective(g.id, 'yara') },
+    effective: effective(g.id),
   }))
   return {
     org: { name: org },
-    global: { clamav: avStatus.settings.use_clamav, yara: avStatus.settings.use_yara },
+    global: { clamav: avStatus.settings.use_clamav, yara: avStatus.settings.use_yara, action: avStatus.settings.action, ai_auto: true },
     groups: out,
     ungrouped: hosts.filter((h) => h.kind === 'endpoint' && !h.group_id).length,
   }
@@ -100,7 +121,7 @@ export function groupRoutes(route: Route, fail: (status: number, message: string
       if (!g) fail(404, 'no such group')
       const b = body as { name?: string; policy?: GroupPolicy }
       if (b.name !== undefined) g!.name = checkName(b.name, g!.parent_id, g!.id)
-      if (b.policy) g!.policy = { av: { ...b.policy.av } }
+      if (b.policy) g!.policy = { av: { ...b.policy.av }, ai: { ...b.policy.ai } }
       return view()
     },
     { role: 'admin' },
@@ -129,4 +150,12 @@ export function groupRoutes(route: Route, fail: (status: number, message: string
     },
     { role: 'admin' },
   )
+}
+
+/** Whether a host in group hostGroup matches a ?group= filter (a group with its child
+ * groups, or "none"). */
+export function matchesGroupFilter(hostGroup: string | undefined, filter: string | null): boolean {
+  if (!filter) return true
+  if (filter === 'none') return !hostGroup
+  return hostGroup === filter || groups.some((g) => g.id === hostGroup && g.parent_id === filter)
 }
