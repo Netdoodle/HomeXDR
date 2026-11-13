@@ -17,6 +17,7 @@ import { formatDateTime, formatTimestamp } from '../lib/time'
 import { AgentConfigEditor } from './AgentConfigEditor'
 import { ThreatIntelTab } from './ThreatIntelSettings'
 import { AntivirusTab } from './AntivirusSettings'
+import { FirewallTab } from './FirewallSettings'
 import { GroupSelect, GroupsTab } from './GroupsSettings'
 import { getGroups, groupKeys, groupPath } from '../api/groups'
 import { AgentLifecycleTab } from './AgentLifecycle'
@@ -41,6 +42,7 @@ const ALL_TABS: (TabDef & { admin?: boolean })[] = [
   { id: 'network', label: 'Network', icon: 'hosts', admin: true },
   { id: 'ai', label: 'AI analyst', icon: 'sparkle', admin: true },
   { id: 'antivirus', label: 'Antivirus', icon: 'bug' },
+  { id: 'firewall', label: 'Firewall', icon: 'isolate' },
   { id: 'intel', label: 'Threat intel', icon: 'radar', admin: true },
   { id: 'lists', label: 'Offline lists', icon: 'table', admin: true },
   { id: 'audit', label: 'Audit log', icon: 'clock', admin: true },
@@ -69,6 +71,7 @@ export function SettingsPage() {
       {tab === 'network' ? <NetworkSettingsTab /> : null}
       {tab === 'ai' ? <AIAnalystTab /> : null}
       {tab === 'antivirus' ? <AntivirusTab /> : null}
+      {tab === 'firewall' ? <FirewallTab /> : null}
       {tab === 'intel' ? <ThreatIntelTab /> : null}
       {tab === 'lists' ? <OfflineListsTab /> : null}
       {tab === 'audit' ? <AuditTab /> : null}

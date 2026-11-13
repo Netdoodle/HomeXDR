@@ -36,6 +36,13 @@ const MaxGroupDepth = 2
 type GroupPolicy struct {
 	AV AVGroupPolicy `json:"av"`
 	AI AIGroupPolicy `json:"ai"`
+	// Firewall: whether host firewall block policies apply to the group's hosts.
+	Firewall FirewallGroupPolicy `json:"firewall"`
+}
+
+// FirewallGroupPolicy switches host firewall control for a group (firewall.go).
+type FirewallGroupPolicy struct {
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // AVGroupPolicy switches the antivirus' file scanners and response for a group.

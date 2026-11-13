@@ -5,11 +5,9 @@ them. When one ships, move it to "Done" with its commit and a link to its docs.
 
 ## Next up
 
-### Host firewall control
-Manage HomeXDR-owned Windows Firewall rules (their own "HomeXDR" group, removed on
-uninstall), with per-label policies from the console and "block this IP everywhere" from an
-alert. The same block policies apply on Linux through the agent's nftables table.
-Optionally push blocks to OPNsense for network-wide effect.
+### Push host firewall blocks to OPNsense
+Send the addresses blocked under Settings → Firewall to OPNsense as an alias, for a
+network-wide block that also covers devices without the agent.
 
 ## Vulnerability scanner (agent + network)
 
@@ -104,6 +102,9 @@ agents at the MagicDNS name; the spool covers the gaps.
   (audit), Off/Audit/Enforce globally or per group, Off puts back the previous settings,
   alerts on ASR and Network Protection blocks:
   [antivirus.md](antivirus.md#defender-hardening)
+- Host firewall control: blocked addresses everywhere or per group, applied as Windows
+  Firewall rules (group "HomeXDR"), nftables (`inet homexdr_block`) and pf, "Block this IP
+  everywhere" from an alert: [firewall.md](firewall.md)
 - Windows App Control: confirmed malware becomes an "allow everything, deny these files"
   policy applied with CiTool (no reboot), Off/Audit/Enforce globally or per group:
   [antivirus.md](antivirus.md#windows-app-control)

@@ -113,6 +113,8 @@ export interface InvestigateTarget {
   value: string
   /** A private address: only your own data is searched, nothing is sent out. */
   local?: boolean
+  /** An IP address (it can be blocked in the hosts' firewalls). */
+  ip?: boolean
 }
 
 const HASH_VALUE = /^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$/i
@@ -124,12 +126,12 @@ const HASH_VALUE = /^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$/i
 export function investigateTargets(e?: Event): InvestigateTarget[] {
   if (!e) return []
   const out: InvestigateTarget[] = []
-  const add = (label: string, value?: string | null, local?: boolean) => {
+  const add = (label: string, value?: string | null, local?: boolean, isIP?: boolean) => {
     const v = value?.trim()
-    if (v && !out.some((x) => x.value === v)) out.push({ label, value: v, local })
+    if (v && !out.some((x) => x.value === v)) out.push(isIP ? { label, value: v, local, ip: true } : { label, value: v, local })
   }
   const ip = (label: string, value?: string) => {
-    if (value && (IPV4.test(value) || IPV6.test(value))) add(label, value, PRIVATE_IP.test(value))
+    if (value && (IPV4.test(value) || IPV6.test(value))) add(label, value, PRIVATE_IP.test(value), true)
   }
   const hashes = (what: string, h?: { md5?: string; sha1?: string; sha256?: string }) => {
     if (!h) return

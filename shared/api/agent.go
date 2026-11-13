@@ -383,6 +383,7 @@ type DefenderThreatInfo struct {
 var DefaultAllowedActions = []string{
 	CmdProcessKill, CmdHostIsolate, CmdHostRelease, CmdFileQuarantine,
 	CmdFileRestore, CmdFileGet, CmdFileHash, CmdArtifact, CmdDefender, CmdAppControl,
+	CmdFirewall, // firewall.go
 }
 
 // SignedCommand is what the server hands an agent. Payload is the exact JSON encoding of

@@ -38,6 +38,7 @@ const GLOBAL_LINK: Record<string, string> = {
   app_control: '/settings/antivirus',
   defender_hardening: '/settings/antivirus',
   ai_auto: '/settings/ai',
+  firewall: '/settings/firewall',
 }
 
 export function GroupsTab() {

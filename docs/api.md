@@ -536,6 +536,22 @@ type NotifySettings = {
 type NotifySettingsUpdate = Omit<NotifySettings, "status" | "channels"> & { channels: ChannelUpdate[] };
 ```
 
+## Host firewall
+
+Addresses blocked in every host's own firewall ([firewall.md](firewall.md)). Viewers read;
+changes need the admin role and are audited (`firewall.block.add`, `firewall.block.remove`,
+`settings.firewall`).
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/firewall` | `FirewallView`: `{"settings": {"enabled"}, "blocks": FirewallBlock[], "hosts": FirewallHost[], "server_addrs": string[], "limits": {"max_blocks", "min_prefix_v4", "min_prefix_v6"}}`. A block is `{id, cidr, direction, group_id, note, alert_id?, created_by, created_at, scope, problem?}`; a host `{host_id, hostname, platform, enabled, enabled_from?, status, desired, rules, applied, applied_rules, backend, message, updated_at}` with status `off`, `empty`, `applied`, `pending`, `failed`, `not_allowed` or `offline` |
+| POST | `/api/firewall/blocks` | `{"cidr", "direction"?: "both"\|"in"\|"out", "group_id"?: "" (everywhere) or a group ID, "note"?, "alert_id"?}` (admin) → `FirewallView`; `400` for a reserved, too broad or server address, an unknown group, a duplicate in the same scope or more than 1000 entries |
+| DELETE | `/api/firewall/blocks/{id}` | (admin) → `FirewallView` |
+| PUT | `/api/settings/firewall` | `{"enabled": bool}` (admin) → `FirewallView` |
+
+`firewall.apply` cannot be sent through `POST /api/hosts/{id}/actions`: the server sends
+each host its rule set itself.
+
 ## Settings and admin
 
 | Method | Path | Notes |

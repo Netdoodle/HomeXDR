@@ -23,6 +23,7 @@ import (
 	"github.com/Netdoodle/homexdr/agent/internal/platform"
 	"github.com/Netdoodle/homexdr/agent/internal/transport"
 	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/hostfw"
 )
 
 // API is the subset of the transport client used to report results.
@@ -39,6 +40,13 @@ type Isolator interface {
 	Release(ctx context.Context) error
 }
 
+// FirewallApplier applies host firewall block rules (CmdFirewall). The core implements
+// it: it checks the rules against the server's addresses, applies them through the
+// platform and remembers them so they come back after a restart.
+type FirewallApplier interface {
+	ApplyFirewall(ctx context.Context, p api.FirewallParams) (api.FirewallResult, error)
+}
+
 // Handler verifies and executes commands.
 type Handler struct {
 	API        API
@@ -51,7 +59,9 @@ type Handler struct {
 	Defender platform.Defender
 	// AppControl applies App Control policies (Windows); nil elsewhere.
 	AppControl platform.AppControl
-	Log        *slog.Logger
+	// Firewall applies host firewall block rules; nil where the platform has none.
+	Firewall FirewallApplier
+	Log      *slog.Logger
 	// Platform is the event.Platform* name, used to check the artifact catalog.
 	Platform string
 	// Hardening applies the Defender hardening profile (Windows); nil elsewhere.
@@ -258,6 +268,27 @@ func (h *Handler) prepare(cmd *api.Command) (runFunc, error) {
 
 	case api.CmdDefenderHarden:
 		return h.prepareHarden(cmd)
+	case api.CmdFirewall:
+		var p api.FirewallParams
+		if err := decodeParams(cmd.Params, &p); err != nil {
+			return nil, err
+		}
+		if h.Firewall == nil {
+			return nil, fmt.Errorf("host firewall control is not supported on %s", h.Platform)
+		}
+		if err := hostfw.CheckVersion(p.Version); err != nil {
+			return nil, err
+		}
+		if _, err := hostfw.Normalize(p.Rules, nil); err != nil {
+			return nil, err
+		}
+		return func(ctx context.Context) (any, int, error) {
+			r, err := h.Firewall.ApplyFirewall(ctx, p)
+			if err != nil {
+				return nil, 0, err
+			}
+			return r, 0, nil
+		}, nil
 
 	case api.CmdFileHash:
 		var p api.FileHashParams

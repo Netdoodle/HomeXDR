@@ -109,6 +109,8 @@ describe('investigateTargets', () => {
       ['Process MD5', 'b'.repeat(32), false],
       ['Host Tower2', '192.168.20.20', true],
     ])
+    // Source and destination addresses can be blocked; the host's own address cannot.
+    expect(t.filter((x) => x.ip).map((x) => x.value)).toEqual(['192.168.20.178', '8.219.91.229'])
   })
   it('skips values that are not indicators', () => {
     expect(investigateTargets({ id: 'x', '@timestamp': '', process: { hash: { md5: 'nope' } } } as never)).toEqual([])
