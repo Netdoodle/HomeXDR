@@ -313,6 +313,16 @@ func cmdUninstall(p platform.Platform, args []string) error {
 		_ = st.SetIsolated(false, nil, nil)
 		fmt.Println("host isolation released")
 	}
+	// HomeXDR's host firewall block rules go with the agent (nothing would update them).
+	if fw, ok := p.(platform.HostFirewall); ok {
+		env := platform.Env{DataDir: dataDir, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+		if err := fw.RemoveFirewall(ctx, env); err != nil {
+			errs = append(errs, fmt.Errorf("remove host firewall rules: %w", err))
+		} else {
+			_ = os.Remove(filepath.Join(dataDir, core.FirewallStateFile))
+			fmt.Println("HomeXDR host firewall block rules removed")
+		}
+	}
 	if *purge {
 		if q := filepath.Join(dataDir, core.QuarantineDir); dirHasEntries(q) {
 			fmt.Printf("note: deleting quarantined files in %s\n", q)

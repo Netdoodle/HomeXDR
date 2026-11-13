@@ -11,6 +11,7 @@ import (
 
 	"github.com/Netdoodle/homexdr/server/internal/events"
 	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/shared/api"
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
@@ -73,6 +74,12 @@ func (h *Handler) hostAction(w http.ResponseWriter, r *http.Request, u *store.Us
 		Params json.RawMessage `json:"params"`
 	}
 	if !decode(w, r, &req) {
+		return
+	}
+	if req.Type == api.CmdFirewall {
+		// The reconcile loop owns each host's rule set (firewall.go); a hand-sent one
+		// would be out of step with it.
+		writeErr(w, http.StatusBadRequest, "firewall rules are sent by the server: manage them under Settings > Firewall")
 		return
 	}
 	host, err := h.c.State.GetHost(r.Context(), r.PathValue("id"))
