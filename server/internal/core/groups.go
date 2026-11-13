@@ -106,6 +106,8 @@ type EffectiveAV struct {
 	Action StringSource  `json:"action"`
 	// AppControl is the Windows App Control mode (off, audit, enforce).
 	AppControl StringSource `json:"app_control"`
+	// DefenderHardening is the Microsoft Defender hardening mode (off, audit, enforce).
+	DefenderHardening StringSource `json:"defender_hardening"`
 	// AIAuto: whether the AI analyst investigates the group's alerts on its own (when it
 	// is set up and automatic investigations are on globally).
 	AIAuto SettingSource `json:"ai_auto"`
@@ -117,8 +119,12 @@ func (c *Core) ResolveAV(groupID string) EffectiveAV {
 	set := c.AV.Settings()
 	eff := EffectiveAV{ClamAV: SettingSource{Value: set.UseClamAV}, YARA: SettingSource{Value: set.UseYARA},
 		Action: StringSource{Value: set.Action}, AIAuto: SettingSource{Value: true}, AppControl: StringSource{Value: set.AppControl}}
-	var clamDone, yaraDone, actionDone, aiDone, acDone bool
+	eff.DefenderHardening = StringSource{Value: set.DefenderHardening}
+	var clamDone, yaraDone, actionDone, aiDone, acDone, dhDone bool
 	for _, g := range c.groupChain(groupID) {
+		if p := g.Policy.AV.DefenderHardening; p != nil && !dhDone {
+			eff.DefenderHardening, dhDone = StringSource{Value: *p, GroupID: g.ID, GroupName: g.Name}, true
+		}
 		if p := g.Policy.AV.AppControl; p != nil && !acDone {
 			eff.AppControl, acDone = StringSource{Value: *p, GroupID: g.ID, GroupName: g.Name}, true
 		}

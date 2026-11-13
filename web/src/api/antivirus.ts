@@ -13,6 +13,8 @@ export interface AVSettings {
   use_yara: boolean
   /** Windows App Control for confirmed malware; groups can override it */
   app_control: 'off' | 'audit' | 'enforce'
+  /** Microsoft Defender hardening (ASR rules, Network Protection, Controlled Folder Access); groups can override it */
+  defender_hardening: 'off' | 'audit' | 'enforce'
   use_intel: boolean
   max_file_mb: number
   blocked_hashes: string[] | null

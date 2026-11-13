@@ -114,6 +114,12 @@ type AppControl interface {
 	AppControl(ctx context.Context, p api.AppControlParams) (api.AppControlResult, error)
 }
 
+// DefenderHardening is optionally implemented by a Platform that can apply HomeXDR's
+// Microsoft Defender hardening profile (CmdDefenderHarden).
+type DefenderHardening interface {
+	DefenderHarden(ctx context.Context, p api.DefenderHardenParams) (api.DefenderHardenResult, error)
+}
+
 // HostSetup is optionally implemented by a Platform whose sensors depend on host
 // settings that are off by default (Windows process auditing). `install` calls SetupHost
 // and `uninstall` calls RestoreHost, which puts back the settings from before the first

@@ -9,7 +9,7 @@ import (
 // ctx ends.
 func (c *Core) RunFeatures(ctx context.Context) {
 	var wg sync.WaitGroup
-	for _, run := range []func(context.Context){c.runNoise, c.runHealth, c.runNetwork, c.runAV, c.runAppControl, c.runBackup} {
+	for _, run := range []func(context.Context){c.runNoise, c.runHealth, c.runNetwork, c.runAV, c.runAppControl, c.runDefenderHardening, c.runBackup} {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

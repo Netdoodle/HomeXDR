@@ -1,0 +1,24 @@
+title: Defender Network Protection Blocked A Connection
+id: a1692c61-2209-4465-813a-af4ae5f5581d
+status: experimental
+description: |
+  Microsoft Defender Network Protection blocked a connection to a domain or address with
+  a bad reputation (event 1126). Defender already blocked it; the event names the
+  process and the destination. Audit-mode hits (1125) are kept as events without an
+  alert.
+author: HomeXDR
+date: 2026-11-13
+references:
+  - https://learn.microsoft.com/defender-endpoint/network-protection
+tags:
+  - attack.command-and-control
+logsource:
+  product: windows
+  service: windefend
+detection:
+  selection:
+    EventID: 1126
+  condition: selection
+falsepositives:
+  - Sites Microsoft's reputation service misjudges
+level: medium

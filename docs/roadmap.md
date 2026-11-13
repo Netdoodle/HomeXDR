@@ -5,11 +5,6 @@ them. When one ships, move it to "Done" with its commit and a link to its docs.
 
 ## Next up
 
-### Defender health and hardening
-- Alerts when Defender's real-time protection is off or signatures are more than a few days old.
-- Hardening profiles in the agent config, audit mode first: Attack Surface Reduction rules,
-  Controlled Folder Access and Network Protection.
-
 ### Host firewall control
 Manage HomeXDR-owned Windows Firewall rules (their own "HomeXDR" group, removed on
 uninstall), with per-label policies from the console and "block this IP everywhere" from an
@@ -105,6 +100,10 @@ agents at the MagicDNS name; the spool covers the gaps.
 - Windows network isolation through Windows Filtering Platform filters that Windows
   Firewall rules can't override; the server connection always stays open:
   [agent/README.md](../agent/README.md#windows-platform)
+- Defender hardening: 14 curated ASR rules, Network Protection and Controlled Folder Access
+  (audit), Off/Audit/Enforce globally or per group, Off puts back the previous settings,
+  alerts on ASR and Network Protection blocks:
+  [antivirus.md](antivirus.md#defender-hardening)
 - Windows App Control: confirmed malware becomes an "allow everything, deny these files"
   policy applied with CiTool (no reboot), Off/Audit/Enforce globally or per group:
   [antivirus.md](antivirus.md#windows-app-control)
