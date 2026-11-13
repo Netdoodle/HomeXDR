@@ -206,6 +206,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	if d, ok := a.plat.(platform.Defender); ok {
 		a.handler.Defender = d
 	}
+	if hd, ok := a.plat.(platform.DefenderHardening); ok {
+		a.handler.Hardening = hd
+	}
 
 	a.log.Info("homexdr agent starting",
 		"version", version.String(), "agent_id", a.id.AgentID, "server", a.local.ServerURL,
