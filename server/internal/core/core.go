@@ -65,6 +65,8 @@ type Core struct {
 	AV *av.Service
 	// groups caches the host group tree (groups.go).
 	groups groupCache
+	// firewall is host firewall control's runtime state (firewall.go).
+	firewall firewallRuntime
 	// Backup archives events to object storage (feature_backup.go).
 	Backup *backup.Service
 	// Health is feed health, the offline lists and vulnerability matching.

@@ -223,6 +223,8 @@ func (c *Core) CommandFinished(ctx context.Context, host *store.Host, rec *store
 	switch rec.Type {
 	case api.CmdDefenderHarden:
 		c.defenderHardeningFinished(ctx, host, rec)
+	case api.CmdFirewall:
+		c.firewallCommandFinished(ctx, host, rec) // firewall.go
 	case api.CmdAppControl:
 		st := c.appControlState(ctx, host.ID)
 		if st.CommandID != rec.ID {

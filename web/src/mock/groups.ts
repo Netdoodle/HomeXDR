@@ -4,6 +4,7 @@
 import type { Effective, GroupPolicy, GroupsView, HostGroup, SettingKey, SettingSource } from '../api/groups'
 import type { Role } from '../api/types'
 import { status as avStatus } from './antivirus'
+import { firewallGlobal } from './firewall'
 import { ago, DAY, hosts, LAPTOP_ID, LINUX_ID, PI_ID, WIN_ID } from './hosts'
 
 type Ctx = { params: Record<string, string>; body: unknown }
@@ -42,12 +43,15 @@ function own(g: G, k: SettingKey): boolean | string | undefined {
       return g.policy.ai?.auto
     case 'defender_hardening':
       return g.policy.av.defender_hardening
+    case 'firewall':
+      return g.policy.firewall?.enabled
   }
 }
 
 function globalOf(k: SettingKey): boolean | string {
   const s = avStatus.settings
   if (k === 'defender_hardening') return s.defender_hardening
+  if (k === 'firewall') return firewallGlobal()
   return k === 'clamav' ? s.use_clamav : k === 'yara' ? s.use_yara : k === 'action' ? s.action : k === 'app_control' ? s.app_control : true
 }
 
@@ -59,7 +63,17 @@ function effective(id: string): Effective {
     }
     return { value: globalOf(k) }
   }
-  return { clamav: one('clamav'), yara: one('yara'), action: one('action'), app_control: one('app_control'), ai_auto: one('ai_auto'), defender_hardening: one('defender_hardening') } as Effective
+  return { clamav: one('clamav'), yara: one('yara'), action: one('action'), app_control: one('app_control'), ai_auto: one('ai_auto'), defender_hardening: one('defender_hardening'), firewall: one('firewall') } as Effective
+}
+
+/** For the firewall mock: a group and its ancestors, nearest first. */
+export function groupChain(id: string): { id: string; name: string }[] {
+  return chain(id)
+}
+
+/** For the firewall mock: whether host firewall control applies in a group. */
+export function firewallEffective(id: string): SettingSource {
+  return effective(id).firewall
 }
 
 function view(): GroupsView {
@@ -75,7 +89,7 @@ function view(): GroupsView {
   }))
   return {
     org: { name: org },
-    global: { clamav: avStatus.settings.use_clamav, yara: avStatus.settings.use_yara, action: avStatus.settings.action, app_control: avStatus.settings.app_control, ai_auto: true, defender_hardening: avStatus.settings.defender_hardening },
+    global: { clamav: avStatus.settings.use_clamav, yara: avStatus.settings.use_yara, action: avStatus.settings.action, app_control: avStatus.settings.app_control, ai_auto: true, defender_hardening: avStatus.settings.defender_hardening, firewall: firewallGlobal() },
     groups: out,
     ungrouped: hosts.filter((h) => h.kind === 'endpoint' && !h.group_id).length,
   }
@@ -126,7 +140,7 @@ export function groupRoutes(route: Route, fail: (status: number, message: string
       if (!g) fail(404, 'no such group')
       const b = body as { name?: string; policy?: GroupPolicy }
       if (b.name !== undefined) g!.name = checkName(b.name, g!.parent_id, g!.id)
-      if (b.policy) g!.policy = { av: { ...b.policy.av }, ai: { ...b.policy.ai } }
+      if (b.policy) g!.policy = { av: { ...b.policy.av }, ai: { ...b.policy.ai }, firewall: { ...b.policy.firewall } }
       return view()
     },
     { role: 'admin' },

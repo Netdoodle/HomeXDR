@@ -76,6 +76,8 @@ export const PLATFORM_PLACES: PlatformPlace[] = [
   { crumbs: [S, 'Groups'], path: '/settings/groups', section: 'Host groups', keywords: ['group', 'parent', 'child', 'organisation', 'organization', 'inherit', 'override'] },
   { crumbs: [S, 'Antivirus'], path: '/settings/antivirus', section: 'Antivirus', keywords: ['clamav', 'yara', 'malware', 'quarantine', 'blocklist'] },
   { crumbs: [S, 'Antivirus', 'Recent detections'], path: '/settings/antivirus', section: 'Recent detections' },
+  { crumbs: [S, 'Firewall'], path: '/settings/firewall', section: 'Host firewall', keywords: ['block ip', 'blocklist', 'windows firewall', 'nftables', 'pf', 'block address'] },
+  { crumbs: [S, 'Firewall', 'Blocked addresses'], path: '/settings/firewall', section: 'Blocked addresses' },
   { crumbs: [S, 'Threat intel'], path: '/settings/intel', admin: true, keywords: ['virustotal', 'abuseipdb', 'api keys', 'feeds'] },
   { crumbs: [S, 'Offline lists'], path: '/settings/lists', admin: true, keywords: ['blocklists', 'feeds', 'ioc lists'] },
   { crumbs: [S, 'Audit log'], path: '/settings/audit', admin: true, keywords: ['history', 'who changed'] },

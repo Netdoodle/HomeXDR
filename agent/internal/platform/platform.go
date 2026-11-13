@@ -11,6 +11,7 @@ import (
 
 	"github.com/Netdoodle/homexdr/shared/api"
 	"github.com/Netdoodle/homexdr/shared/event"
+	"github.com/Netdoodle/homexdr/shared/hostfw"
 )
 
 // Env is what the core gives platform code.
@@ -118,6 +119,18 @@ type AppControl interface {
 // Microsoft Defender hardening profile (CmdDefenderHarden).
 type DefenderHardening interface {
 	DefenderHarden(ctx context.Context, p api.DefenderHardenParams) (api.DefenderHardenResult, error)
+}
+
+// HostFirewall is optionally implemented by a Platform that can block addresses in the
+// host's own firewall (CmdFirewall): Windows Firewall rules in the HomeXDR group, the
+// nftables table inet homexdr_block, a pf anchor. The core validates the set
+// (hostfw.Normalize, with the server's addresses protected) before calling it.
+type HostFirewall interface {
+	// ApplyFirewall makes HomeXDR's block rules exactly s, idempotently; an empty set
+	// removes them. It returns the backend's name and a short description.
+	ApplyFirewall(ctx context.Context, env Env, version string, s hostfw.Set) (backend, msg string, err error)
+	// RemoveFirewall removes every HomeXDR block rule, and returns nil when there are none.
+	RemoveFirewall(ctx context.Context, env Env) error
 }
 
 // HostSetup is optionally implemented by a Platform whose sensors depend on host
