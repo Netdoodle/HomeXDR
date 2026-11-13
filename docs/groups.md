@@ -30,6 +30,7 @@ filtered Hosts page.
 | Antivirus: malware response | Settings → Antivirus ("When malware is found") | Inherit, Stop and quarantine, or Alert only |
 | Windows App Control for confirmed malware | Settings → Antivirus | Inherit, Enforce, Audit or Off |
 | AI analyst: investigate alerts automatically | Investigate (whenever the AI analyst is set up and automatic investigations are on) | Inherit, Investigate or Off |
+| Host firewall: apply the blocked addresses (`firewall.enabled`) | Settings → Firewall (on by default) | Inherit, Block or Off. See [firewall.md](firewall.md) |
 
 A group set to **Inherit** takes the value from its parent group; a parent group set to
 Inherit takes it from the organisation. The nearest group that sets a value wins, so
@@ -64,7 +65,7 @@ only be deleted once it has no child groups. Every change is in the audit log
 | GET | `/api/groups` | viewer | Organisation, global values, groups in tree order with host counts and effective settings |
 | PUT | `/api/org` | admin | `{"name"}` |
 | POST | `/api/groups` | admin | `{"name", "parent_id"}` (`""` for a parent group) |
-| PATCH | `/api/groups/{id}` | admin | `{"name"}`, `{"parent_id"}`, `{"policy": {"av": {"clamav": false, "yara": true, "action": "alert", "app_control": "audit"}, "ai": {"auto": false}}}` (leave a key out to inherit) |
+| PATCH | `/api/groups/{id}` | admin | `{"name"}`, `{"parent_id"}`, `{"policy": {"av": {"clamav": false, "yara": true, "action": "alert", "app_control": "audit"}, "ai": {"auto": false}, "firewall": {"enabled": false}}}` (leave a key out to inherit) |
 | GET | `/api/hosts?group=`, `/api/alerts?group=` | viewer | A group ID (with its child groups) or `none` |
 | POST | `/api/enrollment-tokens` | admin | `group_id` puts enrolled hosts in that group |
 | DELETE | `/api/groups/{id}` | admin | Hosts move up a level |

@@ -37,6 +37,8 @@ type groupsView struct {
 		AIAuto bool   `json:"ai_auto"`
 		// AppControl is the Windows App Control mode.
 		AppControl string `json:"app_control"`
+		// Firewall: whether host firewall block policies apply (Settings → Firewall).
+		Firewall bool `json:"firewall"`
 	} `json:"global"`
 	Groups    []groupView `json:"groups"`
 	Ungrouped int         `json:"ungrouped"` // hosts in no group
@@ -51,6 +53,7 @@ func (h *Handler) groupsView(r *http.Request) (*groupsView, error) {
 	set := h.c.AV.Settings()
 	v.Global.ClamAV, v.Global.YARA, v.Global.Action, v.Global.AIAuto = set.UseClamAV, set.UseYARA, set.Action, true
 	v.Global.AppControl = set.AppControl
+	v.Global.Firewall = h.c.FirewallGlobalEnabled()
 	for _, g := range gs {
 		v.Groups = append(v.Groups, groupView{HostGroup: g, Effective: h.c.ResolveAV(g.ID)})
 	}
@@ -141,6 +144,7 @@ func (h *Handler) patchGroup(w http.ResponseWriter, r *http.Request, u *store.Us
 			}
 			parts = append(parts, "ClamAV "+onOffInherit(in.Policy.AV.ClamAV), "YARA "+onOffInherit(in.Policy.AV.YARA),
 				"antivirus response "+action, "App Control "+ac, "AI auto-investigation "+onOffInherit(in.Policy.AI.Auto))
+			parts = append(parts, "host firewall "+onOffInherit(in.Policy.Firewall.Enabled))
 		}
 		h.c.Audit(r.Context(), u.Username, "group.update", g.ID, g.Name+": "+strings.Join(parts, ", "))
 	}

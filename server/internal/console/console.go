@@ -129,6 +129,7 @@ func New(c *core.Core) *Handler {
 	h.routesNetwork(viewer, analyst, admin)
 	h.routesAV(viewer, analyst, admin)
 	h.routesGroups(viewer, admin)
+	h.routesFirewall(viewer, admin)
 	h.routesRetention(viewer, admin)
 	h.routesBackup(admin)
 

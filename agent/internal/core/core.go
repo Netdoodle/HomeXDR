@@ -206,6 +206,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	if d, ok := a.plat.(platform.Defender); ok {
 		a.handler.Defender = d
 	}
+	if _, ok := a.plat.(platform.HostFirewall); ok {
+		a.handler.Firewall = a // firewall.go
+	}
 
 	a.log.Info("homexdr agent starting",
 		"version", version.String(), "agent_id", a.id.AgentID, "server", a.local.ServerURL,
@@ -220,6 +223,10 @@ func (a *Agent) Run(ctx context.Context) error {
 		if err := a.responder.Release(ctx); err != nil {
 			a.log.Error("cannot release stale isolation", "err", err)
 		}
+	}
+
+	if a.handler.Firewall != nil {
+		go a.reapplyFirewall(ctx) // nftables and pf rules do not survive a reboot
 	}
 
 	sensorCtx, stopSensors := context.WithCancel(ctx)

@@ -18,6 +18,8 @@ import { formatNumber } from '../lib/format'
 import { useDocumentTitle } from '../lib/hooks'
 import { investigateHref, investigateTargets } from '../lib/intel'
 import { InvestigateMenu } from '../components/InvestigateMenu'
+import { BlockIPDialog, type BlockRequest } from '../components/BlockIPDialog'
+import { alertBlockNote } from '../lib/firewall'
 import { hasRole } from '../lib/roles'
 import { formFromAlert, type SuppressForm } from '../lib/suppressions'
 import { ALERT_STATUS_LABEL } from '../lib/severity'
@@ -48,7 +50,9 @@ function AlertView({ alert: a }: { alert: Alert }) {
   const toast = useToast()
   const canTriage = useCan('analyst')
   const canSuppress = useCan('admin')
+  const canBlock = useCan('admin') // host firewall blocks
   const [suppressing, setSuppressing] = useState<SuppressForm | null>(null)
+  const [blocking, setBlocking] = useState<BlockRequest | null>(null)
   const user = useUser()
   const hostQ = useQuery({ queryKey: queryKeys.host(a.host_id), queryFn: () => api.getHost(a.host_id) })
 
@@ -99,7 +103,11 @@ function AlertView({ alert: a }: { alert: Alert }) {
         }
         actions={
           <>
-            <InvestigateMenu targets={investigateTargets(ev)} />
+            <InvestigateMenu
+              targets={investigateTargets(ev)}
+              align="left"
+              onBlock={canBlock ? (t) => setBlocking({ address: t.value, note: alertBlockNote(a), alertId: a.id }) : undefined}
+            />
             {canSuppress && a.status !== 'suppressed' ? (
               <button type="button" className="btn" onClick={() => setSuppressing(formFromAlert(a))}>
                 <Icon name="filter" size={14} /> Suppress similar
@@ -121,6 +129,7 @@ function AlertView({ alert: a }: { alert: Alert }) {
       />
 
       <SuppressDialog initial={suppressing} onClose={() => setSuppressing(null)} />
+      <BlockIPDialog request={blocking} onClose={() => setBlocking(null)} />
       {a.suppression?.overridden ? (
         <div className="callout warn" style={{ marginBottom: 12 }} role="note">
           <Icon name="warning" size={14} />

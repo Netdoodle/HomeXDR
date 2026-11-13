@@ -8,6 +8,8 @@ import { http } from './client'
 export interface GroupPolicy {
   av: { clamav?: boolean; yara?: boolean; action?: 'quarantine' | 'alert'; app_control?: 'off' | 'audit' | 'enforce' }
   ai?: { auto?: boolean }
+  /** host firewall control (Settings → Firewall) */
+  firewall?: { enabled?: boolean }
 }
 
 /** An effective setting and where it comes from (no group: Global). */
@@ -23,6 +25,7 @@ export interface Effective {
   action: SettingSource<string>
   app_control: SettingSource<string>
   ai_auto: SettingSource
+  firewall: SettingSource
 }
 
 export interface HostGroup {
@@ -37,12 +40,12 @@ export interface HostGroup {
 
 export interface GroupsView {
   org: { name: string }
-  global: { clamav: boolean; yara: boolean; action: string; app_control: string; ai_auto: boolean }
+  global: { clamav: boolean; yara: boolean; action: string; app_control: string; ai_auto: boolean; firewall: boolean }
   groups: HostGroup[]
   ungrouped: number
 }
 
-export type SettingKey = 'clamav' | 'yara' | 'action' | 'app_control' | 'ai_auto'
+export type SettingKey = 'clamav' | 'yara' | 'action' | 'app_control' | 'ai_auto' | 'firewall'
 
 /** One overridable setting: its choices, from strongest protection to weakest. */
 export interface SettingDef {
@@ -116,6 +119,17 @@ export const SETTINGS: SettingDef[] = [
     get: (p) => onOff(p.ai?.auto),
     set: (p, v) => ({ ...p, ai: { ...p.ai, auto: bool(v) } }),
     weaker: () => 'will no longer have their alerts investigated automatically by the AI analyst',
+  },
+  {
+    key: 'firewall',
+    label: 'Host firewall',
+    choices: [
+      { value: 'on', label: 'Block' },
+      { value: 'off', label: 'Off' },
+    ],
+    get: (p) => onOff(p.firewall?.enabled),
+    set: (p, v) => ({ ...p, firewall: { ...p.firewall, enabled: bool(v) } }),
+    weaker: () => 'will have the addresses blocked under Settings → Firewall removed from their own firewalls, so they can reach those addresses again',
   },
 ]
 

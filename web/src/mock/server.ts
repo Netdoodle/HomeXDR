@@ -60,6 +60,7 @@ import { registerHealthMocks } from './health'
 import { registerHealthCheckMocks } from './healthChecks'
 import { registerListMocks } from './lists'
 import { registerVulnMocks } from './vuln'
+import { registerFirewallMocks } from './firewall'
 import { repoFiles, repoSkipped } from './repoFiles'
 import { registerNoiseMocks, reusedTriage } from './noise'
 import { registerNotificationMocks } from './notifications'
@@ -1827,3 +1828,4 @@ registerHealthMocks(route)
 registerHealthCheckMocks(route)
 registerListMocks(route)
 registerVulnMocks(route)
+registerFirewallMocks(route, fail)

@@ -221,6 +221,8 @@ func (c *Core) ReconcileAppControl(ctx context.Context) {
 // the Authenticode hashes of files the agent quarantined.
 func (c *Core) CommandFinished(ctx context.Context, host *store.Host, rec *store.CommandRecord) {
 	switch rec.Type {
+	case api.CmdFirewall:
+		c.firewallCommandFinished(ctx, host, rec) // firewall.go
 	case api.CmdAppControl:
 		st := c.appControlState(ctx, host.ID)
 		if st.CommandID != rec.ID {

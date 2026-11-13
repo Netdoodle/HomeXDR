@@ -13,6 +13,7 @@ import (
 
 	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/hostfw"
 )
 
 // ErrNotAllowed is returned when a host's local policy does not permit an action.
@@ -146,6 +147,24 @@ func validateParams(h *store.Host, typ string, params json.RawMessage) (json.Raw
 		}
 		if len(p.Rules) > api.AppControlMaxRules {
 			return nil, invalid("at most %d App Control rules", api.AppControlMaxRules)
+		}
+		v = p
+	case api.CmdFirewall:
+		var p api.FirewallParams
+		if err := decodeStrict(params, &p); err != nil {
+			return nil, err
+		}
+		if !slices.Contains(firewallPlatforms, h.OS.Platform) {
+			return nil, invalid("host firewall control is not available on %s hosts", h.OS.Platform)
+		}
+		if err := hostfw.CheckVersion(p.Version); err != nil {
+			return nil, invalid("%v", err)
+		}
+		if _, err := hostfw.Normalize(p.Rules, nil); err != nil {
+			return nil, invalid("%v", err)
+		}
+		if p.Rules == nil {
+			p.Rules = []api.FirewallRule{}
 		}
 		v = p
 	case api.CmdFileGet:
