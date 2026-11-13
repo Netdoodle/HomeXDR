@@ -36,6 +36,8 @@ function own(g: G, k: SettingKey): boolean | string | undefined {
       return g.policy.av.yara
     case 'action':
       return g.policy.av.action
+    case 'app_control':
+      return g.policy.av.app_control
     case 'ai_auto':
       return g.policy.ai?.auto
   }
@@ -43,7 +45,7 @@ function own(g: G, k: SettingKey): boolean | string | undefined {
 
 function globalOf(k: SettingKey): boolean | string {
   const s = avStatus.settings
-  return k === 'clamav' ? s.use_clamav : k === 'yara' ? s.use_yara : k === 'action' ? s.action : true
+  return k === 'clamav' ? s.use_clamav : k === 'yara' ? s.use_yara : k === 'action' ? s.action : k === 'app_control' ? s.app_control : true
 }
 
 function effective(id: string): Effective {
@@ -54,7 +56,7 @@ function effective(id: string): Effective {
     }
     return { value: globalOf(k) }
   }
-  return { clamav: one('clamav'), yara: one('yara'), action: one('action'), ai_auto: one('ai_auto') } as Effective
+  return { clamav: one('clamav'), yara: one('yara'), action: one('action'), app_control: one('app_control'), ai_auto: one('ai_auto') } as Effective
 }
 
 function view(): GroupsView {
@@ -70,7 +72,7 @@ function view(): GroupsView {
   }))
   return {
     org: { name: org },
-    global: { clamav: avStatus.settings.use_clamav, yara: avStatus.settings.use_yara, action: avStatus.settings.action, ai_auto: true },
+    global: { clamav: avStatus.settings.use_clamav, yara: avStatus.settings.use_yara, action: avStatus.settings.action, app_control: avStatus.settings.app_control, ai_auto: true },
     groups: out,
     ungrouped: hosts.filter((h) => h.kind === 'endpoint' && !h.group_id).length,
   }

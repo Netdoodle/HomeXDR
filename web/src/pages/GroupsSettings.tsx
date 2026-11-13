@@ -35,6 +35,7 @@ const GLOBAL_LINK: Record<string, string> = {
   clamav: '/settings/antivirus',
   yara: '/settings/antivirus',
   action: '/settings/antivirus',
+  app_control: '/settings/antivirus',
   ai_auto: '/settings/ai',
 }
 

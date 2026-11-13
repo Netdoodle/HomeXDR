@@ -112,6 +112,47 @@ Windows Defender (or another real-time antivirus) on. Only Microsoft's antivirus
 can replace Defender in Windows Security, and Defender's detections reach HomeXDR anyway
 through the eventlog sensor (alert "Windows Defender Threat Detected").
 
+## Windows App Control
+
+HomeXDR stops malware seconds after it starts. App Control goes further on Windows: every
+file the antivirus confirmed as malware goes into a Windows App Control (WDAC) policy,
+"HomeXDR block list", on each Windows host, and Windows' own code integrity then refuses
+to start it, on every PC and not only the one where it was found.
+
+| Mode | What Windows does |
+|---|---|
+| Off (default) | No HomeXDR policy; an applied one is removed |
+| Audit | Runs the file and logs CodeIntegrity event 3076 ("would have been blocked") |
+| Enforce | Refuses to run the file; logs event 3077 |
+
+The mode is under Settings → Antivirus ("Windows App Control for confirmed malware") and
+can be overridden per group (Settings → Groups). Start with Audit, check the
+`Microsoft-Windows-CodeIntegrity/Operational` log, then enforce.
+
+**What is blocked.** Malicious verdicts (ClamAV, YARA malware rules, threat intel, the
+blocklist) whose Authenticode hash is known, minus allowlisted hashes. YARA matches for
+hacking tools and suspicious traits are never blocked. App Control matches files by their
+Authenticode hash (the PE file without its signature), not the SHA-256 HomeXDR shows
+elsewhere, so a file joins the list once that hash is known: the server computes it for
+every file it uploads to scan, and the agent reports it when it quarantines a file. A
+hash on the blocklist that never ran on any host cannot be blocked yet; it is added the
+first time it is seen and quarantined. Settings → Antivirus → Windows App Control lists
+the blocked files and each Windows host's state.
+
+**How it is applied.** The server checks every minute whether each Windows host's policy
+matches its group's mode and the current list, and sends a signed `appcontrol.apply`
+command when it does not. The agent writes the policy (allow everything, deny these
+Authenticode SHA-256 and SHA-1 hashes, user-mode only), compiles it with
+`ConvertFrom-CIPolicy` and activates it with `CiTool --update-policy`: no reboot. Script
+enforcement is off in the policy, so PowerShell keeps its full language mode. Off (or an
+empty list) removes it with `CiTool --remove-policy`. HomeXDR only ever touches its own
+policy ID (`{E4AB46CA-CD05-4CB9-8AEB-D62DFD1225F2}`). Needs Windows 11 22H2 or later
+(Pro is enough; tested on Windows 11 Pro 25H2).
+
+Agents enrolled before App Control need `appcontrol.apply` in `allowed_actions` in their
+`agent.json` (the host shows "Not allowed" until then). To remove the policy by hand on a
+PC: `CiTool --remove-policy "{E4AB46CA-CD05-4CB9-8AEB-D62DFD1225F2}"`.
+
 ## Microsoft Defender actions
 
 On Windows hosts the host page's Actions tab has a **Microsoft Defender** card. It sends
@@ -154,5 +195,6 @@ Custom signatures go in ClamAV's database directory as `*.hsb` files (one
 | Method | Path | Role | |
 |---|---|---|---|
 | GET | `/api/antivirus` | viewer | Settings, ClamAV and YARA status, verdict counts, recent detections |
-| PUT | `/api/settings/antivirus` | admin | Settings: `enabled`, `action` (`quarantine` or `alert`), `scan_unknown`, `use_clamav`, `use_yara`, `use_intel`, `max_file_mb`, `blocked_hashes`, `allowed_hashes` |
+| GET | `/api/appcontrol` | viewer | App Control: global mode, blocked files, each Windows host's mode and state |
+| PUT | `/api/settings/antivirus` | admin | Settings: `enabled`, `action` (`quarantine` or `alert`), `scan_unknown`, `use_clamav`, `use_yara`, `app_control` (`off`, `audit`, `enforce`), `use_intel`, `max_file_mb`, `blocked_hashes`, `allowed_hashes` |
 | DELETE | `/api/antivirus/verdicts/{sha256}` | analyst | Forget a verdict |

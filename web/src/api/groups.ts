@@ -6,7 +6,7 @@ import { http } from './client'
 
 /** A group's overrides; a missing value inherits. */
 export interface GroupPolicy {
-  av: { clamav?: boolean; yara?: boolean; action?: 'quarantine' | 'alert' }
+  av: { clamav?: boolean; yara?: boolean; action?: 'quarantine' | 'alert'; app_control?: 'off' | 'audit' | 'enforce' }
   ai?: { auto?: boolean }
 }
 
@@ -21,6 +21,7 @@ export interface Effective {
   clamav: SettingSource
   yara: SettingSource
   action: SettingSource<string>
+  app_control: SettingSource<string>
   ai_auto: SettingSource
 }
 
@@ -36,12 +37,12 @@ export interface HostGroup {
 
 export interface GroupsView {
   org: { name: string }
-  global: { clamav: boolean; yara: boolean; action: string; ai_auto: boolean }
+  global: { clamav: boolean; yara: boolean; action: string; app_control: string; ai_auto: boolean }
   groups: HostGroup[]
   ungrouped: number
 }
 
-export type SettingKey = 'clamav' | 'yara' | 'action' | 'ai_auto'
+export type SettingKey = 'clamav' | 'yara' | 'action' | 'app_control' | 'ai_auto'
 
 /** One overridable setting: its choices, from strongest protection to weakest. */
 export interface SettingDef {
@@ -92,6 +93,18 @@ export const SETTINGS: SettingDef[] = [
     get: (p) => p.av.action,
     set: (p, v) => ({ ...p, av: { ...p.av, action: v as 'quarantine' | 'alert' | undefined } }),
     weaker: () => 'will only get an alert when malware runs: the process is not stopped and the file is not quarantined',
+  },
+  {
+    key: 'app_control',
+    label: 'App Control (Windows)',
+    choices: [
+      { value: 'enforce', label: 'Enforce' },
+      { value: 'audit', label: 'Audit' },
+      { value: 'off', label: 'Off' },
+    ],
+    get: (p) => p.av.app_control,
+    set: (p, v) => ({ ...p, av: { ...p.av, app_control: v as 'off' | 'audit' | 'enforce' | undefined } }),
+    weaker: () => 'will start confirmed malware again if it reappears, instead of Windows refusing to run it',
   },
   {
     key: 'ai_auto',

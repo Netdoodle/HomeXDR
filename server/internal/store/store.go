@@ -239,6 +239,9 @@ var columnMigrations = []struct{ table, column, def string }{
 	// Host groups.
 	{"hosts", "group_id", `TEXT NOT NULL DEFAULT ''`},
 	{"enrollment_tokens", "group_id", `TEXT NOT NULL DEFAULT ''`},
+	// Authenticode hashes of malicious files, for App Control.
+	{"av_verdicts", "auth_sha256", `TEXT NOT NULL DEFAULT ''`},
+	{"av_verdicts", "auth_sha1", `TEXT NOT NULL DEFAULT ''`},
 }
 
 // postMigrate runs after the column migrations (indexes on added columns).

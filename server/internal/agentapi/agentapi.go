@@ -424,6 +424,7 @@ func (h *Handler) result(w http.ResponseWriter, r *http.Request, host *store.Hos
 	}
 	if store.FinalStatus(rec.Status) {
 		h.recordResponseEvent(r.Context(), host, rec)
+		h.c.CommandFinished(r.Context(), host, rec)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

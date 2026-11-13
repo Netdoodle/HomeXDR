@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Netdoodle/homexdr/agent/internal/appcontrol"
 	"github.com/Netdoodle/homexdr/agent/internal/backoff"
 	"github.com/Netdoodle/homexdr/agent/internal/fileops"
 	"github.com/Netdoodle/homexdr/agent/internal/platform"
@@ -48,7 +49,9 @@ type Handler struct {
 	Files      *fileops.Store
 	// Defender drives Microsoft Defender Antivirus; nil where there is none.
 	Defender platform.Defender
-	Log      *slog.Logger
+	// AppControl applies App Control policies (Windows); nil elsewhere.
+	AppControl platform.AppControl
+	Log        *slog.Logger
 	// Platform is the event.Platform* name, used to check the artifact catalog.
 	Platform string
 
@@ -102,6 +105,8 @@ func timeout(typ string) time.Duration {
 		return time.Hour
 	case api.CmdDefender:
 		return 15 * time.Minute // signature updates and path scans of large files
+	case api.CmdAppControl:
+		return 10 * time.Minute
 	}
 	return 5 * time.Minute
 }
@@ -222,6 +227,25 @@ func (h *Handler) prepare(cmd *api.Command) (runFunc, error) {
 		}
 		return func(ctx context.Context) (any, int, error) {
 			r, err := h.Defender.Defender(ctx, p)
+			if err != nil {
+				return nil, 0, err
+			}
+			return r, 0, nil
+		}, nil
+
+	case api.CmdAppControl:
+		var p api.AppControlParams
+		if err := decodeParams(cmd.Params, &p); err != nil {
+			return nil, err
+		}
+		if h.AppControl == nil {
+			return nil, errors.New("App Control is only available on Windows")
+		}
+		if err := appcontrol.Validate(p); err != nil {
+			return nil, err
+		}
+		return func(ctx context.Context) (any, int, error) {
+			r, err := h.AppControl.AppControl(ctx, p)
 			if err != nil {
 				return nil, 0, err
 			}

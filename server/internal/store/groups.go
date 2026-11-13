@@ -44,6 +44,8 @@ type AVGroupPolicy struct {
 	YARA   *bool `json:"yara,omitempty"`
 	// Action is the response to malware: "quarantine" or "alert".
 	Action *string `json:"action,omitempty"`
+	// AppControl is the Windows App Control mode: "off", "audit" or "enforce".
+	AppControl *string `json:"app_control,omitempty"`
 }
 
 // AIGroupPolicy: whether the AI analyst investigates the group's alerts on its own
@@ -56,6 +58,9 @@ type AIGroupPolicy struct {
 func (p GroupPolicy) Validate() error {
 	if a := p.AV.Action; a != nil && *a != "quarantine" && *a != "alert" {
 		return &GroupError{"the antivirus response is quarantine or alert"}
+	}
+	if a := p.AV.AppControl; a != nil && *a != "off" && *a != "audit" && *a != "enforce" {
+		return &GroupError{"App Control is off, audit or enforce"}
 	}
 	return nil
 }

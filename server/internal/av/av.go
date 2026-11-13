@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/shared/authenticode"
 )
 
 const (
@@ -56,6 +57,9 @@ type Settings struct {
 	// can override them for their hosts (Deps.Scanners).
 	UseClamAV bool `json:"use_clamav"`
 	UseYARA   bool `json:"use_yara"`
+	// AppControl is the global Windows App Control mode for confirmed malware: off,
+	// audit or enforce (api.AppControl*); host groups can override it.
+	AppControl string `json:"app_control"`
 	// UseIntel looks hashes up with the threat intel sources configured under Settings →
 	// Threat intel (only hashes are sent, never files).
 	UseIntel      bool     `json:"use_intel"`
@@ -67,7 +71,7 @@ type Settings struct {
 // DefaultSettings: on, stopping and quarantining what it finds.
 func DefaultSettings() Settings {
 	return Settings{Enabled: true, Action: ActionQuarantine, ScanUnknown: true, UseClamAV: true, UseYARA: true,
-		UseIntel: true, MaxFileMB: 64}
+		UseIntel: true, MaxFileMB: 64, AppControl: "off"}
 }
 
 // InputError is a bad setting.
@@ -104,6 +108,13 @@ func (s Settings) validate() (Settings, error) {
 		s.Action = ActionQuarantine
 	default:
 		return s, &InputError{"action must be alert or quarantine"}
+	}
+	switch s.AppControl {
+	case "":
+		s.AppControl = "off"
+	case "off", "audit", "enforce":
+	default:
+		return s, &InputError{"App Control mode must be off, audit or enforce"}
 	}
 	if s.MaxFileMB <= 0 {
 		s.MaxFileMB = 64
@@ -449,11 +460,18 @@ func (s *Service) judge(ctx context.Context, c Candidate, want Scanners) (*Detec
 		return nil, fmt.Errorf("scan of %s: %w", c.Path, err)
 	}
 	s.scanned.Add(1)
+	// The file is here: its Authenticode hashes let App Control block it on Windows.
+	auth, _ := authenticode.File(path)
+	verdict := store.AVClean
 	if sig != "" {
-		return s.verdict(ctx, c, store.AVMalicious, source, sig)
+		verdict = store.AVMalicious
 	}
-	_, err = s.verdict(ctx, c, store.AVClean, source, "")
-	return nil, err
+	err = s.d.State.PutAVVerdict(ctx, &store.AVVerdict{SHA256: c.SHA256, Verdict: verdict, Source: source,
+		Signature: sig, Path: c.Path, HostID: c.HostID, AuthSHA256: auth.SHA256, AuthSHA1: auth.SHA1})
+	if sig == "" {
+		return nil, err
+	}
+	return &Detection{Source: source, Signature: sig}, err
 }
 
 // scanFile runs a fetched file through ClamAV and YARA. On a match it returns the

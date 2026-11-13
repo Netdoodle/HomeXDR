@@ -108,6 +108,12 @@ type Defender interface {
 	Defender(ctx context.Context, p api.DefenderParams) (api.DefenderResult, error)
 }
 
+// AppControl is optionally implemented by a Platform that can apply Windows App Control
+// policies (CmdAppControl).
+type AppControl interface {
+	AppControl(ctx context.Context, p api.AppControlParams) (api.AppControlResult, error)
+}
+
 // HostSetup is optionally implemented by a Platform whose sensors depend on host
 // settings that are off by default (Windows process auditing). `install` calls SetupHost
 // and `uninstall` calls RestoreHost, which puts back the settings from before the first
