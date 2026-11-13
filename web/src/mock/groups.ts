@@ -14,7 +14,7 @@ type G = { id: string; name: string; parent_id: string; policy: GroupPolicy; cre
 let org = 'Netdoodle'
 let seq = 0
 const groups: G[] = [
-  { id: 'g-dts', name: 'DTS Assets', parent_id: '', policy: { av: {} }, created_at: ago(9 * DAY) },
+  { id: 'g-dts', name: 'DTS Assets', parent_id: '', policy: { av: { defender_hardening: 'audit' } }, created_at: ago(9 * DAY) },
   { id: 'g-mkt', name: 'Marketing Dept', parent_id: 'g-dts', policy: { av: { yara: false } }, created_at: ago(9 * DAY) },
   { id: 'g-infra', name: 'Infrastructure Assets', parent_id: '', policy: { av: { clamav: true, action: 'alert' }, ai: { auto: false } }, created_at: ago(8 * DAY) },
   { id: 'g-linux', name: 'Linux Servers', parent_id: 'g-infra', policy: { av: {} }, created_at: ago(8 * DAY) },
@@ -40,11 +40,14 @@ function own(g: G, k: SettingKey): boolean | string | undefined {
       return g.policy.av.app_control
     case 'ai_auto':
       return g.policy.ai?.auto
+    case 'defender_hardening':
+      return g.policy.av.defender_hardening
   }
 }
 
 function globalOf(k: SettingKey): boolean | string {
   const s = avStatus.settings
+  if (k === 'defender_hardening') return s.defender_hardening
   return k === 'clamav' ? s.use_clamav : k === 'yara' ? s.use_yara : k === 'action' ? s.action : k === 'app_control' ? s.app_control : true
 }
 
@@ -56,7 +59,7 @@ function effective(id: string): Effective {
     }
     return { value: globalOf(k) }
   }
-  return { clamav: one('clamav'), yara: one('yara'), action: one('action'), app_control: one('app_control'), ai_auto: one('ai_auto') } as Effective
+  return { clamav: one('clamav'), yara: one('yara'), action: one('action'), app_control: one('app_control'), ai_auto: one('ai_auto'), defender_hardening: one('defender_hardening') } as Effective
 }
 
 function view(): GroupsView {
@@ -72,7 +75,7 @@ function view(): GroupsView {
   }))
   return {
     org: { name: org },
-    global: { clamav: avStatus.settings.use_clamav, yara: avStatus.settings.use_yara, action: avStatus.settings.action, app_control: avStatus.settings.app_control, ai_auto: true },
+    global: { clamav: avStatus.settings.use_clamav, yara: avStatus.settings.use_yara, action: avStatus.settings.action, app_control: avStatus.settings.app_control, ai_auto: true, defender_hardening: avStatus.settings.defender_hardening },
     groups: out,
     ungrouped: hosts.filter((h) => h.kind === 'endpoint' && !h.group_id).length,
   }

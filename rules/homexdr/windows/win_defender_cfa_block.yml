@@ -1,0 +1,25 @@
+title: Defender Controlled Folder Access Blocked A Write
+id: 33f78e2d-e200-47d2-aa39-8d1d72f53f1c
+status: experimental
+description: |
+  Microsoft Defender Controlled Folder Access stopped a program from changing files in a
+  protected folder (event 1123). HomeXDR's hardening keeps it in audit mode, so this
+  fires only where Controlled Folder Access was switched on by hand. Ransomware tries
+  exactly this; so do ordinary programs Defender does not know.
+author: HomeXDR
+date: 2026-11-13
+references:
+  - https://learn.microsoft.com/defender-endpoint/controlled-folders
+tags:
+  - attack.impact
+  - attack.t1486
+logsource:
+  product: windows
+  service: windefend
+detection:
+  selection:
+    EventID: 1123
+  condition: selection
+falsepositives:
+  - New or rarely used programs saving to Documents, Pictures or the Desktop
+level: low

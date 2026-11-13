@@ -6,7 +6,13 @@ import { http } from './client'
 
 /** A group's overrides; a missing value inherits. */
 export interface GroupPolicy {
-  av: { clamav?: boolean; yara?: boolean; action?: 'quarantine' | 'alert'; app_control?: 'off' | 'audit' | 'enforce' }
+  av: {
+    clamav?: boolean
+    yara?: boolean
+    action?: 'quarantine' | 'alert'
+    app_control?: 'off' | 'audit' | 'enforce'
+    defender_hardening?: 'off' | 'audit' | 'enforce'
+  }
   ai?: { auto?: boolean }
 }
 
@@ -23,6 +29,7 @@ export interface Effective {
   action: SettingSource<string>
   app_control: SettingSource<string>
   ai_auto: SettingSource
+  defender_hardening: SettingSource<string>
 }
 
 export interface HostGroup {
@@ -37,12 +44,12 @@ export interface HostGroup {
 
 export interface GroupsView {
   org: { name: string }
-  global: { clamav: boolean; yara: boolean; action: string; app_control: string; ai_auto: boolean }
+  global: { clamav: boolean; yara: boolean; action: string; app_control: string; ai_auto: boolean; defender_hardening: string }
   groups: HostGroup[]
   ungrouped: number
 }
 
-export type SettingKey = 'clamav' | 'yara' | 'action' | 'app_control' | 'ai_auto'
+export type SettingKey = 'clamav' | 'yara' | 'action' | 'app_control' | 'ai_auto' | 'defender_hardening'
 
 /** One overridable setting: its choices, from strongest protection to weakest. */
 export interface SettingDef {
@@ -105,6 +112,19 @@ export const SETTINGS: SettingDef[] = [
     get: (p) => p.av.app_control,
     set: (p, v) => ({ ...p, av: { ...p.av, app_control: v as 'off' | 'audit' | 'enforce' | undefined } }),
     weaker: () => 'will start confirmed malware again if it reappears, instead of Windows refusing to run it',
+  },
+  {
+    key: 'defender_hardening',
+    label: 'Defender hardening (Windows)',
+    choices: [
+      { value: 'enforce', label: 'Enforce' },
+      { value: 'audit', label: 'Audit' },
+      { value: 'off', label: 'Off' },
+    ],
+    get: (p) => p.av.defender_hardening,
+    set: (p, v) => ({ ...p, av: { ...p.av, defender_hardening: v as 'off' | 'audit' | 'enforce' | undefined } }),
+    weaker: () =>
+      "will have fewer Microsoft Defender protections: Attack Surface Reduction rules and Network Protection only log (Audit), or Defender's settings from before HomeXDR are put back (Off)",
   },
   {
     key: 'ai_auto',

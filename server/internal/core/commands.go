@@ -148,6 +148,12 @@ func validateParams(h *store.Host, typ string, params json.RawMessage) (json.Raw
 			return nil, invalid("at most %d App Control rules", api.AppControlMaxRules)
 		}
 		v = p
+	case api.CmdDefenderHarden:
+		p, err := validateHarden(h, params)
+		if err != nil {
+			return nil, err
+		}
+		v = p
 	case api.CmdFileGet:
 		var p api.FileGetParams
 		if err := decodeStrict(params, &p); err != nil {

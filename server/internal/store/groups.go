@@ -46,6 +46,9 @@ type AVGroupPolicy struct {
 	Action *string `json:"action,omitempty"`
 	// AppControl is the Windows App Control mode: "off", "audit" or "enforce".
 	AppControl *string `json:"app_control,omitempty"`
+	// DefenderHardening is the Microsoft Defender hardening mode: "off", "audit" or
+	// "enforce".
+	DefenderHardening *string `json:"defender_hardening,omitempty"`
 }
 
 // AIGroupPolicy: whether the AI analyst investigates the group's alerts on its own
@@ -61,6 +64,9 @@ func (p GroupPolicy) Validate() error {
 	}
 	if a := p.AV.AppControl; a != nil && *a != "off" && *a != "audit" && *a != "enforce" {
 		return &GroupError{"App Control is off, audit or enforce"}
+	}
+	if a := p.AV.DefenderHardening; a != nil && *a != "off" && *a != "audit" && *a != "enforce" {
+		return &GroupError{"Defender hardening is off, audit or enforce"}
 	}
 	return nil
 }

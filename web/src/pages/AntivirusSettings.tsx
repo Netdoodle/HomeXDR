@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { AppControlPanel } from './AppControlPanel'
+import { DefenderHardeningPanel } from './DefenderHardeningPanel'
 import { errorMessage } from '../api'
 import { avKeys, forgetAVVerdict, getAV, putAV, type AVSettings, type AVStatus } from '../api/antivirus'
 import { useCan } from '../components/Auth'
@@ -21,6 +22,7 @@ export function AntivirusTab() {
       <Status status={q.data} />
       <Form key={JSON.stringify(q.data.settings)} settings={q.data.settings} />
       <AppControlPanel />
+      <DefenderHardeningPanel />
       <Detections status={q.data} />
     </div>
   )
@@ -156,6 +158,23 @@ function Form({ settings }: { settings: AVSettings }) {
           </select>
           <span className="help">
             For every Windows host unless its group says otherwise. Start with Audit and check the CodeIntegrity log before enforcing.
+          </span>
+        </label>
+        <label className="field" style={{ maxWidth: 420 }}>
+          <span className="label">Microsoft Defender hardening</span>
+          <select
+            className="input"
+            value={s.defender_hardening ?? 'off'}
+            disabled={ro}
+            onChange={(e) => set({ defender_hardening: e.target.value as AVSettings['defender_hardening'] })}
+          >
+            <option value="off">Off: leave Defender's settings as they are</option>
+            <option value="audit">Audit: ASR rules and Network Protection log what they would block</option>
+            <option value="enforce">Enforce: ASR rules and Network Protection block</option>
+          </select>
+          <span className="help">
+            Attack Surface Reduction rules, Network Protection and Controlled Folder Access (always audit) on every Windows host unless its group says
+            otherwise. Start with Audit and check the Defender log (events 1122 and 1125) before enforcing.
           </span>
         </label>
         <label className="field" style={{ maxWidth: 260 }}>

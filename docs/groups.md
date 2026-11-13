@@ -29,6 +29,7 @@ filtered Hosts page.
 | Antivirus: scan with YARA | Settings → Antivirus | Inherit, On or Off |
 | Antivirus: malware response | Settings → Antivirus ("When malware is found") | Inherit, Stop and quarantine, or Alert only |
 | Windows App Control for confirmed malware | Settings → Antivirus | Inherit, Enforce, Audit or Off |
+| Microsoft Defender hardening (ASR rules, Network Protection, Controlled Folder Access) | Settings → Antivirus | Inherit, Enforce, Audit or Off |
 | AI analyst: investigate alerts automatically | Investigate (whenever the AI analyst is set up and automatic investigations are on) | Inherit, Investigate or Off |
 
 A group set to **Inherit** takes the value from its parent group; a parent group set to
@@ -37,7 +38,7 @@ Marketing Dept can turn YARA back on even when DTS Assets turned it off. The hos
 shows each value and the group it comes from.
 
 Choosing weaker protection than a group would adopt from above (a scanner off, alert only
-instead of stop and quarantine, AI investigations off) asks first: the dialog names where
+instead of stop and quarantine, Defender hardening in audit or off, AI investigations off) asks first: the dialog names where
 the setting comes from, how many hosts it affects (child groups that set it themselves are
 not) and what they lose. A group's AI analyst switch can only narrow what Settings → AI
 analyst allows: it never turns the AI analyst on.
@@ -64,7 +65,7 @@ only be deleted once it has no child groups. Every change is in the audit log
 | GET | `/api/groups` | viewer | Organisation, global values, groups in tree order with host counts and effective settings |
 | PUT | `/api/org` | admin | `{"name"}` |
 | POST | `/api/groups` | admin | `{"name", "parent_id"}` (`""` for a parent group) |
-| PATCH | `/api/groups/{id}` | admin | `{"name"}`, `{"parent_id"}`, `{"policy": {"av": {"clamav": false, "yara": true, "action": "alert", "app_control": "audit"}, "ai": {"auto": false}}}` (leave a key out to inherit) |
+| PATCH | `/api/groups/{id}` | admin | `{"name"}`, `{"parent_id"}`, `{"policy": {"av": {"clamav": false, "yara": true, "action": "alert", "app_control": "audit", "defender_hardening": "enforce"}, "ai": {"auto": false}}}` (leave a key out to inherit) |
 | GET | `/api/hosts?group=`, `/api/alerts?group=` | viewer | A group ID (with its child groups) or `none` |
 | POST | `/api/enrollment-tokens` | admin | `group_id` puts enrolled hosts in that group |
 | DELETE | `/api/groups/{id}` | admin | Hosts move up a level |

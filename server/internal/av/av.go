@@ -60,6 +60,10 @@ type Settings struct {
 	// AppControl is the global Windows App Control mode for confirmed malware: off,
 	// audit or enforce (api.AppControl*); host groups can override it.
 	AppControl string `json:"app_control"`
+	// DefenderHardening is the global Microsoft Defender hardening mode (ASR rules,
+	// Network Protection, Controlled Folder Access) for Windows hosts: off, audit or
+	// enforce (api.Hardening*); host groups can override it.
+	DefenderHardening string `json:"defender_hardening"`
 	// UseIntel looks hashes up with the threat intel sources configured under Settings →
 	// Threat intel (only hashes are sent, never files).
 	UseIntel      bool     `json:"use_intel"`
@@ -71,7 +75,7 @@ type Settings struct {
 // DefaultSettings: on, stopping and quarantining what it finds.
 func DefaultSettings() Settings {
 	return Settings{Enabled: true, Action: ActionQuarantine, ScanUnknown: true, UseClamAV: true, UseYARA: true,
-		UseIntel: true, MaxFileMB: 64, AppControl: "off"}
+		UseIntel: true, MaxFileMB: 64, AppControl: "off", DefenderHardening: "off"}
 }
 
 // InputError is a bad setting.
@@ -115,6 +119,13 @@ func (s Settings) validate() (Settings, error) {
 	case "off", "audit", "enforce":
 	default:
 		return s, &InputError{"App Control mode must be off, audit or enforce"}
+	}
+	switch s.DefenderHardening {
+	case "":
+		s.DefenderHardening = "off"
+	case "off", "audit", "enforce":
+	default:
+		return s, &InputError{"Defender hardening must be off, audit or enforce"}
 	}
 	if s.MaxFileMB <= 0 {
 		s.MaxFileMB = 64
