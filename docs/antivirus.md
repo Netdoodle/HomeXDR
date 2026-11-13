@@ -175,6 +175,113 @@ every action, `defender.action` must be in the agent's `allowed_actions` (it is 
 default list for new agents; add it to `agent.json` on hosts enrolled earlier) and is
 recorded in the audit log.
 
+## Defender hardening
+
+Microsoft Defender Antivirus has protections that are off on a fresh Windows install:
+Attack Surface Reduction (ASR) rules, Network Protection and Controlled Folder Access.
+HomeXDR can turn on a fixed, curated set of them on every Windows host, globally (Settings
+→ Antivirus, "Microsoft Defender hardening") or per group (Settings → Groups):
+
+| Mode | ASR rules | Network Protection | Controlled Folder Access |
+|---|---|---|---|
+| Off (default) | Put back as they were before HomeXDR | Put back | Put back |
+| Audit | Audit (event 1122) | Audit (event 1125) | Audit (event 1124) |
+| Enforce | Block (event 1121), except the PSExec/WMI rule, which stays in audit | Block (event 1126) | Audit (event 1124) |
+
+Start with Audit, search the Defender log for 1122 and 1125 events
+(`event.dataset:windows.windefend`) for a week or two, then enforce.
+
+**The ASR rules.** GUIDs are from Microsoft's
+[ASR rules reference](https://learn.microsoft.com/defender-endpoint/attack-surface-reduction-rules-reference):
+
+| Rule | GUID |
+|---|---|
+| Block abuse of exploited vulnerable signed drivers | `56a863a9-875e-4185-98a7-b882c64b5ce5` |
+| Block credential stealing from the Windows local security authority subsystem (lsass.exe) | `9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2` |
+| Block persistence through WMI event subscription | `e6db77e5-3df2-4cf1-b95a-636979351e5b` |
+| Block executable content from email client and webmail | `be9ba2d9-53ea-4cdc-84e5-9b1eeee46550` |
+| Block all Office applications from creating child processes | `d4f940ab-401b-4efc-aadc-ad5f3c50688a` |
+| Block Office applications from creating executable content | `3b576869-a4ec-4529-8536-b80a7769e899` |
+| Block Office applications from injecting code into other processes | `75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84` |
+| Block Office communication application from creating child processes | `26190899-1602-49e8-8b27-eb1d0a1ce869` |
+| Block Win32 API calls from Office macros | `92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b` |
+| Block Adobe Reader from creating child processes | `7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c` |
+| Block JavaScript or VBScript from launching downloaded executable content | `d3e037e1-3eb8-44c8-a917-57927947596d` |
+| Block execution of potentially obfuscated scripts | `5beb7efe-fd9a-4556-801d-275e5ffc04cc` |
+| Block untrusted and unsigned processes that run from USB | `b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4` |
+| Block process creations originating from PSExec and WMI commands (audit only) | `d1e49aac-8f56-4280-b9ba-993a6d77406c` |
+
+Left out on purpose: "Block executable files from running unless they meet a prevalence,
+age, or trusted list criterion" and "Use advanced protection against ransomware" (both
+block new, unknown programs, such as your own builds), "Block use of copied or
+impersonated system tools" (heuristic, blocks portable tools), "Block rebooting machine in
+Safe Mode" and "Block Webshell creation for Servers" (Exchange servers only). The
+PSExec/WMI rule stays in audit even under Enforce because it breaks remote management
+tools and installers that start processes through WMI.
+
+**Controlled Folder Access stays in audit mode**, in both Audit and Enforce: in block mode
+it stops every program Defender does not know from saving into Documents, Pictures, the
+Desktop and the other protected folders, which breaks ordinary programs (games, editors,
+your own scripts) until each one is allowed. The audit events still show what ransomware-
+like writes happen. To block, turn it on by hand on a host
+(`Set-MpPreference -EnableControlledFolderAccess Enabled`); HomeXDR does not weaken a
+setting that was stronger before it touched it (below), and the "Defender Controlled
+Folder Access Blocked A Write" rule alerts on its blocks.
+
+**How it is applied.** Like App Control: the server checks every minute whether each
+Windows host's applied mode matches its group's, and sends a signed `defender.harden`
+command when it does not. The command carries only the mode and a version (the profile
+revision); the rule list is built into the agent, so the command cannot change any other
+Defender setting. The agent uses Defender's PowerShell module: `Add-MpPreference
+-AttackSurfaceReductionRules_Ids ... -AttackSurfaceReductionRules_Actions` per rule (rules
+you set yourself for other GUIDs are never touched; `Set-MpPreference` would replace the
+whole list), and `Set-MpPreference -EnableNetworkProtection` /
+`-EnableControlledFolderAccess`. It then reads everything back with `Get-MpPreference`
+and reports what Defender actually has. A setting Defender kept (a Group Policy or MDM
+setting overrides local ones, the cmdlet was refused) is listed on the host's row and the
+host shows **Partly applied**; it is tried again daily. Defender in passive mode (another
+antivirus is the active one) fails the command: these protections only work when Defender
+is the active antivirus.
+
+**What Off puts back.** The first time HomeXDR changes a setting, the agent records the
+value from before in `defender-hardening.json` in its data directory (for example
+`C:\ProgramData\HomeXDR\data\`). Turning a mode on never weakens a setting that was stronger
+before (a rule you already had in Block stays in Block under Audit). Off is only sent to
+hosts HomeXDR hardened; it puts each setting back to its recorded value (an ASR rule that
+was not configured is removed from Defender's list again), but only where the setting still
+has the value HomeXDR gave it: one you changed by hand afterwards is left alone and named
+in the result. The record is then deleted. Uninstalling the agent does not undo the
+hardening: set the host's group to Off first.
+
+**Alerts.** Defender's events reach HomeXDR through the eventlog sensor. Blocks raise
+alerts from three shipped rules: "Defender Attack Surface Reduction Rule Blocked An
+Action" (1121, medium), "Defender Network Protection Blocked A Connection" (1126, medium)
+and "Defender Controlled Folder Access Blocked A Write" (1123, low). Audit events (1122,
+1124, 1125) are searchable but raise no alert. The rule GUID is in the event's `ID` field.
+To exempt a program from one rule, add an ASR exclusion on the host
+(`Add-MpPreference -AttackSurfaceReductionOnlyExclusions 'C:\Path\tool.exe'`), or move the
+host to a group with hardening Off or Audit.
+
+**Checking and undoing by hand** (elevated PowerShell on the host):
+
+```powershell
+# What Defender has now: rule GUIDs and actions (0 off, 1 block, 2 audit, 6 warn),
+# Network Protection and Controlled Folder Access (0 off, 1 on, 2 audit)
+$p = Get-MpPreference
+0..($p.AttackSurfaceReductionRules_Ids.Count - 1) | ForEach-Object {
+  "$($p.AttackSurfaceReductionRules_Ids[$_]) $($p.AttackSurfaceReductionRules_Actions[$_])" }
+$p.EnableNetworkProtection; $p.EnableControlledFolderAccess
+# What HomeXDR changed and the values from before
+Get-Content C:\ProgramData\HomeXDR\data\defender-hardening.json
+# Undo one rule / everything by hand
+Remove-MpPreference -AttackSurfaceReductionRules_Ids 9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2
+Set-MpPreference -EnableNetworkProtection Disabled -EnableControlledFolderAccess Disabled
+```
+
+Agents enrolled before this feature need `defender.harden` in `allowed_actions` in their
+`agent.json` (the host shows "Not allowed" until then). Every command is in the audit log
+(`defender.harden`).
+
 ## Setup
 
 `deploy/docker-compose.yml` runs `clamav/clamav` and the YARA scanner (built from
@@ -196,5 +303,6 @@ Custom signatures go in ClamAV's database directory as `*.hsb` files (one
 |---|---|---|---|
 | GET | `/api/antivirus` | viewer | Settings, ClamAV and YARA status, verdict counts, recent detections |
 | GET | `/api/appcontrol` | viewer | App Control: global mode, blocked files, each Windows host's mode and state |
-| PUT | `/api/settings/antivirus` | admin | Settings: `enabled`, `action` (`quarantine` or `alert`), `scan_unknown`, `use_clamav`, `use_yara`, `app_control` (`off`, `audit`, `enforce`), `use_intel`, `max_file_mb`, `blocked_hashes`, `allowed_hashes` |
+| GET | `/api/defender/hardening` | viewer | Defender hardening: global mode, profile revision, each Windows host's mode (and the group it comes from), status, message, failures and settings as Defender reports them |
+| PUT | `/api/settings/antivirus` | admin | Settings: `enabled`, `action` (`quarantine` or `alert`), `scan_unknown`, `use_clamav`, `use_yara`, `app_control` (`off`, `audit`, `enforce`), `defender_hardening` (`off`, `audit`, `enforce`), `use_intel`, `max_file_mb`, `blocked_hashes`, `allowed_hashes` |
 | DELETE | `/api/antivirus/verdicts/{sha256}` | analyst | Forget a verdict |

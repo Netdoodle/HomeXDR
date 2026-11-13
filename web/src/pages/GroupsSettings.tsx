@@ -36,6 +36,7 @@ const GLOBAL_LINK: Record<string, string> = {
   yara: '/settings/antivirus',
   action: '/settings/antivirus',
   app_control: '/settings/antivirus',
+  defender_hardening: '/settings/antivirus',
   ai_auto: '/settings/ai',
 }
 

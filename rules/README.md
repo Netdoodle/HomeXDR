@@ -13,8 +13,8 @@ HomeXDR loads [Sigma](https://sigmahq.io/) rules from three places:
 `rules/homexdr/` holds rules for what community rule sets leave out on a homelab: Docker and
 Unraid hosts, SSH, DNS lookups from a resolver's query log, OPNsense, macOS security events,
 and attempts to switch HomeXDR's own monitoring off. They load with the server and are tested
-in `server/internal/detect/homexdr_rules_test.go`, `homexdr_rules2_test.go` and
-`homexdr_rules_macos_test.go`.
+in `server/internal/detect/homexdr_rules_test.go`, `homexdr_rules2_test.go`,
+`homexdr_rules_macos_test.go` and `homexdr_rules_defender_test.go`.
 They are also published at [Netdoodle/HomeXDR-SIGMA-rules](https://github.com/Netdoodle/HomeXDR-SIGMA-rules).
 
 The OPNsense rules need its audit log: **System → Settings → Logging → Remote**, add `audit`
@@ -36,6 +36,9 @@ to the destination's Applications.
 | SSH Login With A Key HomeXDR Does Not Know | low | a key login whose key has no name under Settings -> Maintenance |
 | HomeXDR Agent Stopped Or Removed On Linux | high | `pkill`, `systemctl stop`, `plugin remove` or `uninstall` of the agent |
 | HomeXDR Agent Stopped Or Removed On Windows | high | `sc stop`/`delete`, `Stop-Service`, `taskkill` or `uninstall` of the agent service |
+| Defender Attack Surface Reduction Rule Blocked An Action | medium | Defender event 1121: an ASR rule in block mode stopped something ([Defender hardening](../docs/antivirus.md#defender-hardening)) |
+| Defender Network Protection Blocked A Connection | medium | Defender event 1126 |
+| Defender Controlled Folder Access Blocked A Write | low | Defender event 1123 (only where Controlled Folder Access blocks) |
 | Sysmon Or Process Auditing Turned Off | high | `sysmon -u`, `auditpol` disabling or clearing, `wevtutil sl ... /e:false` on the logs HomeXDR reads |
 | Package Installed Inside A Running Container | medium | `apk add`, `apt-get install`, `pip install` and similar after a container's start-up minutes |
 | Download Piped To A Shell Inside A Container | high | `curl ... \| sh` and `sh -c "$(wget ...)"` inside a container |

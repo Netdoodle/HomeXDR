@@ -54,6 +54,8 @@ type Handler struct {
 	Log        *slog.Logger
 	// Platform is the event.Platform* name, used to check the artifact catalog.
 	Platform string
+	// Hardening applies the Defender hardening profile (Windows); nil elsewhere.
+	Hardening platform.DefenderHardening
 
 	slow chan struct{} // limits concurrent artifact collections and uploads
 }
@@ -107,6 +109,8 @@ func timeout(typ string) time.Duration {
 		return 15 * time.Minute // signature updates and path scans of large files
 	case api.CmdAppControl:
 		return 10 * time.Minute
+	case api.CmdDefenderHarden:
+		return 5 * time.Minute
 	}
 	return 5 * time.Minute
 }
@@ -251,6 +255,9 @@ func (h *Handler) prepare(cmd *api.Command) (runFunc, error) {
 			}
 			return r, 0, nil
 		}, nil
+
+	case api.CmdDefenderHarden:
+		return h.prepareHarden(cmd)
 
 	case api.CmdFileHash:
 		var p api.FileHashParams

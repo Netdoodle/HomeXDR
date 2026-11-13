@@ -1,0 +1,25 @@
+title: Defender Attack Surface Reduction Rule Blocked An Action
+id: 9f5455a9-7b86-4415-9303-960ebc74786e
+status: experimental
+description: |
+  A Microsoft Defender Attack Surface Reduction rule in block mode stopped an action
+  (event 1121), for example an Office document starting a program or a process reading
+  lsass.exe memory. The rule GUID is in the event's ID field. Defender already blocked
+  it; find out what tried. Audit-mode hits (1122) are kept as events without an alert.
+author: HomeXDR
+date: 2026-11-13
+references:
+  - https://learn.microsoft.com/defender-endpoint/attack-surface-reduction-rules-reference
+tags:
+  - attack.execution
+  - attack.defense-evasion
+logsource:
+  product: windows
+  service: windefend
+detection:
+  selection:
+    EventID: 1121
+  condition: selection
+falsepositives:
+  - Line-of-business tools that start programs from Office or read lsass.exe memory
+level: medium

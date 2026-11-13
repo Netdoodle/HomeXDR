@@ -2,6 +2,7 @@
 
 import type { AVSettings, AVStatus } from '../api/antivirus'
 import type { Role } from '../api/types'
+import { hardeningRoutes } from './hardening'
 
 type Ctx = { params: Record<string, string>; body: unknown }
 type Route = (method: string, path: string, handler: (c: Ctx) => unknown, opts?: { role?: Role }) => void
@@ -10,7 +11,7 @@ const NOW = Date.now()
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
 
 export const status: AVStatus = {
-  settings: { enabled: true, action: 'quarantine', scan_unknown: true, use_clamav: true, use_yara: true, app_control: 'off', use_intel: true, max_file_mb: 64, blocked_hashes: [], allowed_hashes: [] },
+  settings: { enabled: true, action: 'quarantine', scan_unknown: true, use_clamav: true, use_yara: true, app_control: 'off', defender_hardening: 'off', use_intel: true, max_file_mb: 64, blocked_hashes: [], allowed_hashes: [] },
   clamd: { configured: true, ok: true, version: 'ClamAV 1.4.6/27450/Fri Nov  6 08:21:00 2026' },
   yara: { configured: true, ok: true, yara_version: '4.5.4', rules: 5128, package: 'YARA Forge core 2026-11-08', custom_files: 1, compiled: ago(3 * 3600_000) },
   verdicts: { clean: 214, known: 1310, malicious: 2, skipped: 3 },
@@ -69,6 +70,7 @@ export function antivirusRoutes(route: Route, fail: (status: number, message: st
       { host_id: 'h-laptop', hostname: 'LAPTOP-ALICE', mode: 'off', status: 'off', rules: 0 },
     ],
   }))
+  hardeningRoutes(route, () => status.settings.defender_hardening)
   route(
     'PUT',
     '/api/settings/antivirus',
