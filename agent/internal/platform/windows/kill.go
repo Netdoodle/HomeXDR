@@ -14,8 +14,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// responder implements process termination on Windows. Isolation is not implemented yet
-// (the embedded UnsupportedResponder rejects it).
+// responder implements process termination and network isolation (isolation.go) on
+// Windows.
 type responder struct {
 	platform.UnsupportedResponder
 	env platform.Env

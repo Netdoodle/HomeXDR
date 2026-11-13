@@ -63,8 +63,7 @@ func (*Platform) Sensors(cfg api.SensorsConfig, env platform.Env) []platform.Sen
 	return out
 }
 
-// Responder returns the Windows responder: process termination (isolation is not
-// implemented yet).
+// Responder returns the Windows responder: process termination and network isolation.
 func (*Platform) Responder(env platform.Env) platform.Responder { return responder{env: env} }
 
 // Collectors returns the Windows artifact collectors.

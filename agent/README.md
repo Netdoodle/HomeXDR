@@ -214,12 +214,26 @@ Credential Manager reads (5379) and PowerShell console startup notices
 
 Not covered yet on Windows: the network, file, registry, DNS and library sensors
 (Sysmon's network, file, registry and DNS events are forwarded by the eventlog sensor
-but not yet mapped to those categories), host isolation, the artifact collectors and
-self-update; the core reports those kinds as unavailable. `process.kill` works: it
+but not yet mapped to those categories), the artifact collectors and self-update; the
+core reports those kinds as unavailable. `process.kill` works: it
 checks the entity ID (creation time) through the same handle it terminates with, kills
 children before parents with `tree`, and refuses system-critical processes (`csrss.exe`,
 `lsass.exe`, `services.exe`, ...). File quarantine, restore, hash and get are
 cross-platform.
+
+Host isolation uses the Windows Filtering Platform (WFP), not Windows Firewall rules: a
+persistent provider and sublayer named **HomeXDR** (weight 0xFFFF, above Windows
+Firewall's) with filters at the ALE connect and receive/accept layers for IPv4 and IPv6.
+Loopback, the server's addresses and port, DNS to the adapters' resolvers, DHCP/DHCPv6 and
+`isolation_allow` are *hard* permits (the action right is cleared, so a Windows Firewall
+block rule cannot cut the agent off); everything else is blocked, and a Windows Firewall
+allow rule cannot let it back in. Changing the filters makes Windows re-authorise open
+connections, so existing connections to anything not allowed stop too. The filters are
+persistent: they stay through an agent restart and a reboot (they load when the Base
+Filtering Engine starts, before the agent) until the host is released. To remove them by
+hand, run `homexdr-agent uninstall` (it always releases first); `netsh wfp show filters`
+lists them under the HomeXDR provider, and `homexdr-agent status` shows whether the host
+is isolated.
 
 `homexdr-agent install` (from an elevated prompt) enrolls, sets up auditing as above and
 registers the **HomeXDR Agent** service (`HomeXDRAgent`, LocalSystem, automatic start),
