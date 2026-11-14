@@ -87,6 +87,13 @@ func (h *Handler) hostAction(w http.ResponseWriter, r *http.Request, u *store.Us
 		writeErr(w, http.StatusBadRequest, req.Type+" is sent by the server: manage it under Settings > Antivirus")
 		return
 	}
+	// A file pull can read anything on the host (SSH keys, browser data, password
+	// stores), so it is an admin action; the antivirus's own uploads are issued by the
+	// server and are not affected.
+	if req.Type == api.CmdFileGet && u.Role != store.RoleAdmin {
+		writeErr(w, http.StatusForbidden, "getting files from hosts needs the admin role")
+		return
+	}
 	host, err := h.c.State.GetHost(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.fail(w, err)

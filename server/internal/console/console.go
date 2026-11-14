@@ -53,7 +53,7 @@ func New(c *core.Core) *Handler {
 
 	h.route("GET /api/commands/{id}", viewer, h.getCommand)
 	h.route("GET /api/commands/{id}/rows", viewer, h.commandRows)
-	h.route("GET /api/commands/{id}/download", analyst, h.commandDownload)
+	h.route("GET /api/commands/{id}/download", admin, h.commandDownload)
 
 	h.route("POST /api/events/search", viewer, h.searchEvents)
 	h.route("GET /api/events/{id}", viewer, h.getEvent)
