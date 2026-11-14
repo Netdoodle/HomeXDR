@@ -154,6 +154,7 @@ func TestSystemTrees(t *testing.T) {
 		{"linux", "", "/etc/ld.so.preload", false},
 		{"linux", "", "/etc/ld.so.preloadx", true},
 		{"linux", "", "/usrx/evil", false},
+		{"linux", "", `/etc/cron.d\..\passwd`, true}, // a backslash is part of a Linux file name
 		{"linux", "", "/tmp/evil", false},
 		{"linux", "", "/home/u/.ssh/authorized_keys", false},
 		{"darwin", "", "/System/Library/Kernels/kernel", true},
@@ -170,11 +171,15 @@ func TestSystemTrees(t *testing.T) {
 }
 
 func TestQuarantineRefusesSystemFiles(t *testing.T) {
-	work := t.TempDir()
+	// Resolved, as the real system trees are (macOS temp folders sit behind /var -> /private/var).
+	work, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	s := NewStore(filepath.Join(t.TempDir(), "quarantine"))
 	sys := filepath.Join(work, "os")
 	os.MkdirAll(filepath.Join(sys, "tmp"), 0o755)
-	s.system = systemTrees{protected: []string{sys}, allowed: []string{filepath.Join(sys, "tmp")}, fold: runtime.GOOS == "windows"}
+	s.system = systemTrees{protected: []string{sys}, allowed: []string{filepath.Join(sys, "tmp")}, fold: runtime.GOOS == "windows", win: runtime.GOOS == "windows"}
 	core := filepath.Join(sys, "core.bin")
 	os.WriteFile(core, []byte("c"), 0o644)
 	if _, err := s.Quarantine(core); err == nil || !strings.Contains(err.Error(), "operating-system file") {
