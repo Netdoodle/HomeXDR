@@ -5,8 +5,12 @@ package linux
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 func TestLineageSSHSession(t *testing.T) {
@@ -74,5 +78,139 @@ func TestSSHKeyFromLogs(t *testing.T) {
 	e := parseAuth(authMsg{App: "sshd-session", PID: 3078858, Msg: "Accepted publickey for root from 192.168.10.52 port 12115 ssh2: ED25519 SHA256:WaETwa68OJhBShgClfIkGSkFhB7ppvxZJJ03HcZ4zoI", Time: time.Now()})
 	if e == nil || e.Labels["ssh_key"] != "SHA256:WaETwa68OJhBShgClfIkGSkFhB7ppvxZJJ03HcZ4zoI" || e.Data["ssh_key_type"] != "ED25519" {
 		t.Fatalf("auth event = %+v", e)
+	}
+}
+
+// keyWaitSetup points the log scan at a temp file, gives every session a fresh start time
+// and empties the login registry. It returns the log path.
+func keyWaitSetup(t *testing.T) string {
+	t.Helper()
+	f := filepath.Join(t.TempDir(), "syslog")
+	if err := os.WriteFile(f, []byte("Nov 14 08:00:00 Tower2 emhttpd: unrelated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldFiles, oldStart, oldReg := sshLogFiles, sessionStart, sshLogins
+	sshLogFiles = []string{f}
+	sessionStart = func(int64) time.Time { return time.Now().Add(-time.Second) }
+	sshLogins = &sshLoginRegistry{m: map[int64]sshLogin{}, miss: map[int64]time.Time{}}
+	t.Cleanup(func() { sshLogFiles, sessionStart, sshLogins = oldFiles, oldStart, oldReg })
+	return f
+}
+
+func appendLine(t *testing.T, path, line string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(line + "\n"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func sshEvent(name, session string) *event.Event {
+	return &event.Event{Process: &event.Process{Name: name}, Labels: map[string]string{"ssh_session": session}}
+}
+
+func TestKeyWaitLateLoginLine(t *testing.T) {
+	logf := keyWaitSetup(t)
+	const fp = "SHA256:WaETwa68OJhBShgClfIkGSkFhB7ppvxZJJ03HcZ4zoI"
+	got := make(chan *event.Event, 8)
+	out := platform.EmitterFunc(func(e *event.Event) { got <- e })
+	slots := make(chan struct{}, 4)
+
+	// Two commands of the same session, both started before the login line was logged.
+	evs := []*event.Event{sshEvent("bash", "4242"), sshEvent("sqlite3", "4242")}
+	for _, ev := range evs {
+		sess := keyPending(ev, time.Now())
+		if sess != 4242 {
+			t.Fatalf("keyPending = %d", sess)
+		}
+		keyWaiter{out: out, sess: sess, slots: slots}.Emit(ev)
+	}
+	select {
+	case e := <-got:
+		t.Fatalf("emitted before the login line: %+v", e.Labels)
+	case <-time.After(250 * time.Millisecond):
+	}
+	appendLine(t, logf, "Nov 14 08:00:01 Tower2 sshd-session[4242]: Accepted publickey for root from 192.168.10.52 port 50000 ssh2: ED25519 "+fp)
+	for range evs {
+		select {
+		case e := <-got:
+			if e.Labels["ssh_key"] != fp {
+				t.Fatalf("ssh_key = %q", e.Labels["ssh_key"])
+			}
+		case <-time.After(keyWaitMax):
+			t.Fatal("held event never emitted")
+		}
+	}
+	if k, ok := sshLogins.known(4242); !ok || k != fp {
+		t.Fatalf("registry = %q, %v", k, ok)
+	}
+	if len(slots) != 0 {
+		t.Fatalf("%d slots still held", len(slots))
+	}
+	// Later commands of the session no longer wait.
+	if sess := keyPending(sshEvent("ls", "4242"), time.Now()); sess != 0 {
+		t.Fatalf("known session still pending: %d", sess)
+	}
+}
+
+func TestKeyWaitTimesOut(t *testing.T) {
+	keyWaitSetup(t)
+	got := make(chan *event.Event, 1)
+	start := time.Now()
+	keyWaiter{out: platform.EmitterFunc(func(e *event.Event) { got <- e }), sess: 99, slots: make(chan struct{}, 1)}.Emit(sshEvent("bash", "99"))
+	select {
+	case e := <-got:
+		if e.Labels["ssh_key"] != "" {
+			t.Fatalf("ssh_key = %q", e.Labels["ssh_key"])
+		}
+		if d := time.Since(start); d < keyWaitMax-keyWaitStep || d > keyWaitMax+time.Second {
+			t.Fatalf("waited %v", d)
+		}
+	case <-time.After(keyWaitMax + 2*time.Second):
+		t.Fatal("event lost after the wait ran out")
+	}
+}
+
+func TestKeyWaitSkips(t *testing.T) {
+	keyWaitSetup(t)
+	now := time.Now()
+	if s := keyPending(sshEvent("sshd-session", "7"), now); s != 0 {
+		t.Fatalf("sshd's own process waited: %d", s)
+	}
+	labelled := sshEvent("bash", "7")
+	labelled.Labels["ssh_key"] = "SHA256:x"
+	if s := keyPending(labelled, now); s != 0 {
+		t.Fatalf("labelled event waited: %d", s)
+	}
+	if s := keyPending(&event.Event{Process: &event.Process{Name: "bash"}}, now); s != 0 {
+		t.Fatalf("event outside SSH waited: %d", s)
+	}
+	sshLogins.note(8, "") // a password login
+	if s := keyPending(sshEvent("bash", "8"), now); s != 0 {
+		t.Fatalf("password session waited: %d", s)
+	}
+	sessionStart = func(int64) time.Time { return now.Add(-time.Minute) }
+	if s := keyPending(sshEvent("bash", "9"), now); s != 0 {
+		t.Fatalf("old session waited: %d", s)
+	}
+	sessionStart = func(int64) time.Time { return time.Time{} }
+	if s := keyPending(sshEvent("bash", "9"), now); s != 0 {
+		t.Fatalf("ended session waited: %d", s)
+	}
+
+	// With every slot taken the event goes out at once, unlabelled.
+	var mu sync.Mutex
+	var sent []*event.Event
+	full := make(chan struct{}, 1)
+	full <- struct{}{}
+	keyWaiter{out: platform.EmitterFunc(func(e *event.Event) { mu.Lock(); sent = append(sent, e); mu.Unlock() }), sess: 10, slots: full}.Emit(sshEvent("bash", "10"))
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 1 {
+		t.Fatalf("full slots: %d events sent synchronously", len(sent))
 	}
 }

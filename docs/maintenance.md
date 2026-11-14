@@ -22,6 +22,8 @@ script starts carries the label, however deep it runs. The SSH key comes from th
 - **Linux:** sshd's `Accepted publickey ... ssh2: ED25519 SHA256:...` line, from journald, `/var/log/auth.log`
   or `/var/log/secure`. On systems that log sshd only to `/var/log/syslog` (Unraid), the agent reads that.
   The fingerprint is in the line with OpenSSH 9 and later, or with `LogLevel VERBOSE`.
+  A session's first commands often start before that line is written, so the agent holds their start
+  events for up to 1.5 seconds of a new session (off its event-reading path) until the line appears.
 - **Windows:** OpenSSH Server's `OpenSSH/Operational` channel, event 4. It is in the default Event Log
   channel list; add it under **Settings → Agent config** if your config lists channels explicitly.
 
