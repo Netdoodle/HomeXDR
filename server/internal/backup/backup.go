@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -149,6 +151,25 @@ func (s *Service) saveState(ctx context.Context) {
 
 var bucketRe = regexp.MustCompile(`^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$`)
 
+// privateHTTP reports whether endpoint is an http:// address on this host or a private
+// network (an IP address, or localhost), where archives do not cross the internet
+// unencrypted.
+func privateHTTP(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Scheme != "http" {
+		return false
+	}
+	if strings.EqualFold(u.Hostname(), "localhost") {
+		return true
+	}
+	a, err := netip.ParseAddr(u.Hostname())
+	if err != nil {
+		return false
+	}
+	a = a.Unmap()
+	return a.IsLoopback() || a.IsPrivate()
+}
+
 func (in Input) normalize(old Settings) (Settings, error) {
 	set := in.Settings
 	set.Endpoint = strings.TrimRight(strings.TrimSpace(set.Endpoint), "/")
@@ -177,8 +198,8 @@ func (in Input) normalize(old Settings) (Settings, error) {
 	set.SkipModules = mods
 	set.EnabledSince = old.EnabledSince
 	if set.Enabled {
-		if !strings.HasPrefix(set.Endpoint, "https://") && !strings.HasPrefix(set.Endpoint, "http://") {
-			return set, &InputError{"endpoint must start with https:// (for example https://s3.us-east-1.amazonaws.com)"}
+		if !strings.HasPrefix(set.Endpoint, "https://") && !privateHTTP(set.Endpoint) {
+			return set, &InputError{"endpoint must start with https:// (for example https://s3.us-east-1.amazonaws.com); http:// is only accepted for a private or loopback IP address"}
 		}
 		if !bucketRe.MatchString(set.Bucket) {
 			return set, &InputError{"bucket name: 3-63 lowercase letters, digits, dots and hyphens"}

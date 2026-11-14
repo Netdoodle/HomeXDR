@@ -59,6 +59,9 @@ type firewallRuntime struct {
 	addrMu  sync.Mutex
 	addrs   []netip.Addr
 	addrsAt time.Time
+	// resolved holds each server name's last successful lookup, used when a later lookup
+	// fails so a DNS outage does not shorten the list of addresses that are never blocked.
+	resolved map[string][]netip.Addr
 }
 
 // FirewallSettings are the global host firewall settings.
@@ -130,7 +133,12 @@ func (c *Core) ServerAddrs(ctx context.Context) []netip.Addr {
 		res, err := firewallLookup(lctx, n)
 		cancel()
 		if err != nil {
-			continue
+			res = rt.resolved[n]
+		} else {
+			if rt.resolved == nil {
+				rt.resolved = map[string][]netip.Addr{}
+			}
+			rt.resolved[n] = res
 		}
 		for _, a := range res {
 			add(a)

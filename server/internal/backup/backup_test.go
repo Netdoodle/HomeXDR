@@ -253,9 +253,18 @@ func TestSettingsValidation(t *testing.T) {
 		{Settings: Settings{Enabled: true, Endpoint: "https://s3.amazonaws.com", Bucket: "Bad_Bucket", AccessKeyID: "a", Secret: "b"}},
 		{Settings: Settings{Enabled: true, Endpoint: "https://s3.amazonaws.com", Bucket: "bkt"}},
 		{Settings: Settings{RunHour: 24}},
+		{Settings: Settings{Enabled: true, Endpoint: "http://s3.example.com", Bucket: "bkt", AccessKeyID: "a", Secret: "b"}},
+		{Settings: Settings{Enabled: true, Endpoint: "http://203.0.113.9:9000", Bucket: "bkt", AccessKeyID: "a", Secret: "b"}},
 	} {
 		if _, err := in.normalize(Settings{}); err == nil {
 			t.Errorf("%+v accepted", in.Settings)
+		}
+	}
+	// Plain http stays possible for a store on this host or a private network.
+	for _, ep := range []string{"http://127.0.0.1:9000", "http://192.168.20.20:9000", "http://localhost:9000", "http://[fd00::5]:9000"} {
+		in := Input{Settings: Settings{Enabled: true, Endpoint: ep, Bucket: "bkt", AccessKeyID: "a", Secret: "b"}}
+		if _, err := in.normalize(Settings{}); err != nil {
+			t.Errorf("%s: %v", ep, err)
 		}
 	}
 }

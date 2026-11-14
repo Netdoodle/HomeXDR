@@ -3,6 +3,7 @@ package adguard
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -225,6 +227,21 @@ func TestBadPasswordAndSecretsStayHidden(t *testing.T) {
 	}
 	if p.settings().Password == "" {
 		t.Fatal("an empty password field cleared the stored password")
+	}
+	// The stored password is not sent to another address: a test or save that changes
+	// the address needs the password again.
+	var hits atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+	defer other.Close()
+	var ie *InputError
+	if _, err := p.Test(ctx, Input{Settings: Settings{URL: other.URL, Username: "admin"}}); !errors.As(err, &ie) {
+		t.Fatalf("test at another address without a password: %v", err)
+	}
+	if _, err := p.Save(ctx, Input{Settings: Settings{Enabled: true, URL: other.URL, Username: "admin"}}); !errors.As(err, &ie) {
+		t.Fatalf("save at another address without a password: %v", err)
+	}
+	if hits.Load() != 0 {
+		t.Fatal("the other address was contacted")
 	}
 }
 
