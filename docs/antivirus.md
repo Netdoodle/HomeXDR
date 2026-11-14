@@ -134,10 +134,13 @@ blocklist) whose Authenticode hash is known, minus allowlisted hashes. YARA matc
 hacking tools and suspicious traits are never blocked. App Control matches files by their
 Authenticode hash (the PE file without its signature), not the SHA-256 HomeXDR shows
 elsewhere, so a file joins the list once that hash is known: the server computes it for
-every file it uploads to scan, and the agent reports it when it quarantines a file. A
-hash on the blocklist that never ran on any host cannot be blocked yet; it is added the
-first time it is seen and quarantined. Settings → Antivirus → Windows App Control lists
-the blocked files and each Windows host's state.
+every file it fetches to scan, after checking that the upload really has the SHA-256 the
+agent reported. The hash is never taken from an agent's word, because the list goes to
+every Windows host and one compromised agent could otherwise have any program blocked
+everywhere. Malware known only from threat intel or the blocklist, which the server never
+fetches, is still stopped and quarantined where it runs but is not on the App Control
+list. Settings → Antivirus → Windows App Control lists the blocked files and each Windows
+host's state.
 
 **How it is applied.** The server checks every minute whether each Windows host's policy
 matches its group's mode and the current list, and sends a signed `appcontrol.apply`

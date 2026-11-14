@@ -86,24 +86,32 @@ func TestAppControlReconcile(t *testing.T) {
 		t.Fatalf("view = %d %v", code, view)
 	}
 
-	// A quarantined blocklisted file records its hashes and joins the block list.
+	// Authenticode hashes an agent reports with a quarantine never reach the block list,
+	// which goes to every Windows host: not for a blocklisted hash, not for a file with a
+	// verdict (whose server-computed hashes stay), and not for one without.
 	blocked := strings.Repeat("4", 64)
 	set := c.AV.Settings()
 	set.BlockedHashes = []string{blocked}
 	c.AV.Save(ctx, set)
-	qout, _ := json.Marshal(api.QuarantineResult{ID: "q", OriginalPath: `C:\x\bad.exe`, SHA256: blocked, AuthSHA256: strings.Repeat("e", 64), AuthSHA1: strings.Repeat("f", 40)})
-	c.CommandFinished(ctx, h, &store.CommandRecord{Type: api.CmdFileQuarantine, Status: api.StatusCompleted, Output: qout})
-	if v, err := c.State.GetAVVerdict(ctx, blocked); err != nil || v.AuthSHA256 != strings.Repeat("e", 64) {
-		t.Fatalf("blocklisted verdict = %+v, %v", v, err)
+	for _, sha := range []string{blocked, strings.Repeat("1", 64), strings.Repeat("5", 64)} {
+		qout, _ := json.Marshal(api.QuarantineResult{ID: "q", OriginalPath: `C:\x\bad.exe`, SHA256: sha, AuthSHA256: strings.Repeat("e", 64), AuthSHA1: strings.Repeat("f", 40)})
+		c.CommandFinished(ctx, h, &store.CommandRecord{Type: api.CmdFileQuarantine, Status: api.StatusCompleted, Output: qout})
 	}
-	// A file quarantined by hand without a verdict is not added.
-	hand := strings.Repeat("5", 64)
-	qout, _ = json.Marshal(api.QuarantineResult{ID: "q2", SHA256: hand, AuthSHA256: strings.Repeat("9", 64)})
-	c.CommandFinished(ctx, h, &store.CommandRecord{Type: api.CmdFileQuarantine, Status: api.StatusCompleted, Output: qout})
-	if _, err := c.State.GetAVVerdict(ctx, hand); err == nil {
-		t.Fatal("a hand-quarantined file joined the block list")
+	if v, err := c.State.GetAVVerdict(ctx, strings.Repeat("1", 64)); err != nil || v.AuthSHA256 != a256 {
+		t.Fatalf("server-computed hashes were replaced: %+v, %v", v, err)
 	}
-	// The list changed: a new version goes out.
+	for _, sha := range []string{blocked, strings.Repeat("5", 64)} {
+		if _, err := c.State.GetAVVerdict(ctx, sha); err == nil {
+			t.Fatalf("an agent-reported hash made a verdict for %s", sha[:4])
+		}
+	}
+	c.ReconcileAppControl(ctx)
+	if cs := commands(); len(cs) != 1 {
+		t.Fatalf("agent-reported hashes changed the block list: %d commands", len(cs))
+	}
+	// The server scans another malicious file itself: the list changes and a new version goes out.
+	c.State.PutAVVerdict(ctx, &store.AVVerdict{SHA256: strings.Repeat("6", 64), Verdict: store.AVMalicious, Source: "clamav",
+		Signature: "Win.Trojan.Y", Path: `C:\x\bad.exe`, AuthSHA256: strings.Repeat("e", 64), AuthSHA1: strings.Repeat("f", 40)})
 	c.ReconcileAppControl(ctx)
 	if cs := commands(); len(cs) != 2 {
 		t.Fatalf("after the list grew: %d commands", len(cs))
