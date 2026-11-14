@@ -58,6 +58,32 @@ Reviews still to do:
 - syslog and NetFlow ingestion
 - the live server configuration on the home server
 
+### Agents away from home
+Keep full visibility and response for laptops off the home network by publishing only
+the agent port under one name (split DNS: the public address outside, the server's LAN
+address inside). The console stays on the LAN. Agents already pin the server's own CA and
+authenticate every request with a client certificate, so the work is hardening the parts
+that do not need a certificate before the port faces the internet:
+- **Rate limits** on enrollment, renewal and the other unauthenticated routes, per source
+  address, with failed enrollments in the audit log and an alert on repeated failures.
+- **Enrollment from inside only, by default.** A setting to accept enrollment only from
+  private addresses, so a leaked token is useless from the internet.
+- **Less to fetch without a certificate.** The installer scripts, agent downloads and CA
+  certificate stay available on the LAN; from outside they need a certificate or a token.
+- **Connection limits** for clients that never send a certificate, and a short handshake
+  timeout.
+- **A console view** of each host's last address and whether it is connecting from
+  outside, and a one-click revoke.
+- **A setup guide** for the port forward, split DNS and certificate names.
+
+### Data saver on metered networks
+Detect a metered or low-data connection (Windows connection cost, macOS expensive and
+constrained paths, NetworkManager's metered flag on Linux) and hold the large transfers
+until an unmetered one: antivirus file uploads, artifact collection, inventory and agent
+updates. Events, alerts and response commands are still sent immediately, so nothing is
+lost, only delayed. Holding antivirus uploads is a group setting (default: hold), and the
+host page shows when a host is on a metered network.
+
 ### Push host firewall blocks to OPNsense
 Send the addresses blocked under Settings → Firewall to OPNsense as an alias, for a
 network-wide block that also covers devices without the agent.
