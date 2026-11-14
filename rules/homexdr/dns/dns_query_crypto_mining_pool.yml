@@ -1,0 +1,51 @@
+title: DNS Lookup Of A Cryptocurrency Mining Pool
+id: 0f435b62-2313-43e8-8b84-bb8b9d37ef01
+status: experimental
+description: |
+  A device looked up a cryptocurrency mining pool. Unless you mine on purpose, this is a
+  coin miner: the most common thing installed on a compromised server, container or NAS,
+  and a sign that whoever installed it can run commands there.
+author: HomeXDR
+date: 2026-11-13
+references:
+  - https://attack.mitre.org/techniques/T1496/
+tags:
+  - attack.impact
+  - attack.t1496
+logsource:
+  category: dns
+detection:
+  selection:
+    QueryName|endswith:
+      - '.nanopool.org'
+      - '.supportxmr.com'
+      - '.minexmr.com'
+      - '.moneroocean.stream'
+      - '.hashvault.pro'
+      - '.herominers.com'
+      - '.xmrpool.eu'
+      - '.c3pool.com'
+      - '.c3pool.org'
+      - '.monerohash.com'
+      - 'pool.minergate.com'
+      - '.2miners.com'
+      - '.ethermine.org'
+      - '.f2pool.com'
+      - '.nicehash.com'
+      - '.unmineable.com'
+      - '.kryptex.network'
+      - '.miningpoolhub.com'
+      - '.zpool.ca'
+      - '.prohashing.com'
+      - '.antpool.com'
+      - '.flexpool.io'
+      - '.woolypooly.com'
+      - '.zergpool.com'
+      - '.mining-dutch.nl'
+      - 'donate.v2.xmrig.com'
+      - 'donate.ssl.xmrig.com'
+  condition: selection
+falsepositives:
+  - Mining you run yourself; add a filter for that host
+  - Reading a pool's website
+level: high

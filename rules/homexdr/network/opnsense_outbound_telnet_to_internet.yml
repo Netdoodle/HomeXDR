@@ -1,0 +1,45 @@
+title: Telnet Connection To The Internet
+id: c16b65bd-90af-46b0-9524-12cd3b65970b
+status: experimental
+description: |
+  The firewall passed a Telnet connection (port 23 or 2323) from a device on your network to
+  a public address. Almost nothing uses Telnet any more except botnets of the Mirai family,
+  which make an infected camera, recorder or router try Telnet logins across the internet to
+  spread. Look at which device it was; several of these to different addresses mean it is
+  infected.
+author: HomeXDR
+date: 2026-11-13
+references:
+  - https://attack.mitre.org/techniques/T1021/
+  - https://attack.mitre.org/techniques/T1110/
+tags:
+  - attack.lateral-movement
+  - attack.t1021
+  - attack.credential-access
+  - attack.t1110
+logsource:
+  product: opnsense
+  category: firewall
+detection:
+  selection:
+    event.action: 'pass'
+    Protocol: 'tcp'
+    DestinationPort:
+      - 23
+      - 2323
+    SourceIp|cidr:
+      - '10.0.0.0/8'
+      - '172.16.0.0/12'
+      - '192.168.0.0/16'
+  filter_local_destination:
+    DestinationIp|cidr:
+      - '10.0.0.0/8'
+      - '172.16.0.0/12'
+      - '192.168.0.0/16'
+      - '127.0.0.0/8'
+      - '100.64.0.0/10'
+      - '169.254.0.0/16'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - Telnet used on purpose, such as a text game (MUD) or an old device at another site
+level: medium

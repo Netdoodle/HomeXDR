@@ -1,0 +1,61 @@
+title: Remote Admin Or Database Port Allowed In From The Internet
+id: b51cbfd4-9ea1-48c1-b88f-dfe3d63ac976
+status: experimental
+description: |
+  The firewall passed a connection from a public address to a device on your network, on a
+  port for remote administration or a database (SSH, Telnet, RDP, VNC, SMB, WinRM, Docker,
+  MySQL, PostgreSQL, SQL Server, Redis, MongoDB). These are the services attackers scan the
+  internet for; one that is reachable is usually a port forward that was forgotten or opened
+  by UPnP. Only connections the firewall logs are seen: turn on logging for your port
+  forward and WAN pass rules.
+author: HomeXDR
+date: 2026-11-13
+references:
+  - https://attack.mitre.org/techniques/T1133/
+  - https://attack.mitre.org/techniques/T1190/
+tags:
+  - attack.initial-access
+  - attack.t1133
+  - attack.t1190
+logsource:
+  product: opnsense
+  category: firewall
+detection:
+  selection:
+    event.action: 'pass'
+    Protocol: 'tcp'
+    DestinationPort:
+      - 22
+      - 23
+      - 135
+      - 139
+      - 445
+      - 1433
+      - 2375
+      - 2376
+      - 3306
+      - 3389
+      - 5432
+      - 5900
+      - 5985
+      - 5986
+      - 6379
+      - 27017
+    DestinationIp|cidr:
+      - '10.0.0.0/8'
+      - '172.16.0.0/12'
+      - '192.168.0.0/16'
+  filter_local_source:
+    SourceIp|cidr:
+      - '10.0.0.0/8'
+      - '172.16.0.0/12'
+      - '192.168.0.0/16'
+      - '127.0.0.0/8'
+      - '100.64.0.0/10'
+      - '169.254.0.0/16'
+      - 'fc00::/7'
+      - 'fe80::/10'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - A service you expose on purpose; add a filter for its address and port
+level: high

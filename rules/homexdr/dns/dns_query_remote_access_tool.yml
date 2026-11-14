@@ -1,0 +1,46 @@
+title: DNS Lookup Of A Remote Desktop Service
+id: 7702293b-6f89-4ea0-90d4-a2bfa64c7c52
+status: experimental
+description: |
+  A device looked up the servers of a remote desktop tool (AnyDesk, TeamViewer, RustDesk,
+  ScreenConnect, Splashtop, LogMeIn, Atera, Zoho Assist, DWService, Getscreen and others).
+  Tech-support scammers talk people into installing these, and intruders install them to
+  keep access that looks like ordinary software. Expected on devices where you use one;
+  worth a look anywhere else. Add a filter for the tool you use.
+author: HomeXDR
+date: 2026-11-13
+references:
+  - https://attack.mitre.org/techniques/T1219/
+tags:
+  - attack.command-and-control
+  - attack.t1219
+logsource:
+  category: dns
+detection:
+  selection:
+    QueryName|endswith:
+      - '.net.anydesk.com'
+      - '.teamviewer.com'
+      - '.rustdesk.com'
+      - '.screenconnect.com'
+      - '.connectwise.com'
+      - '.splashtop.com'
+      - '.logmein.com'
+      - '.logmeinrescue.com'
+      - '.gotoassist.com'
+      - '.atera.com'
+      - 'assist.zoho.com'
+      - '.dwservice.net'
+      - '.getscreen.me'
+      - '.supremocontrol.com'
+      - '.ammyy.com'
+      - '.remoteutilities.com'
+      - '.fleetdeck.io'
+      - '.tmate.io'
+      - '.action1.com'
+      - '.simple-help.com'
+  condition: selection
+falsepositives:
+  - A remote desktop tool you or a family member use
+  - Visiting the vendor's website
+level: low
