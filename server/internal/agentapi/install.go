@@ -1,9 +1,16 @@
 package agentapi
 
 import (
+	_ "embed"
 	"net/http"
 	"strings"
 )
+
+// windowsInstall is the Windows installer (served as windows.ps1). Like the Unix script it
+// checks the server's CA against the pin before downloading the agent.
+//
+//go:embed windows.ps1
+var windowsInstall string
 
 // unixInstall installs the agent on Linux and macOS (served as linux.sh and macos.sh). It verifies the server's CA against the pin
 // before downloading anything else, so the binary is fetched over a verified TLS
@@ -84,6 +91,11 @@ fi
 func (h *Handler) installScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
 	_, _ = w.Write([]byte(strings.Replace(unixInstall, "__SERVER__", shellSafe(h.c.Cfg.AgentURL), 1)))
+}
+
+func (h *Handler) windowsInstallScript(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(strings.Replace(windowsInstall, "__SERVER__", shellSafe(h.c.Cfg.AgentURL), 1)))
 }
 
 func (h *Handler) caCert(w http.ResponseWriter, r *http.Request) {

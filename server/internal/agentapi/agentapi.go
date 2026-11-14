@@ -42,6 +42,7 @@ func New(c *core.Core) *Handler {
 	h.mux.HandleFunc("POST "+api.PathEnroll, h.enroll)
 	h.mux.HandleFunc("GET /v1/install/linux.sh", h.installScript)
 	h.mux.HandleFunc("GET /v1/install/macos.sh", h.installScript)
+	h.mux.HandleFunc("GET /v1/install/windows.ps1", h.windowsInstallScript)
 	h.mux.HandleFunc("GET /v1/ca.crt", h.caCert)
 	h.agentRoutes()
 	return h
