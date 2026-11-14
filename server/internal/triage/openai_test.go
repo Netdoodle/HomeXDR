@@ -202,6 +202,28 @@ func TestProviderSettings(t *testing.T) {
 	if set.EndpointURL() != "https://api.openai.com/v1" {
 		t.Fatalf("endpoint %q", set.EndpointURL())
 	}
+	// An environment key is not sent to a custom base URL unless HOMEXDR_AI_BASE_URL
+	// approves it.
+	t.Setenv(EnvBaseURL, "")
+	other := set
+	other.BaseURL = "https://collector.example/v1"
+	if key, _ := KeyFor(other, ProviderOpenAI); key != "" {
+		t.Fatalf("env key sent to a custom base URL: %q", key)
+	}
+	if ok, why := f.svc.Ready(other); ok || !strings.Contains(why, EnvBaseURL) {
+		t.Fatalf("held-back key: %v %q", ok, why)
+	}
+	if key, _ := KeyFor(Settings{Provider: ProviderOpenAI, BaseURL: "https://api.openai.com/v1/"}, ProviderOpenAI); key != "sk-env-openai" {
+		t.Fatal("env key not used for the provider's own endpoint")
+	}
+	t.Setenv(EnvBaseURL, "https://collector.example/v1/")
+	if key, src := KeyFor(other, ProviderOpenAI); key != "sk-env-openai" || src != "environment" {
+		t.Fatalf("approved base URL: %q %q", key, src)
+	}
+	t.Setenv("HOMEXDR_ANTHROPIC_API_KEY", "sk-env-claude")
+	if key, _ := KeyFor(Settings{Provider: ProviderAnthropic, BaseURL: "https://x.example"}, ProviderAnthropic); key != "sk-env-claude" {
+		t.Fatal("Claude env key held back")
+	}
 	bad := set
 	bad.BaseURL = "file:///etc/passwd"
 	if err := bad.Validate(); err == nil {
