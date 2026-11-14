@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Netdoodle/homexdr/server/internal/store"
@@ -143,8 +144,9 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request, u *store.Us
 func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request, u *store.User) {
 	id := r.PathValue("id")
 	var req struct {
-		Role     string `json:"role"`
-		Password string `json:"password"`
+		Role            string `json:"role"`
+		Password        string `json:"password"`
+		CurrentPassword string `json:"current_password"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -153,6 +155,21 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request, u *store.Use
 	if !isAdmin && (id != u.ID || req.Role != "") {
 		writeErr(w, http.StatusForbidden, "you can only change your own password")
 		return
+	}
+	// Your own password changes only with the current one, so a session left open (or a
+	// stolen cookie) is not enough to take the account over. Counted like failed logins.
+	if req.Password != "" && id == u.ID {
+		key := h.clientIP(r) + "|" + strings.ToLower(u.Username)
+		if !h.limiter.allow(key) {
+			writeErr(w, http.StatusTooManyRequests, "too many failed attempts; try again in 15 minutes")
+			return
+		}
+		if _, err := h.c.State.Authenticate(r.Context(), u.Username, req.CurrentPassword); err != nil {
+			h.limiter.fail(key)
+			h.c.Audit(r.Context(), u.Username, "user.password.failed", u.ID, "wrong current password")
+			writeErr(w, http.StatusForbidden, "the current password is not right")
+			return
+		}
 	}
 	nu, err := h.c.State.UpdateUser(r.Context(), id, req.Role, req.Password)
 	if err != nil {

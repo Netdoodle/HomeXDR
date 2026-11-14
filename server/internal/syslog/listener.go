@@ -39,7 +39,8 @@ type item struct {
 	ev   *event.Event
 }
 
-// New returns a listener. allow restricts sources (empty = any).
+// New returns a listener. allow restricts sources (empty = any; the server passes
+// config.LocalNetworks when none is set).
 func New(c *core.Core, allow []netip.Prefix) *Listener {
 	return &Listener{c: c, allow: allow, in: make(chan item, 10000)}
 }
@@ -80,7 +81,7 @@ func (l *Listener) allowed(ip string) bool {
 	if err != nil {
 		return false
 	}
-	a = a.Unmap()
+	a = a.Unmap().WithZone("")
 	for _, p := range l.allow {
 		if p.Contains(a) {
 			return true

@@ -295,6 +295,13 @@ func (s *Store) RevokeHost(ctx context.Context, id string) error {
 	return err
 }
 
+// MaxNewNetworkHostsPerHour limits how many network devices log and flow sources can add.
+const MaxNewNetworkHostsPerHour = 25
+
+// ErrTooManyNewHosts means the limit was reached; the source's events are dropped until
+// the hour has passed.
+var ErrTooManyNewHosts = errors.New("too many new network devices in the last hour")
+
 // EnsureNetworkHost returns the network-device host for a syslog source IP, creating it
 // on first sight, and refreshes last_seen.
 func (s *Store) EnsureNetworkHost(ctx context.Context, sourceIP, name, vendor string) (*Host, error) {
@@ -309,6 +316,16 @@ func (s *Store) EnsureNetworkHost(ctx context.Context, sourceIP, name, vendor st
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return nil, err
+	}
+	// Syslog and flows arrive over UDP, where the sender's address can be made up: without
+	// a limit, one sender could fill the console with devices.
+	var recent int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM hosts WHERE kind = 'network' AND enrolled_at > ?`,
+		ts(time.Now().Add(-time.Hour))).Scan(&recent); err != nil {
+		return nil, err
+	}
+	if recent >= MaxNewNetworkHostsPerHour {
+		return nil, ErrTooManyNewHosts
 	}
 	if name == "" {
 		name = sourceIP

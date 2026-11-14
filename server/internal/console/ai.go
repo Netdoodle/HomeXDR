@@ -138,8 +138,20 @@ func (h *Handler) mergeAISettings(r *http.Request, req aiSettingsRequest) triage
 	case strings.TrimSpace(next.APIKey) != "":
 		next.APIKeys[next.Provider] = strings.TrimSpace(next.APIKey)
 		next.APIKey = ""
+	case customEndpointChanged(cur, next):
+		// A stored key was entered for the endpoint in use then. It is not sent to a
+		// different one (saving, testing or listing models): the key has to be typed
+		// again, so pointing the provider at another server cannot be used to read it.
+		delete(next.APIKeys, next.Provider)
 	}
 	return next
+}
+
+// customEndpointChanged reports whether the selected provider would now talk to a
+// custom base URL it was not talking to before.
+func customEndpointChanged(cur, next triage.Settings) bool {
+	norm := func(u string) string { return strings.TrimRight(strings.TrimSpace(u), "/") }
+	return norm(next.BaseURL) != "" && (norm(next.BaseURL) != norm(cur.BaseURL) || next.Provider != cur.Provider)
 }
 
 func (h *Handler) putAISettings(w http.ResponseWriter, r *http.Request, u *store.User) {

@@ -222,7 +222,7 @@ export const getAgentConfig = () => http.get<AgentConfig>('/api/agent-config')
 export const putAgentConfig = (c: AgentConfig) => http.put<AgentConfig>('/api/agent-config', c)
 export const listUsers = () => http.get<{ users: User[] }>('/api/users')
 export const createUser = (u: { username: string; password: string; role: Role }) => http.post<User>('/api/users', u)
-export const patchUser = (id: string, p: { role?: Role; password?: string }) => http.patch<User>(`/api/users/${enc(id)}`, p)
+export const patchUser = (id: string, p: { role?: Role; password?: string; current_password?: string }) => http.patch<User>(`/api/users/${enc(id)}`, p)
 export const deleteUser = (id: string) => http.del(`/api/users/${enc(id)}`)
 export const audit = (limit = 100, offset = 0) =>
   http.get<{ entries: AuditEntry[]; total: number }>('/api/audit', { limit, offset })
