@@ -4,6 +4,7 @@ package linux
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -186,8 +187,9 @@ func (s *authSensor) follow(ctx context.Context, journalctl string, args []strin
 		return err
 	}
 	s.env.Log.Info("auth sensor running", "source", "journald")
-	sc := bufio.NewScanner(stdout)
-	sc.Buffer(make([]byte, 64<<10), 4<<20)
+	// journalctl --follow never exits by itself: stop it whenever this loop ends.
+	defer func() { _ = cmd.Process.Kill() }()
+	br := bufio.NewReaderSize(stdout, 256<<10)
 	var cursor string
 	lastSave := time.Now()
 	save := func() {
@@ -196,8 +198,15 @@ func (s *authSensor) follow(ctx context.Context, journalctl string, args []strin
 		}
 	}
 	defer save()
-	for sc.Scan() {
-		m, c, ok := parseJournalLine(sc.Bytes())
+	for {
+		line, tooLong, err := readJournalLine(br)
+		if err != nil {
+			break
+		}
+		if tooLong {
+			continue // an entry a user can make as large as they like; the sensor goes on
+		}
+		m, c, ok := parseJournalLine(line)
 		if !ok {
 			continue
 		}
@@ -219,6 +228,30 @@ func (s *authSensor) follow(ctx context.Context, journalctl string, args []strin
 		return fmt.Errorf("journalctl: %w", werr)
 	}
 	return errors.New("journalctl stopped")
+}
+
+// maxJournalLine is the longest journal entry the auth sensor parses.
+const maxJournalLine = 4 << 20
+
+// readJournalLine reads one line. A line over maxJournalLine is skipped to its end and
+// reported as tooLong, without holding it in memory.
+func readJournalLine(br *bufio.Reader) (line []byte, tooLong bool, err error) {
+	for {
+		part, err := br.ReadSlice('\n')
+		if !tooLong {
+			if line = append(line, part...); len(line) > maxJournalLine {
+				line, tooLong = nil, true
+			}
+		}
+		switch {
+		case err == nil:
+			return bytes.TrimRight(line, "\r\n"), tooLong, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		default:
+			return nil, tooLong, err
+		}
+	}
 }
 
 func anyNonEmpty(files []string) bool {

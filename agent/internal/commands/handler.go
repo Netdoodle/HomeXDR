@@ -126,6 +126,13 @@ func timeout(typ string) time.Duration {
 }
 
 func (h *Handler) execute(parent context.Context, cmd *api.Command) {
+	// A command must not be able to take the agent down: a panic fails that command only.
+	defer func() {
+		if r := recover(); r != nil {
+			h.Log.Error("command panicked", "id", cmd.ID, "type", cmd.Type, "panic", fmt.Sprint(r))
+			h.post(parent, api.CommandResult{CommandID: cmd.ID, Status: api.StatusFailed, Error: "the agent hit an internal error running this command"})
+		}
+	}()
 	// Prepare (validate params) before reporting "running", so bad params are rejected.
 	run, err := h.prepare(cmd)
 	if err != nil {

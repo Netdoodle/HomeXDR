@@ -31,9 +31,31 @@ port on each agent, and canary tokens. The ransomware bait files (under Later) b
 part of this.
 
 ### Security reviews
-Reviews still to do, with fixes as they turn up:
-- the agent's platform sensors (about 17,000 lines, run as root or SYSTEM on every host)
-- host firewall control, backup and restore, notifications and the AdGuard integration
+The agent's sensors and the integrations (host firewall, backup, notifications, DNS
+resolvers) were reviewed in November 2026 and the quick fixes are in. Found and still open:
+- **Labels a local user can forge.** On Linux the `maintenance`, `ssh_session`, `ssh_key`
+  and container labels are derived from a process's own arguments, name or cgroup, and
+  from log lines any user can write. They feed alert suppression, so they must come from
+  facts a user cannot set (root-owned sshd by path, runtime-owned cgroups). On Windows SSH
+  tagging trusts the image name `sshd.exe`, and `sshd-session.exe` is not recognised.
+- **The Windows program-data folder.** Only the data folder and the config file get a
+  locked-down ACL. The parent folder must be created, owned and protected by the installer,
+  which should refuse a folder someone else made first.
+- **Executable hash cache.** The cache key (file identity, size, modification time) can be
+  kept the same by the file's owner while the content changes. Add the change time (file
+  ID and USN on Windows) and do not cache files a user can write.
+- **File event rate limit.** One limit covers every path, so a flood in a temp folder can
+  hide a write to a system path. Limit per tree and never drop system paths.
+- **Network paths on Windows.** File details for a program started from a network share
+  are read on the event reader, which a slow share can stall.
+- **Backup import.** Check each archive against the hash recorded when it was made, reject
+  events outside the day being imported, and cap the decompressed size.
+- **Links in tailed and integrity-monitored paths**, which only matters when an
+  administrator points them at a folder a user can write.
+
+Reviews still to do:
+- the rest of the agent: the network sensors, software inventory, enrollment and self-update
+- syslog and NetFlow ingestion
 - the live server configuration on the home server
 
 ### Push host firewall blocks to OPNsense

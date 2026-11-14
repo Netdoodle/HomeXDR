@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"github.com/Netdoodle/homexdr/agent/internal/safefile"
 	"os"
 	"path/filepath"
 	"strings"
@@ -175,13 +176,13 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 	}
 
 	// cron
-	if b, err := os.ReadFile("/etc/crontab"); err == nil {
+	if b, err := safefile.Read("/etc/crontab", safefile.Max); err == nil {
 		for _, e := range parseCrontab(b, true, "") {
 			add(autorunRow("cron", "/etc/crontab", e[0], e[2], e[1], true), commandBinary(e[2]))
 		}
 	}
 	for _, p := range listDir("/etc/cron.d") {
-		if b, err := os.ReadFile(p); err == nil {
+		if b, err := safefile.Read(p, safefile.Max); err == nil {
 			for _, e := range parseCrontab(b, true, "") {
 				add(autorunRow("cron", p, e[0], e[2], e[1], true), commandBinary(e[2]))
 			}
@@ -192,7 +193,7 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 			if st, err := os.Stat(p); err != nil || st.IsDir() {
 				continue
 			}
-			if b, err := os.ReadFile(p); err == nil {
+			if b, err := safefile.Read(p, safefile.Max); err == nil {
 				for _, e := range parseCrontab(b, false, filepath.Base(p)) {
 					add(autorunRow("cron", p, e[0], e[2], e[1], true), commandBinary(e[2]))
 				}
@@ -231,7 +232,7 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 			return // masked, dangling, or already listed (aliases and .wants links)
 		}
 		seenUnit[real] = true
-		b, err := os.ReadFile(real)
+		b, err := safefile.Read(real, safefile.Max)
 		if err != nil {
 			return
 		}
@@ -258,7 +259,7 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 	for _, p := range listDir("/etc/init.d") {
 		add(autorunRow("initd", "/etc/init.d", filepath.Base(p), p, "root", true), p)
 	}
-	if b, err := os.ReadFile("/etc/ld.so.preload"); err == nil {
+	if b, err := safefile.Read("/etc/ld.so.preload", safefile.Max); err == nil {
 		for _, lib := range strings.Fields(string(b)) {
 			if !strings.HasPrefix(lib, "#") {
 				add(autorunRow("ld_preload", "/etc/ld.so.preload", filepath.Base(lib), lib, "", true), lib)
@@ -266,7 +267,7 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 		}
 	}
 	for _, p := range append([]string{"/etc/modules"}, listDir("/etc/modules-load.d")...) {
-		if b, err := os.ReadFile(p); err == nil {
+		if b, err := safefile.Read(p, safefile.Max); err == nil {
 			sc := bufio.NewScanner(bytes.NewReader(b))
 			for sc.Scan() {
 				m := strings.TrimSpace(sc.Text())
@@ -284,14 +285,14 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 		}
 	}
 	for _, p := range listDir("/etc/xdg/autostart") {
-		if b, err := os.ReadFile(p); err == nil && strings.HasSuffix(p, ".desktop") {
+		if b, err := safefile.Read(p, safefile.Max); err == nil && strings.HasSuffix(p, ".desktop") {
 			cmd, on := parseDesktopExec(b)
 			add(autorunRow("xdg_autostart", p, filepath.Base(p), cmd, "", on), commandBinary(cmd))
 		}
 	}
 
 	// Per-user locations.
-	if pb, err := os.ReadFile(passwdFile); err == nil {
+	if pb, err := safefile.Read(passwdFile, safefile.Max); err == nil {
 		seenHome := map[string]bool{}
 		for _, u := range parsePasswd(pb) {
 			if u.Home == "" || u.Home == "/" || seenHome[u.Home] {
@@ -309,7 +310,7 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 			}
 			for _, f := range []string{".ssh/authorized_keys", ".ssh/authorized_keys2"} {
 				p := filepath.Join(u.Home, f)
-				b, err := os.ReadFile(p)
+				b, err := safefile.Read(p, safefile.Max)
 				if err != nil {
 					continue
 				}
@@ -332,7 +333,7 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 				}
 			}
 			for _, p := range listDir(filepath.Join(u.Home, ".config/autostart")) {
-				if b, err := os.ReadFile(p); err == nil && strings.HasSuffix(p, ".desktop") {
+				if b, err := safefile.Read(p, safefile.Max); err == nil && strings.HasSuffix(p, ".desktop") {
 					cmd, on := parseDesktopExec(b)
 					add(autorunRow("xdg_autostart", p, filepath.Base(p), cmd, u.Name, on), commandBinary(cmd))
 				}

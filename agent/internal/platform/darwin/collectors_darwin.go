@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"github.com/Netdoodle/homexdr/agent/internal/safefile"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -267,7 +268,7 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 	}
 	launchd := func(typ, dir, owner string) {
 		for _, p := range plistFiles(dir) {
-			b, err := os.ReadFile(p)
+			b, err := safefile.Read(p, safefile.Max)
 			if err != nil {
 				continue
 			}
@@ -307,7 +308,7 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 		}
 	}
 	// cron: /etc/crontab and per-user crontabs.
-	if b, err := os.ReadFile("/etc/crontab"); err == nil {
+	if b, err := safefile.Read("/etc/crontab", safefile.Max); err == nil {
 		for _, e := range parseCrontab(b, true) {
 			r := autorunRow("cron", "/etc/crontab", e.Schedule, e.Command, e.User, true)
 			add(r, commandBinary(e.Command))
@@ -316,7 +317,7 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 	if ents, err := os.ReadDir("/usr/lib/cron/tabs"); err == nil {
 		for _, ent := range ents {
 			p := filepath.Join("/usr/lib/cron/tabs", ent.Name())
-			if b, err := os.ReadFile(p); err == nil {
+			if b, err := safefile.Read(p, safefile.Max); err == nil {
 				for _, e := range parseCrontab(b, false) {
 					add(autorunRow("cron", p, e.Schedule, e.Command, ent.Name(), true), commandBinary(e.Command))
 				}
@@ -339,7 +340,7 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 		}
 		for _, f := range []string{".ssh/authorized_keys", ".ssh/authorized_keys2"} {
 			p := filepath.Join(home, f)
-			b, err := os.ReadFile(p)
+			b, err := safefile.Read(p, safefile.Max)
 			if err != nil {
 				continue
 			}
@@ -383,7 +384,7 @@ func collectServices(ctx context.Context, _ map[string]string, emit func(platfor
 	paths := map[string]string{}
 	for _, dir := range []string{"/System/Library/LaunchDaemons", "/Library/LaunchDaemons"} {
 		for _, p := range plistFiles(dir) {
-			if b, err := os.ReadFile(p); err == nil {
+			if b, err := safefile.Read(p, safefile.Max); err == nil {
 				if j, err := parseLaunchdJob(b); err == nil && j.Label != "" {
 					jobs[j.Label], paths[j.Label] = j, p
 				}
@@ -446,7 +447,7 @@ func collectSoftware(ctx context.Context, _ map[string]string, emit func(platfor
 			return
 		}
 		seen[p] = true
-		b, err := os.ReadFile(filepath.Join(p, "Contents", "Info.plist"))
+		b, err := safefile.Read(filepath.Join(p, "Contents", "Info.plist"), safefile.Max)
 		if err != nil {
 			return
 		}
@@ -487,7 +488,7 @@ func collectSoftware(ctx context.Context, _ map[string]string, emit func(platfor
 	// Installer package receipts.
 	receipts, _ := filepath.Glob("/var/db/receipts/*.plist")
 	for _, p := range receipts {
-		b, err := os.ReadFile(p)
+		b, err := safefile.Read(p, safefile.Max)
 		if err != nil {
 			continue
 		}
