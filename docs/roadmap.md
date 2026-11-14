@@ -5,6 +5,37 @@ them. When one ships, move it to "Done" with its commit and a link to its docs.
 
 ## Next up
 
+### Two-factor login (TOTP)
+An authenticator-app code on top of the password, since an admin session controls every
+endpoint. QR enrollment, one-time recovery codes, a command-line reset for a locked-out
+admin, and an option to require it for admins (or everyone).
+
+### Built-in HTTPS for the console
+Serve the console over TLS directly, so a password and session never cross the LAN in the
+clear when the console is opened without the reverse proxy. A certificate from the
+server's own CA (as for agents) with a "download CA certificate" step so browsers trust
+it, or an ACME (Let's Encrypt) certificate for anyone with a domain. HTTP then only
+redirects.
+
+### Threshold and correlation rules
+Rules today match single events. Add counts over a time window ("ten failed SSH logins
+from one address in a minute", "Telnet to 20 addresses"), and Sigma's `count()`,
+`timeframe` and correlation rules (`event_count`, `value_count`, `temporal`), which the
+rule engine currently refuses. Several of the brute-force and scanning rules become far
+more precise with them.
+
+### Decoys
+Traps an intruder touches but nobody legitimate does, each raising a high alert: fake
+credential files (`.aws/credentials`, SSH keys, a `passwords.xlsx`), an unused listening
+port on each agent, and canary tokens. The ransomware bait files (under Later) become
+part of this.
+
+### Security reviews
+Reviews still to do, with fixes as they turn up:
+- the agent's platform sensors (about 17,000 lines, run as root or SYSTEM on every host)
+- host firewall control, backup and restore, notifications and the AdGuard integration
+- the live server configuration on the home server
+
 ### Push host firewall blocks to OPNsense
 Send the addresses blocked under Settings → Firewall to OPNsense as an alias, for a
 network-wide block that also covers devices without the agent.
@@ -72,7 +103,7 @@ agents at the MagicDNS name; the spool covers the gaps.
   image load (7) and process access/injection (8, 10) to their categories, so the SigmaHQ
   rules for them fire. Needs a Sysmon config that logs them.
 - **Scan new executables when they're written**, not only when they run.
-- **Ransomware protection.** Bait files, detection of mass renames and encryption,
+- **Ransomware protection.** Bait files (part of Decoys, above), detection of mass renames and encryption,
   automatic isolation, and rollback from Volume Shadow Copy snapshots.
 - **Incident view.** Group related alerts and the process tree into one attack timeline.
 - **Live response.** A restricted set of signed, logged commands: processes, connections,
@@ -95,6 +126,10 @@ agents at the MagicDNS name; the spool covers the gaps.
 
 ## Done
 
+- Security fixes: getting files from hosts is admin only, quarantine refuses
+  operating-system files, AI keys from the environment only go to approved endpoints,
+  enrollment tokens expire and are single-use by default, and CI checks Go dependencies
+  for known vulnerabilities (govulncheck)
 - Windows network isolation through Windows Filtering Platform filters that Windows
   Firewall rules can't override; the server connection always stays open:
   [agent/README.md](../agent/README.md#windows-platform)
