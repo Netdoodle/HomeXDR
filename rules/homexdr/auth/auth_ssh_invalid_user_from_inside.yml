@@ -1,0 +1,42 @@
+title: SSH Login Tried For A User That Does Not Exist From Inside The Network
+id: a0285d79-dddd-4b90-81cd-51307e9cac54
+status: experimental
+description: |
+  A device on your own network tried to log in over SSH as a user the server does not have.
+  From the internet this is constant background noise, but from a private address it means a
+  device at home is guessing account names: an infected machine or IoT device looking for
+  others to spread to, or someone on the network who should not be. A mistyped name does it
+  too, so look at the source and at how many names it tried.
+author: HomeXDR
+date: 2026-11-13
+references:
+  - https://attack.mitre.org/techniques/T1110/001/
+  - https://attack.mitre.org/techniques/T1021/004/
+tags:
+  - attack.credential-access
+  - attack.t1110.001
+  - attack.lateral-movement
+  - attack.t1021.004
+logsource:
+  category: authentication
+detection:
+  selection_action:
+    event.action:
+      - 'ssh_login'
+      - 'ssh-login-failed'
+      - 'ssh_invalid_user'
+    event.outcome: 'failure'
+  selection_invalid:
+    Message|contains: 'invalid user'
+  selection_source:
+    SourceIp|cidr:
+      - '10.0.0.0/8'
+      - '172.16.0.0/12'
+      - '192.168.0.0/16'
+      - '100.64.0.0/10'
+      - 'fc00::/7'
+  condition: all of selection_*
+falsepositives:
+  - A mistyped user name
+  - A monitoring or backup tool set up with an account that was removed
+level: medium

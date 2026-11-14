@@ -1,0 +1,46 @@
+title: Windows File Sharing Connection To The Internet
+id: 4be70611-3a85-4193-bae5-0fa7a70129c3
+status: experimental
+description: |
+  The firewall passed an SMB connection (port 445 or 139) from a device on your network to a
+  public address. Windows sends the signed-in user's password hash to any file server it
+  connects to, so a link or document that points at an attacker's server is a common way to
+  steal one. Worms also spread this way. Home networks have no reason to reach file shares
+  on the internet; blocking outbound 445 and 139 on the firewall is safe.
+author: HomeXDR
+date: 2026-11-13
+references:
+  - https://attack.mitre.org/techniques/T1187/
+  - https://attack.mitre.org/techniques/T1021/002/
+tags:
+  - attack.credential-access
+  - attack.t1187
+  - attack.lateral-movement
+  - attack.t1021.002
+logsource:
+  product: opnsense
+  category: firewall
+detection:
+  selection:
+    event.action: 'pass'
+    Protocol: 'tcp'
+    DestinationPort:
+      - 445
+      - 139
+    SourceIp|cidr:
+      - '10.0.0.0/8'
+      - '172.16.0.0/12'
+      - '192.168.0.0/16'
+  filter_local_destination:
+    DestinationIp|cidr:
+      - '10.0.0.0/8'
+      - '172.16.0.0/12'
+      - '192.168.0.0/16'
+      - '127.0.0.0/8'
+      - '100.64.0.0/10'
+      - '169.254.0.0/16'
+      - '224.0.0.0/4'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - A file share at another site reached without a VPN (Azure Files, a relative's NAS)
+level: medium

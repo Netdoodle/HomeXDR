@@ -11,9 +11,9 @@ HomeXDR loads [Sigma](https://sigmahq.io/) rules from three places:
 ## Rules HomeXDR ships
 
 `rules/homexdr/` holds rules for what community rule sets leave out on a homelab: Docker and
-Unraid hosts, SSH, DNS lookups from a resolver's query log, OPNsense, macOS security events,
+Unraid hosts, SSH, DNS lookups from a resolver's query log, OPNsense (audit and firewall logs), macOS security events,
 and attempts to switch HomeXDR's own monitoring off. They load with the server and are tested
-in `server/internal/detect/homexdr_rules_test.go`, `homexdr_rules2_test.go`,
+in `server/internal/detect/homexdr_rules_test.go`, `homexdr_rules2_test.go`, `homexdr_rules3_test.go`,
 `homexdr_rules_macos_test.go` and `homexdr_rules_defender_test.go`.
 They are also published at [Netdoodle/HomeXDR-SIGMA-rules](https://github.com/Netdoodle/HomeXDR-SIGMA-rules).
 
@@ -52,6 +52,12 @@ to the destination's Applications.
 | OPNsense Web GUI Login Failed | medium | a failed web interface login (needs the OPNsense audit log) |
 | OPNsense Web GUI Login | low | a web interface login (needs the OPNsense audit log) |
 | OPNsense Configuration Changed | low | any configuration change, with user, address and page (needs the OPNsense audit log) |
+| Remote Admin Or Database Port Allowed In From The Internet | high | the firewall passing SSH, RDP, VNC, SMB, Telnet, WinRM, Docker or a database port from a public address to a device inside (needs logging on the pass or port forward rule) |
+| Windows File Sharing Connection To The Internet | medium | the firewall passing port 445 or 139 from inside to a public address |
+| Telnet Connection To The Internet | medium | the firewall passing port 23 or 2323 from inside to a public address, as Mirai-type botnets do |
+| SSH Login Tried For A User That Does Not Exist From Inside The Network | medium | a failed SSH login for an unknown user name from a private address |
+| DNS Lookup Of A Cryptocurrency Mining Pool | high | nanopool, supportxmr, moneroocean, 2miners, f2pool, nicehash and other pools |
+| DNS Lookup Of A Remote Desktop Service | low | AnyDesk, TeamViewer, RustDesk, ScreenConnect, Splashtop, LogMeIn and similar |
 | XProtect Detected Malware On macOS | high | Apple's XProtect reporting known malware |
 | Launch Daemon Or Agent Added On macOS | medium | a new, unmanaged launch daemon or agent registered with background task management |
 | Sensitive Privacy Permission Granted On macOS | medium | Full Disk Access, Accessibility, Screen Recording or Input Monitoring granted (macOS 15.4+) |
