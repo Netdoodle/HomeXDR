@@ -108,7 +108,9 @@ type enricher struct {
 	// origins caches each process's lineage (lineage.go), by entity ID.
 	origins *lru[string, origin]
 	hashQ   chan hashJob
-	self    int64
+	// keySlots bounds the start events held back for their SSH key (lineage.go).
+	keySlots chan struct{}
+	self     int64
 }
 
 type hashJob struct {
@@ -121,10 +123,11 @@ type hashJob struct {
 func newEnricher(env platform.Env, module string) *enricher {
 	return &enricher{
 		env: env, module: module,
-		hashes:  newLRU[fileKey, string](4096),
-		procs:   newLRU[string, procSummary](16384),
-		origins: newLRU[string, origin](16384),
-		self:    int64(os.Getpid()),
+		hashes:   newLRU[fileKey, string](4096),
+		procs:    newLRU[string, procSummary](16384),
+		origins:  newLRU[string, origin](16384),
+		keySlots: make(chan struct{}, keyWaitSlots),
+		self:     int64(os.Getpid()),
 	}
 }
 
@@ -258,6 +261,9 @@ func (en *enricher) execEvent(pi *procInfo, ts time.Time) *event.Event {
 // are added synchronously; uncached ones are computed by a worker from an fd opened now,
 // so the hash is right even if the process exits or the file is replaced meanwhile.
 func (en *enricher) emitExec(ev *event.Event, pid int64, hash bool, out platform.Emitter) {
+	if sess := keyPending(ev, time.Now()); sess > 0 && en.keySlots != nil {
+		out = keyWaiter{out: out, sess: sess, slots: en.keySlots}
+	}
 	if !hash || ev.Process.Executable == "" {
 		out.Emit(ev)
 		return

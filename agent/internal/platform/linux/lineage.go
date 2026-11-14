@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Netdoodle/homexdr/agent/internal/authparse"
+	"github.com/Netdoodle/homexdr/agent/internal/platform"
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
@@ -119,12 +120,125 @@ func (en *enricher) labelLineage(ev *event.Event, pi *procInfo) {
 	}
 }
 
+// A session's first commands often start before sshd's "Accepted" line reaches the log
+// (on Unraid it goes through syslog), so they would miss ssh_key. Their start events are
+// held back, off the event-reading path, until the line shows up or keyWaitMax passes.
+const (
+	keyWaitMax   = 1500 * time.Millisecond
+	keyWaitStep  = 100 * time.Millisecond
+	keyWaitFresh = 10 * time.Second // only sessions that began this recently are waited for
+	keyWaitTail  = 64 << 10         // the line is new, so a short tail is enough
+	keyWaitSlots = 64               // events held at once; past that they go out unlabelled
+)
+
+// sessionStart returns when a process started, or the zero time if it is gone.
+var sessionStart = func(pid int64) time.Time {
+	st, err := readStat(pid)
+	if err != nil {
+		return time.Time{}
+	}
+	return startTimeFromTicks(st.StartTick)
+}
+
+// keyPending returns the SSH session whose login line a start event should wait for, or 0.
+func keyPending(ev *event.Event, now time.Time) int64 {
+	if ev == nil || ev.Process == nil || ev.Labels == nil || ev.Labels["ssh_key"] != "" {
+		return 0
+	}
+	sess, err := strconv.ParseInt(ev.Labels["ssh_session"], 10, 64)
+	if err != nil || sess <= 0 || isSSHD(ev.Process.Name) {
+		return 0
+	}
+	if _, known := sshLogins.known(sess); known {
+		return 0 // a password login, already looked up
+	}
+	st := sessionStart(sess)
+	if st.IsZero() || now.Sub(st) > keyWaitFresh {
+		return 0
+	}
+	return sess
+}
+
+// keyWaiter emits each event once its session's key is known or the wait runs out.
+type keyWaiter struct {
+	out   platform.Emitter
+	sess  int64
+	slots chan struct{}
+}
+
+func (w keyWaiter) Emit(ev *event.Event) {
+	select {
+	case w.slots <- struct{}{}:
+	default:
+		w.out.Emit(ev)
+		return
+	}
+	go func() {
+		defer func() { <-w.slots }()
+		if k := sshLogins.await(w.sess); k != "" {
+			ev.Labels["ssh_key"] = k
+		}
+		w.out.Emit(ev)
+	}()
+}
+
 // sshLoginRegistry maps the PID sshd logged a login under to the key it used ("" for a
 // password or other non-key login).
 type sshLoginRegistry struct {
 	mu   sync.Mutex
 	m    map[int64]sshLogin
 	miss map[int64]time.Time // PIDs looked up in the logs and not found yet
+	wait map[int64]chan struct{}
+}
+
+// known returns a session's key and whether its login has been seen.
+func (r *sshLoginRegistry) known(pid int64) (string, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	l, ok := r.m[pid]
+	return l.key, ok
+}
+
+// await waits up to keyWaitMax for session pid's login line, polling the end of the log
+// files. Callers waiting on the same session share one poll.
+func (r *sshLoginRegistry) await(pid int64) string {
+	r.mu.Lock()
+	if l, ok := r.m[pid]; ok {
+		r.mu.Unlock()
+		return l.key
+	}
+	if ch, ok := r.wait[pid]; ok {
+		r.mu.Unlock()
+		<-ch
+		k, _ := r.known(pid)
+		return k
+	}
+	if r.wait == nil {
+		r.wait = map[int64]chan struct{}{}
+	}
+	ch := make(chan struct{})
+	r.wait[pid] = ch
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		delete(r.wait, pid)
+		r.mu.Unlock()
+		close(ch)
+	}()
+	deadline := time.Now().Add(keyWaitMax)
+	for {
+		if k, ok := r.known(pid); ok {
+			return k
+		}
+		if key, found := scanLoginInLogs(pid, keyWaitTail); found {
+			r.note(pid, key)
+			return key
+		}
+		if !time.Now().Before(deadline) {
+			return ""
+		}
+		time.Sleep(keyWaitStep)
+	}
 }
 
 type sshLogin struct {
@@ -169,7 +283,7 @@ func (r *sshLoginRegistry) lookup(pid int64, cacheMiss bool) string {
 	if recently && time.Since(missed) < 5*time.Second {
 		return ""
 	}
-	if key, found := scanLoginInLogs(pid); found {
+	if key, found := scanLoginInLogs(pid, sshLogTail); found {
 		r.note(pid, key)
 		return key
 	}
@@ -199,10 +313,10 @@ var sshLogFiles = []string{"/var/log/auth.log", "/var/log/secure", "/var/log/sys
 
 const sshLogTail = 512 << 10
 
-func scanLoginInLogs(pid int64) (key string, found bool) {
+func scanLoginInLogs(pid, tail int64) (key string, found bool) {
 	needle := []byte("[" + strconv.FormatInt(pid, 10) + "]: Accepted ")
 	for _, f := range sshLogFiles {
-		b := readTail(f, sshLogTail)
+		b := readTail(f, tail)
 		for len(b) > 0 {
 			i := bytes.LastIndex(b, needle)
 			if i < 0 {
