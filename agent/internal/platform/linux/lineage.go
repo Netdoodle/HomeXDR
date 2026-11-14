@@ -5,6 +5,7 @@ package linux
 import (
 	"bytes"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,7 +42,8 @@ var maintenanceMarkers = []struct{ path, label string }{
 	{"/plugins/appdata.backup/", "appdata-backup"},
 }
 
-func isSSHD(comm string) bool { return comm == "sshd" || comm == "sshd-session" }
+// isSSHD reports sshd's own processes, including OpenSSH 10's pre-auth helper.
+func isSSHD(comm string) bool { return comm == "sshd" || comm == "sshd-session" || comm == "sshd-auth" }
 
 // combine derives a process's origin from its parent's.
 func combine(parent origin, parentKnown bool, pid int64, comm string, args []string) origin {
@@ -313,6 +315,9 @@ var sshLogFiles = []string{"/var/log/auth.log", "/var/log/secure", "/var/log/sys
 
 const sshLogTail = 512 << 10
 
+// reLoginTail matches what follows "Accepted " in a login line.
+var reLoginTail = regexp.MustCompile(`^\S+ for \S+ from \S+`)
+
 func scanLoginInLogs(pid, tail int64) (key string, found bool) {
 	needle := []byte("[" + strconv.FormatInt(pid, 10) + "]: Accepted ")
 	for _, f := range sshLogFiles {
@@ -328,8 +333,11 @@ func scanLoginInLogs(pid, tail int64) (key string, found bool) {
 				end++
 			}
 			line := string(b[start:end])
+			rest := string(b[i+len(needle) : end])
 			b = b[:start]
-			if !strings.Contains(line, "sshd") {
+			// "Accepted key ED25519 SHA256:... found at ..." is logged before authentication
+			// ends; only "Accepted <method> for <user> from ..." is the login.
+			if !strings.Contains(line, "sshd") || !reLoginTail.MatchString(rest) {
 				continue
 			}
 			if g := authparse.SSHKeyTail.FindStringSubmatch(line); g != nil {
