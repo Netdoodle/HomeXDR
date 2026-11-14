@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -148,6 +149,25 @@ func (p *Poller) View() View {
 	}
 }
 
+// sameServer reports whether two resolver addresses have the same scheme, host and port.
+func sameServer(a, b string) bool {
+	ua, errA := ParseURL(a)
+	ub, errB := ParseURL(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	port := func(u *url.URL) string {
+		if p := u.Port(); p != "" {
+			return p
+		}
+		if u.Scheme == "https" {
+			return "443"
+		}
+		return "80"
+	}
+	return ua.Scheme == ub.Scheme && strings.EqualFold(ua.Hostname(), ub.Hostname()) && port(ua) == port(ub)
+}
+
 // merge applies an input to the stored settings and validates the result.
 func (p *Poller) merge(in Input) (Settings, error) {
 	cur := p.settings()
@@ -162,7 +182,12 @@ func (p *Poller) merge(in Input) (Settings, error) {
 	case in.ClearPassword:
 		set.Password = ""
 	case set.Password == "" && normalKind(cur.Kind) == set.Kind:
-		set.Password = cur.Password // a password is never carried over to another resolver
+		// A password is never carried over to another resolver or another address: a
+		// changed address would otherwise be sent the stored password.
+		if cur.Password != "" && set.URL != "" && !sameServer(cur.URL, set.URL) {
+			return set, &InputError{"the address changed, so enter the password again"}
+		}
+		set.Password = cur.Password
 	}
 	if !needsUsername(set.Kind) {
 		set.Username = ""

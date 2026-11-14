@@ -301,6 +301,21 @@ type SettingsUpdate struct {
 	Channels []ChannelUpdate `json:"channels"`
 }
 
+// smtpPort is a channel's SMTP port, with the default for an unset one.
+func smtpPort(p int) int {
+	if p == 0 {
+		return 587
+	}
+	return p
+}
+
+// sameHost reports whether two channel URLs have the same scheme and host (with port).
+func sameHost(a, b string) bool {
+	ua, errA := url.Parse(a)
+	ub, errB := url.Parse(b)
+	return errA == nil && errB == nil && ua.Host != "" && ua.Scheme == ub.Scheme && strings.EqualFold(ua.Host, ub.Host)
+}
+
 // Apply merges an update over the current settings, keeping secrets it does not change.
 func (u SettingsUpdate) Apply(cur Settings) Settings {
 	out := u.Settings
@@ -318,10 +333,12 @@ func (u SettingsUpdate) Apply(cur Settings) Settings {
 			if c.URL == "" {
 				c.URL = old.URL
 			}
-			if c.Token == "" && !cu.ClearToken {
+			// A stored secret stays with the server it was entered for: it is dropped
+			// when the channel points somewhere else.
+			if c.Token == "" && !cu.ClearToken && sameHost(old.URL, c.URL) {
 				c.Token = old.Token
 			}
-			if c.Password == "" && !cu.ClearPassword {
+			if c.Password == "" && !cu.ClearPassword && strings.EqualFold(old.SMTPHost, strings.TrimSpace(c.SMTPHost)) && smtpPort(old.SMTPPort) == smtpPort(c.SMTPPort) {
 				c.Password = old.Password
 			}
 		}

@@ -279,6 +279,20 @@ func TestSecretsAreWriteOnly(t *testing.T) {
 	if c2.Password != password || c2.Enabled {
 		t.Fatalf("c2: %+v", c2)
 	}
+	// A secret does not follow a channel to another server.
+	moved := SettingsUpdate{Settings: u.Settings, Channels: []ChannelUpdate{
+		{Channel: Channel{ID: "c2", Kind: KindEmail, Name: "mail", SMTPHost: "other.example.test", From: "a@example.test", To: "b@example.test"}},
+	}}.Apply(set)
+	if c, _ := moved.channel("c2"); c.Password != "" {
+		t.Fatalf("the SMTP password followed the channel to another host: %+v", c)
+	}
+	tok := Settings{Channels: []Channel{{ID: "w", Kind: KindWebhook, URL: "https://hooks.example.test/a", Token: "tok"}}}
+	for target, keep := range map[string]bool{"https://hooks.example.test/b": true, "https://elsewhere.example.test/a": false, "http://hooks.example.test/a": false} {
+		got := SettingsUpdate{Channels: []ChannelUpdate{{Channel: Channel{ID: "w", Kind: KindWebhook, URL: target}}}}.Apply(tok)
+		if c, _ := got.channel("w"); (c.Token != "") != keep {
+			t.Errorf("token kept for %s = %v, want %v", target, c.Token != "", keep)
+		}
+	}
 	// A channel left out is gone, with its secrets.
 	u.Channels = u.Channels[:1]
 	if _, err := f.svc.SaveSettings(ctx, u); err != nil {

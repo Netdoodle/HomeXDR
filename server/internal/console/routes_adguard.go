@@ -3,6 +3,7 @@ package console
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/Netdoodle/homexdr/server/internal/adguard"
 	"github.com/Netdoodle/homexdr/server/internal/store"
@@ -40,11 +41,13 @@ func (h *Handler) putAdGuardSettings(w http.ResponseWriter, r *http.Request, u *
 	writeJSON(w, http.StatusOK, v)
 }
 
-func (h *Handler) testAdGuardSettings(w http.ResponseWriter, r *http.Request, _ *store.User) {
+func (h *Handler) testAdGuardSettings(w http.ResponseWriter, r *http.Request, u *store.User) {
 	var in adguard.Input
 	if !decode(w, r, &in) {
 		return
 	}
+	// A test signs in to the given address, so it is recorded like a change.
+	h.c.Audit(r.Context(), u.Username, "settings.adguard.test", "", strings.TrimSpace(in.URL))
 	res, err := h.c.AdGuard.Test(r.Context(), in)
 	if h.adguardFail(w, err) {
 		return

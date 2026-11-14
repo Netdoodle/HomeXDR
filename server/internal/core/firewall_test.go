@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Netdoodle/homexdr/server/internal/config"
 	"github.com/Netdoodle/homexdr/server/internal/store"
@@ -45,6 +46,16 @@ func TestServerAddrs(t *testing.T) {
 	want := "192.0.2.5 198.51.100.30 198.51.100.31 198.51.100.40 2001:db8::40"
 	if strings.Join(got, " ") != want {
 		t.Fatalf("server addrs = %v, want %s", got, want)
+	}
+	// A failed lookup later keeps the name's last known addresses.
+	firewallLookup = func(context.Context, string) ([]netip.Addr, error) { return nil, errors.New("dns is down") }
+	c.firewall.addrsAt = time.Time{}
+	got = nil
+	for _, a := range c.ServerAddrs(context.Background()) {
+		got = append(got, a.String())
+	}
+	if strings.Join(got, " ") != want {
+		t.Fatalf("server addrs during a DNS outage = %v, want %s", got, want)
 	}
 }
 
