@@ -157,6 +157,38 @@ func TestKeyWaitLateLoginLine(t *testing.T) {
 	}
 }
 
+// OpenSSH logs "Accepted key ... found at" while checking the key, before the login line.
+// A scan between the two must keep looking, not record a keyless (password) login.
+func TestKeyWaitIgnoresPreauthLine(t *testing.T) {
+	logf := keyWaitSetup(t)
+	const fp = "SHA256:WaETwa68OJhBShgClfIkGSkFhB7ppvxZJJ03HcZ4zoI"
+	appendLine(t, logf, "Nov 14 02:57:57 Tower2 sshd-session[735599]: Accepted key ED25519 "+fp+" found at /root/.ssh/authorized_keys:1")
+	appendLine(t, logf, "Nov 14 02:57:57 Tower2 sshd-session[735599]: Postponed publickey for root from 192.168.10.52 port 21680 ssh2 [preauth]")
+	if k, found := scanLoginInLogs(735599, keyWaitTail); found {
+		t.Fatalf("pre-auth line taken as the login: key %q", k)
+	}
+	if k := sshLogins.lookup(735599, false); k != "" {
+		t.Fatalf("lookup = %q", k)
+	}
+	if _, known := sshLogins.known(735599); known {
+		t.Fatal("pre-auth line recorded as a login")
+	}
+
+	got := make(chan *event.Event, 1)
+	keyWaiter{out: platform.EmitterFunc(func(e *event.Event) { got <- e }), sess: 735599, slots: make(chan struct{}, 1)}.Emit(sshEvent("bash", "735599"))
+	time.Sleep(2 * keyWaitStep)
+	appendLine(t, logf, "Nov 14 02:57:57 Tower2 sshd-session[735599]: Accepted key ED25519 "+fp+" found at /root/.ssh/authorized_keys:1")
+	appendLine(t, logf, "Nov 14 02:57:57 Tower2 sshd-session[735599]: Accepted publickey for root from 192.168.10.52 port 21680 ssh2: ED25519 "+fp)
+	select {
+	case e := <-got:
+		if e.Labels["ssh_key"] != fp {
+			t.Fatalf("ssh_key = %q", e.Labels["ssh_key"])
+		}
+	case <-time.After(keyWaitMax + time.Second):
+		t.Fatal("held event never emitted")
+	}
+}
+
 func TestKeyWaitTimesOut(t *testing.T) {
 	keyWaitSetup(t)
 	got := make(chan *event.Event, 1)
@@ -178,8 +210,10 @@ func TestKeyWaitTimesOut(t *testing.T) {
 func TestKeyWaitSkips(t *testing.T) {
 	keyWaitSetup(t)
 	now := time.Now()
-	if s := keyPending(sshEvent("sshd-session", "7"), now); s != 0 {
-		t.Fatalf("sshd's own process waited: %d", s)
+	for _, name := range []string{"sshd-session", "sshd-auth"} {
+		if s := keyPending(sshEvent(name, "7"), now); s != 0 {
+			t.Fatalf("sshd's own process %s waited: %d", name, s)
+		}
 	}
 	labelled := sshEvent("bash", "7")
 	labelled.Labels["ssh_key"] = "SHA256:x"
