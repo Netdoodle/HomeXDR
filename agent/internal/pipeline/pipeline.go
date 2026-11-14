@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Netdoodle/homexdr/shared/api"
 	"github.com/Netdoodle/homexdr/shared/event"
@@ -86,14 +87,55 @@ func (p *Pipeline) Stamp(e *event.Event) {
 	}
 }
 
+// Limits on what one event may carry. A process chooses its own command line, and the
+// server refuses over-long lines, so a huge one would otherwise be lost with its batch.
+const (
+	maxFieldBytes = 32 << 10 // message, command line, all arguments together
+	maxEventBytes = 1 << 20  // the encoded event; larger ones are dropped and counted
+)
+
+// cut shortens s to at most n bytes without splitting a UTF-8 character.
+func cut(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…[truncated]"
+}
+
+func limitProcess(p *event.Process, depth int) {
+	if p == nil || depth > 8 {
+		return
+	}
+	p.CommandLine = cut(p.CommandLine, maxFieldBytes)
+	left := maxFieldBytes
+	for i, a := range p.Args {
+		if len(a) > left {
+			p.Args = append(p.Args[:i:i], cut(a, left))
+			break
+		}
+		left -= len(a)
+	}
+	limitProcess(p.Parent, depth+1)
+}
+
+// limitEvent shortens the fields a local user controls the size of.
+func limitEvent(e *event.Event) {
+	e.Message = cut(e.Message, maxFieldBytes)
+	limitProcess(e.Process, 0)
+}
+
 // Emit stamps, filters and spools one event.
 func (p *Pipeline) Emit(e *event.Event) {
 	if e == nil {
 		return
 	}
 	p.Stamp(e)
+	limitEvent(e)
 	line, err := json.Marshal(e)
-	if err != nil {
+	if err != nil || len(line) > maxEventBytes {
 		p.failed.Add(1)
 		return
 	}

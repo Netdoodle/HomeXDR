@@ -719,7 +719,9 @@ func (a *Agent) sendRange(ctx context.Context, b *spool.Batch, lo, hi int) error
 		b.Commit(hi)
 		a.sent.Add(uint64(hi - lo))
 		return nil
-	case transport.IsStatus(err, 413):
+	case transport.IsStatus(err, 413), transport.IsStatus(err, 400) && hi-lo > 1:
+		// 400 is split too: one event the server cannot take (an over-long line, say)
+		// must not cost the rest of its batch.
 		if hi-lo == 1 {
 			a.log.Warn("dropping event the server considers too large", "bytes", len(b.Lines[lo]))
 			b.Commit(hi)

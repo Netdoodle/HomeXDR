@@ -160,7 +160,12 @@ func xmlText(d *xml.Decoder) (string, error) {
 
 // ---- binary ----
 
+// maxPlistObjects bounds the work for one binary plist: arrays may share objects, so a
+// small file can otherwise describe an enormous tree.
+const maxPlistObjects = 200000
+
 type bplist struct {
+	work      int
 	b         []byte
 	offsets   []uint64
 	refSize   int
@@ -212,13 +217,16 @@ func (p *bplist) count(off uint64, low byte) (uint64, uint64, error) {
 	}
 	n := uint64(1) << (m & 0x0F)
 	start := off + 2
-	if start+n > uint64(len(p.b)) {
+	if start > uint64(len(p.b)) || n > uint64(len(p.b))-start {
 		return 0, 0, errors.New("bplist: truncated count")
 	}
 	return beUint(p.b[start : start+n]), start + n, nil
 }
 
 func (p *bplist) ref(off uint64, i uint64) (uint64, error) {
+	if i > uint64(len(p.b)) || off > uint64(len(p.b)) {
+		return 0, errors.New("bplist: truncated reference")
+	}
 	s := off + i*uint64(p.refSize)
 	if s+uint64(p.refSize) > uint64(len(p.b)) {
 		return 0, errors.New("bplist: truncated reference")
@@ -229,6 +237,9 @@ func (p *bplist) ref(off uint64, i uint64) (uint64, error) {
 func (p *bplist) object(idx uint64) (any, error) {
 	if idx >= uint64(len(p.offsets)) {
 		return nil, errors.New("bplist: bad object reference")
+	}
+	if p.work++; p.work > maxPlistObjects {
+		return nil, errors.New("bplist: too many objects")
 	}
 	if p.seenStack[idx] {
 		return nil, errors.New("bplist: reference cycle")
@@ -290,7 +301,7 @@ func (p *bplist) object(idx uint64) (any, error) {
 		if hi == 0x6 {
 			size = n * 2
 		}
-		if start+size > uint64(len(p.b)) {
+		if start > uint64(len(p.b)) || n > uint64(len(p.b)) || size > uint64(len(p.b))-start {
 			return nil, errors.New("bplist: truncated data")
 		}
 		raw := p.b[start : start+size]
