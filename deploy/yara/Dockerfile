@@ -2,14 +2,16 @@
 # HomeXDR YARA scanner (docs/antivirus.md): homexdr-yara plus the yara and yarac tools.
 # Build from the repository root:  docker build -f deploy/yara/Dockerfile -t homexdr/yara .
 
-FROM golang:1.27-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 ENV CGO_ENABLED=0
 COPY shared/ shared/
 COPY server/go.mod server/go.sum server/
 RUN cd server && go mod download
 COPY server/ server/
-RUN cd server && go build -trimpath -ldflags "-s -w" -o /out/homexdr-yara ./cmd/homexdr-yara
+ARG TARGETOS
+ARG TARGETARCH
+RUN cd server && GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags "-s -w" -o /out/homexdr-yara ./cmd/homexdr-yara
 
 FROM alpine:3.22
 RUN apk add --no-cache yara ca-certificates && \

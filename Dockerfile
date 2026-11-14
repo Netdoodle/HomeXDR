@@ -3,14 +3,16 @@
 # Build from the repository root:  docker build -t homexdr/server .
 # deploy/update/homexdr-update.sh builds it with VERSION, COMMIT and COMMIT_TIME set.
 
-FROM node:22-alpine AS web
+# The web and Go stages run on the build machine: the web bundle and the agent binaries are
+# the same for every image platform, and only the server binary is built for the target.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
-FROM golang:1.27-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 ENV CGO_ENABLED=0
 COPY shared/ shared/
@@ -24,9 +26,13 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 # Unix time of the commit; agents only update to builds with a later commit time.
 ARG COMMIT_TIME=0
+ARG TARGETOS
+ARG TARGETARCH
 RUN V=github.com/Netdoodle/homexdr/shared/version && \
     LDFLAGS="-s -w -X $V.Version=${VERSION} -X $V.Commit=${COMMIT} -X $V.CommitTime=${COMMIT_TIME}" && \
-    cd /src/server && go build -trimpath -ldflags "$LDFLAGS" -o /out/homexdr-server ./cmd/homexdr-server && \
+    cd /src/server && \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags "$LDFLAGS" -o /out/homexdr-server ./cmd/homexdr-server && \
+    go build -trimpath -ldflags "$LDFLAGS" -o /tmp/homexdr-server-native ./cmd/homexdr-server && \
     mkdir -p /out/downloads /out/data && cd /src/agent && \
     for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do \
       os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe; \
@@ -34,7 +40,7 @@ RUN V=github.com/Netdoodle/homexdr/shared/version && \
         -o /out/downloads/homexdr-agent-$os-$arch$ext ./cmd/homexdr-agent || exit 1; \
     done && \
     cd /out/downloads && sha256sum homexdr-agent-* > SHA256SUMS && \
-    /out/homexdr-server release-manifest /out/downloads
+    /tmp/homexdr-server-native release-manifest /out/downloads
 
 FROM gcr.io/distroless/static-debian12:nonroot
 ARG VERSION=dev
@@ -42,7 +48,8 @@ ARG COMMIT=unknown
 LABEL org.opencontainers.image.title="homexdr-server" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${COMMIT}" \
-      org.opencontainers.image.source="https://github.com/Netdoodle/HomeXDR"
+      org.opencontainers.image.source="https://github.com/Netdoodle/HomeXDR" \
+      org.opencontainers.image.licenses="Apache-2.0"
 COPY --from=build /out/homexdr-server /usr/local/bin/homexdr-server
 COPY --from=build /out/downloads/ /usr/share/homexdr/downloads/
 COPY rules/ /usr/share/homexdr/rules/
