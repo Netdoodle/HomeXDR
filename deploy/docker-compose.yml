@@ -67,6 +67,8 @@ services:
       HOMEXDR_CLICKHOUSE_DSN: clickhouse://homexdr:${CLICKHOUSE_PASSWORD}@clickhouse:9000/homexdr
       HOMEXDR_SERVER_NAMES: ${HOMEXDR_SERVER_NAMES:?set HOMEXDR_SERVER_NAMES in .env}
       HOMEXDR_AGENT_URL: ${HOMEXDR_AGENT_URL:-}
+      # Certificate-only agent listener for a port forward (docs/away-from-home.md).
+      HOMEXDR_AGENT_EXTERNAL_ADDR: ${HOMEXDR_AGENT_EXTERNAL_ADDR:-}
       HOMEXDR_RETENTION_DAYS: ${HOMEXDR_RETENTION_DAYS:-30}
       HOMEXDR_RETENTION_MAX_SIZE: ${HOMEXDR_RETENTION_MAX_SIZE:-}
       HOMEXDR_SECURE_COOKIES: ${HOMEXDR_SECURE_COOKIES:-false}
@@ -88,6 +90,7 @@ services:
     ports:
       - "${HOMEXDR_CONSOLE_PORT:-8080}:8080/tcp"
       - "${HOMEXDR_AGENT_PORT:-8443}:8443/tcp"
+      - "${HOMEXDR_AGENT_EXTERNAL_PORT:-8444}:8444/tcp"
       - "${HOMEXDR_SYSLOG_PORT:-514}:5514/udp"
       - "${HOMEXDR_SYSLOG_PORT:-514}:5514/tcp"
       - "${HOMEXDR_NETFLOW_PORT:-2055}:2055/udp"

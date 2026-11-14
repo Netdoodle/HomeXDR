@@ -95,6 +95,25 @@ func (p *PKI) TLSConfig() *tls.Config {
 	}
 }
 
+// StrictTLSConfig is TLSConfig for the internet-facing agent listener: the handshake
+// itself requires a client certificate issued by the CA for client authentication and
+// still valid, so clients without one never reach HTTP. verify, when set, is called with
+// the verified certificate and can refuse the connection (a revoked or unknown agent).
+func (p *PKI) StrictTLSConfig(verify func(*x509.Certificate) error) *tls.Config {
+	c := p.TLSConfig()
+	c.MinVersion = tls.VersionTLS13
+	c.ClientAuth = tls.RequireAndVerifyClientCert
+	if verify != nil {
+		c.VerifyConnection = func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
+				return errors.New("client certificate required")
+			}
+			return verify(cs.PeerCertificates[0])
+		}
+	}
+	return c
+}
+
 // VerifyAgentCert checks that the client certificate chain from a TLS handshake was
 // issued by the CA for client authentication. allowExpired accepts a certificate past
 // its NotAfter (for renewal); everything else about it must still be valid.
