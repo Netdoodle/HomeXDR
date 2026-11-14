@@ -561,7 +561,7 @@ each host its rule set itself.
 |---|---|---|
 | GET | `/api/settings/server` | `ServerSettings` (below) |
 | GET | `/api/enrollment-tokens` | `{"tokens": EnrollmentToken[]}` (admin; `token` value omitted) |
-| POST | `/api/enrollment-tokens` | `{"name", "expires_hours"?, "max_uses"?, "labels"?}` → `EnrollmentToken` with `token` (shown once) |
+| POST | `/api/enrollment-tokens` | `{"name", "expires_hours"?, "max_uses"?, "never_expires"?, "unlimited_uses"?, "allow_agent_labels"?, "labels"?, "group_id"?}` → `EnrollmentToken` with `token` (shown once). Without `never_expires` a token expires after `expires_hours` (default 168, at most a year); without `unlimited_uses` it enrolls `max_uses` hosts (default 1). Labels an agent asks for with `--labels` are ignored unless `allow_agent_labels` |
 | DELETE | `/api/enrollment-tokens/{id}` | `204` |
 | GET | `/api/agent-config` | `AgentConfig` (default config, `shared/api.AgentConfig` shape) |
 | PUT | `/api/agent-config` | `AgentConfig` → `AgentConfig` (admin; bumps `version`) |
@@ -588,6 +588,7 @@ type ServerSettings = {
 type EnrollmentToken = {
   id: string; name: string; token?: string; created_at: string; created_by: string;
   expires_at?: string; max_uses?: number; uses: number; labels: string[];
+  group_id: string; allow_agent_labels: boolean;
 }
 type AgentLifecycle = {
   decommission_after_days: number; // 0 = never; endpoint agents offline this long are decommissioned

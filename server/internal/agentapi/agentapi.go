@@ -206,7 +206,14 @@ func (h *Handler) enroll(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	labels := append(append([]string{}, tok.Labels...), req.Labels...)
+	// Labels steer policy (an AI analyst skip label, suppressions), so a host does not
+	// pick its own unless the token allows it.
+	labels := append([]string{}, tok.Labels...)
+	if tok.AllowAgentLabels {
+		labels = append(labels, req.Labels...)
+	} else if len(req.Labels) > 0 {
+		h.c.Log.Info("enroll: ignored labels the agent asked for; the token does not allow them", "labels", req.Labels, "token", tok.Name)
+	}
 	host, err := h.c.State.CreateEndpoint(r.Context(), agentID, req.Host, labels, serial)
 	if err != nil {
 		h.c.Log.Error("enroll: create host", "err", err)

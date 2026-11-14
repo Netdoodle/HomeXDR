@@ -23,6 +23,9 @@ type EnrollmentToken struct {
 	Labels    []string   `json:"labels"`
 	// GroupID puts hosts enrolled with the token in that host group ("" for none).
 	GroupID string `json:"group_id"`
+	// AllowAgentLabels keeps the labels an agent asks for at enrollment (--labels);
+	// otherwise only the token's labels apply.
+	AllowAgentLabels bool `json:"allow_agent_labels"`
 }
 
 // Enrollment token errors.
@@ -63,7 +66,7 @@ func scanToken(row interface{ Scan(...any) error }) (*EnrollmentToken, error) {
 	var created, labels string
 	var exp sql.NullString
 	var maxUses sql.NullInt64
-	if err := row.Scan(&t.ID, &t.Name, &created, &t.CreatedBy, &exp, &maxUses, &t.Uses, &labels, &t.GroupID); err != nil {
+	if err := row.Scan(&t.ID, &t.Name, &created, &t.CreatedBy, &exp, &maxUses, &t.Uses, &labels, &t.GroupID, &t.AllowAgentLabels); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -82,7 +85,7 @@ func scanToken(row interface{ Scan(...any) error }) (*EnrollmentToken, error) {
 	return &t, nil
 }
 
-const tokenCols = `id, name, created_at, created_by, expires_at, max_uses, uses, labels, group_id`
+const tokenCols = `id, name, created_at, created_by, expires_at, max_uses, uses, labels, group_id, allow_agent_labels`
 
 // SetTokenGroup sets the host group new hosts enrolled with a token go into.
 func (s *Store) SetTokenGroup(ctx context.Context, id, groupID string) error {
@@ -94,6 +97,12 @@ func (s *Store) SetTokenGroup(ctx context.Context, id, groupID string) error {
 		}
 	}
 	_, err := s.db.ExecContext(ctx, `UPDATE enrollment_tokens SET group_id = ? WHERE id = ?`, groupID, id)
+	return err
+}
+
+// SetTokenAllowAgentLabels sets whether labels an agent asks for at enrollment are kept.
+func (s *Store) SetTokenAllowAgentLabels(ctx context.Context, id string, allow bool) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE enrollment_tokens SET allow_agent_labels = ? WHERE id = ?`, allow, id)
 	return err
 }
 

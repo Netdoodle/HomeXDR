@@ -2,7 +2,7 @@
 // conventions as the real server: session required, CSRF header on non-GET, roles,
 // `{"error": ...}` bodies.
 
-import { matchesGroupFilter } from './groups'
+import { matchesGroupFilter } from "./groups";
 import type {
   AIReport,
   AISettings,
@@ -30,13 +30,18 @@ import type {
   SigmaStatus,
   User,
   IntelSettingsUpdate,
-} from '../api/types'
-import { COMMAND_TYPES, SEVERITIES } from '../api/types'
-import { buckets, pickSpan, runPipeline } from '../lib/pipeline'
-import { compileQuery, QuerySyntaxError, splitPipeline, validateQuery } from '../lib/query'
-import { hasRole } from '../lib/roles'
-import { OPEN_ALERT_STATUSES } from '../lib/severity'
-import { events, eventById, processes, type MockProcess } from './events'
+} from "../api/types";
+import { COMMAND_TYPES, SEVERITIES } from "../api/types";
+import { buckets, pickSpan, runPipeline } from "../lib/pipeline";
+import {
+  compileQuery,
+  QuerySyntaxError,
+  splitPipeline,
+  validateQuery,
+} from "../lib/query";
+import { hasRole } from "../lib/roles";
+import { OPEN_ALERT_STATUSES } from "../lib/severity";
+import { events, eventById, processes, type MockProcess } from "./events";
 import {
   agentConfig,
   alerts,
@@ -52,72 +57,80 @@ import {
   users,
   type MockCommand,
   type MockHunt,
-} from './fixtures'
-import { HOUR, hostById, hosts } from './hosts'
-import { getIntelSettings, getLookup, lookupHistory, putIntelSettings, sightings, startLookup } from './intel'
-import { networkRoutes } from './network'
-import { registerHealthMocks } from './health'
-import { registerHealthCheckMocks } from './healthChecks'
-import { registerListMocks } from './lists'
-import { registerVulnMocks } from './vuln'
-import { registerFirewallMocks } from './firewall'
-import { repoFiles, repoSkipped } from './repoFiles'
-import { registerNoiseMocks, reusedTriage } from './noise'
-import { registerNotificationMocks } from './notifications'
-import { makeId } from './rng'
-import { detectionNeedles, parseRuleYaml, ruleById, rules } from './rules'
-import { isArchiveUrl } from '../lib/ruleRepos'
+} from "./fixtures";
+import { HOUR, hostById, hosts } from "./hosts";
+import {
+  getIntelSettings,
+  getLookup,
+  lookupHistory,
+  putIntelSettings,
+  sightings,
+  startLookup,
+} from "./intel";
+import { networkRoutes } from "./network";
+import { registerHealthMocks } from "./health";
+import { registerHealthCheckMocks } from "./healthChecks";
+import { registerListMocks } from "./lists";
+import { registerVulnMocks } from "./vuln";
+import { registerFirewallMocks } from "./firewall";
+import { repoFiles, repoSkipped } from "./repoFiles";
+import { registerNoiseMocks, reusedTriage } from "./noise";
+import { registerNotificationMocks } from "./notifications";
+import { makeId } from "./rng";
+import { detectionNeedles, parseRuleYaml, ruleById, rules } from "./rules";
+import { isArchiveUrl } from "../lib/ruleRepos";
 
 // --- session ----------------------------------------------------------------------------
 
-const SS_SESSION = 'homexdr.mock.session'
-const SS_ROLE = 'homexdr.mock.role'
-const SS_SETUP = 'homexdr.mock.setup'
+const SS_SESSION = "homexdr.mock.session";
+const SS_ROLE = "homexdr.mock.role";
+const SS_SETUP = "homexdr.mock.setup";
 
 function ssGet(k: string): string | null {
   try {
-    return sessionStorage.getItem(k)
+    return sessionStorage.getItem(k);
   } catch {
-    return null
+    return null;
   }
 }
 function ssSet(k: string, v: string | null) {
   try {
-    if (v === null) sessionStorage.removeItem(k)
-    else sessionStorage.setItem(k, v)
+    if (v === null) sessionStorage.removeItem(k);
+    else sessionStorage.setItem(k, v);
   } catch {
     // ignore
   }
 }
 
 const state = {
-  loggedIn: ssGet(SS_SESSION) !== '0',
-  needsSetup: ssGet(SS_SETUP) === '1',
-  username: ssGet(SS_SESSION + '.user') ?? 'admin',
-}
+  loggedIn: ssGet(SS_SESSION) !== "0",
+  needsSetup: ssGet(SS_SETUP) === "1",
+  username: ssGet(SS_SESSION + ".user") ?? "admin",
+};
 
 /** Applies ?mock_role=, ?mock_setup=1 and ?mock_logout=1 from the page URL. */
 export function applyMockUrlFlags(search: string) {
-  const sp = new URLSearchParams(search)
-  const role = sp.get('mock_role')
-  if (role === 'admin' || role === 'analyst' || role === 'viewer') ssSet(SS_ROLE, role)
-  if (sp.get('mock_setup') === '1') {
-    ssSet(SS_SETUP, '1')
-    state.needsSetup = true
-    state.loggedIn = false
-    ssSet(SS_SESSION, '0')
+  const sp = new URLSearchParams(search);
+  const role = sp.get("mock_role");
+  if (role === "admin" || role === "analyst" || role === "viewer")
+    ssSet(SS_ROLE, role);
+  if (sp.get("mock_setup") === "1") {
+    ssSet(SS_SETUP, "1");
+    state.needsSetup = true;
+    state.loggedIn = false;
+    ssSet(SS_SESSION, "0");
   }
-  if (sp.get('mock_logout') === '1') {
-    state.loggedIn = false
-    ssSet(SS_SESSION, '0')
+  if (sp.get("mock_logout") === "1") {
+    state.loggedIn = false;
+    ssSet(SS_SESSION, "0");
   }
 }
 
 function currentUser(): User | undefined {
-  const u = users.find((x) => x.username === state.username) ?? users[0]
-  if (!u) return undefined
-  const role = ssGet(SS_ROLE) as Role | null
-  return role ? { ...u, role } : u
+  const u = users.find((x) => x.username === state.username) ?? users[0];
+  if (!u) return undefined;
+  const role = ssGet(SS_ROLE) as Role | null;
+  return role ? { ...u, role } : u;
 }
 
 // --- plumbing ---------------------------------------------------------------------------
@@ -127,657 +140,946 @@ class HttpError extends Error {
     readonly status: number,
     message: string,
   ) {
-    super(message)
+    super(message);
   }
 }
 
 const fail = (status: number, message: string): never => {
-  throw new HttpError(status, message)
-}
+  throw new HttpError(status, message);
+};
 
 interface Ctx {
-  params: Record<string, string>
-  query: URLSearchParams
-  body: unknown
-  user: User | undefined
+  params: Record<string, string>;
+  query: URLSearchParams;
+  body: unknown;
+  user: User | undefined;
 }
 
-type Handler = (c: Ctx) => unknown
+type Handler = (c: Ctx) => unknown;
 
 interface RouteDef {
-  method: string
-  re: RegExp
-  keys: string[]
-  handler: Handler
-  auth: boolean
-  role?: Role
+  method: string;
+  re: RegExp;
+  keys: string[];
+  handler: Handler;
+  auth: boolean;
+  role?: Role;
 }
 
-const routes: RouteDef[] = []
+const routes: RouteDef[] = [];
 
-function route(method: string, path: string, handler: Handler, opts: { auth?: boolean; role?: Role } = {}) {
-  const keys: string[] = []
+function route(
+  method: string,
+  path: string,
+  handler: Handler,
+  opts: { auth?: boolean; role?: Role } = {},
+) {
+  const keys: string[] = [];
   const re = new RegExp(
-    '^' +
+    "^" +
       path.replace(/:[a-zA-Z]+/g, (m) => {
-        keys.push(m.slice(1))
-        return '([^/]+)'
+        keys.push(m.slice(1));
+        return "([^/]+)";
       }) +
-      '$',
-  )
-  routes.push({ method, re, keys, handler, auth: opts.auth ?? true, role: opts.role })
+      "$",
+  );
+  routes.push({
+    method,
+    re,
+    keys,
+    handler,
+    auth: opts.auth ?? true,
+    role: opts.role,
+  });
 }
 
 function json(status: number, body: unknown): Response {
-  if (status === 204) return new Response(null, { status })
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  if (status === 204) return new Response(null, { status });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 class NoContent {}
-const NO_CONTENT = new NoContent()
+const NO_CONTENT = new NoContent();
 
-const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms))
+const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-export async function handleMockRequest(method: string, url: URL, headers: Headers, rawBody: string | null): Promise<Response> {
-  await sleep(120 + Math.random() * 260)
-  const path = url.pathname
+export async function handleMockRequest(
+  method: string,
+  url: URL,
+  headers: Headers,
+  rawBody: string | null,
+): Promise<Response> {
+  await sleep(120 + Math.random() * 260);
+  const path = url.pathname;
   for (const r of routes) {
-    if (r.method !== method) continue
-    const m = r.re.exec(path)
-    if (!m) continue
-    const params: Record<string, string> = {}
-    r.keys.forEach((k, i) => (params[k] = decodeURIComponent(m[i + 1])))
+    if (r.method !== method) continue;
+    const m = r.re.exec(path);
+    if (!m) continue;
+    const params: Record<string, string> = {};
+    r.keys.forEach((k, i) => (params[k] = decodeURIComponent(m[i + 1])));
     try {
-      if (method !== 'GET' && headers.get('X-HomeXDR-CSRF') !== '1') fail(403, 'missing or invalid X-HomeXDR-CSRF header')
-      const user = state.loggedIn ? currentUser() : undefined
-      if (r.auth && !user) fail(401, 'not authenticated')
-      if (r.role && !hasRole(user, r.role)) fail(403, `forbidden: requires ${r.role} role`)
-      let body: unknown = undefined
+      if (method !== "GET" && headers.get("X-HomeXDR-CSRF") !== "1")
+        fail(403, "missing or invalid X-HomeXDR-CSRF header");
+      const user = state.loggedIn ? currentUser() : undefined;
+      if (r.auth && !user) fail(401, "not authenticated");
+      if (r.role && !hasRole(user, r.role))
+        fail(403, `forbidden: requires ${r.role} role`);
+      let body: unknown = undefined;
       if (rawBody) {
         try {
-          body = JSON.parse(rawBody)
+          body = JSON.parse(rawBody);
         } catch {
-          fail(400, 'invalid JSON body')
+          fail(400, "invalid JSON body");
         }
       }
-      const out = r.handler({ params, query: url.searchParams, body, user })
-      if (out instanceof Response) return out
-      if (out === NO_CONTENT) return json(204, null)
-      return json(200, out)
+      const out = r.handler({ params, query: url.searchParams, body, user });
+      if (out instanceof Response) return out;
+      if (out === NO_CONTENT) return json(204, null);
+      return json(200, out);
     } catch (e) {
-      if (e instanceof HttpError) return json(e.status, { error: e.message })
-      console.error('[mock]', e)
-      return json(500, { error: e instanceof Error ? e.message : String(e) })
+      if (e instanceof HttpError) return json(e.status, { error: e.message });
+      console.error("[mock]", e);
+      return json(500, { error: e instanceof Error ? e.message : String(e) });
     }
   }
-  return json(404, { error: `no mock route for ${method} ${path}` })
+  return json(404, { error: `no mock route for ${method} ${path}` });
 }
 
 function obj(b: unknown): Record<string, unknown> {
-  if (!b || typeof b !== 'object' || Array.isArray(b)) fail(400, 'expected a JSON object')
-  return b as Record<string, unknown>
+  if (!b || typeof b !== "object" || Array.isArray(b))
+    fail(400, "expected a JSON object");
+  return b as Record<string, unknown>;
 }
 
 function page<T>(xs: T[], q: URLSearchParams, def = 100): T[] {
-  const limit = Math.min(1000, Math.max(1, Number(q.get('limit') ?? def) || def))
-  const offset = Math.max(0, Number(q.get('offset') ?? 0) || 0)
-  return xs.slice(offset, offset + limit)
+  const limit = Math.min(
+    1000,
+    Math.max(1, Number(q.get("limit") ?? def) || def),
+  );
+  const offset = Math.max(0, Number(q.get("offset") ?? 0) || 0);
+  return xs.slice(offset, offset + limit);
 }
 
-function logAudit(user: User | undefined, action: string, target: string, details: unknown) {
-  const at = new Date().toISOString()
-  audit.unshift({ id: makeId(Date.now()), at, user: user?.username ?? 'system', action, target, details })
+function logAudit(
+  user: User | undefined,
+  action: string,
+  target: string,
+  details: unknown,
+) {
+  const at = new Date().toISOString();
+  audit.unshift({
+    id: makeId(Date.now()),
+    at,
+    user: user?.username ?? "system",
+    action,
+    target,
+    details,
+  });
 }
 
 function list(q: URLSearchParams, k: string): string[] {
-  return (q.get(k) ?? '')
-    .split(',')
+  return (q.get(k) ?? "")
+    .split(",")
     .map((s) => s.trim())
-    .filter(Boolean)
+    .filter(Boolean);
 }
 
 // --- setup and auth -----------------------------------------------------------------------
 
-route('GET', '/api/setup/status', () => ({ needs_setup: state.needsSetup, version: serverSettings.version }), { auth: false })
+route(
+  "GET",
+  "/api/setup/status",
+  () => ({ needs_setup: state.needsSetup, version: serverSettings.version }),
+  { auth: false },
+);
 
 route(
-  'POST',
-  '/api/setup',
+  "POST",
+  "/api/setup",
   ({ body }) => {
-    if (!state.needsSetup) fail(409, 'setup already completed')
-    const b = obj(body)
-    const username = String(b.username ?? '').trim()
-    const password = String(b.password ?? '')
-    if (!/^[a-zA-Z0-9._-]{2,32}$/.test(username)) fail(400, 'username must be 2-32 characters: letters, digits, . _ -')
-    if (password.length < 10) fail(400, 'password must be at least 10 characters')
-    users.splice(0, users.length, { id: makeId(Date.now()), username, role: 'admin', created_at: new Date().toISOString(), last_login: new Date().toISOString() })
-    state.needsSetup = false
-    state.loggedIn = true
-    state.username = username
-    ssSet(SS_SETUP, null)
-    ssSet(SS_SESSION, '1')
-    ssSet(SS_SESSION + '.user', username)
-    ssSet(SS_ROLE, null)
-    return { user: users[0] }
+    if (!state.needsSetup) fail(409, "setup already completed");
+    const b = obj(body);
+    const username = String(b.username ?? "").trim();
+    const password = String(b.password ?? "");
+    if (!/^[a-zA-Z0-9._-]{2,32}$/.test(username))
+      fail(400, "username must be 2-32 characters: letters, digits, . _ -");
+    if (password.length < 10)
+      fail(400, "password must be at least 10 characters");
+    users.splice(0, users.length, {
+      id: makeId(Date.now()),
+      username,
+      role: "admin",
+      created_at: new Date().toISOString(),
+      last_login: new Date().toISOString(),
+    });
+    state.needsSetup = false;
+    state.loggedIn = true;
+    state.username = username;
+    ssSet(SS_SETUP, null);
+    ssSet(SS_SESSION, "1");
+    ssSet(SS_SESSION + ".user", username);
+    ssSet(SS_ROLE, null);
+    return { user: users[0] };
   },
   { auth: false },
-)
+);
 
 route(
-  'POST',
-  '/api/auth/login',
+  "POST",
+  "/api/auth/login",
   ({ body }) => {
-    const b = obj(body)
-    const u = users.find((x) => x.username === String(b.username ?? ''))
-    if (!u || String(b.password ?? '').length < 10) fail(401, 'invalid username or password')
-    state.loggedIn = true
-    state.username = u!.username
-    ssSet(SS_SESSION, '1')
-    ssSet(SS_SESSION + '.user', u!.username)
-    u!.last_login = new Date().toISOString()
-    logAudit(u, 'auth.login', u!.username, { ip: '127.0.0.1' })
-    return { user: currentUser() }
+    const b = obj(body);
+    const u = users.find((x) => x.username === String(b.username ?? ""));
+    if (!u || String(b.password ?? "").length < 10)
+      fail(401, "invalid username or password");
+    state.loggedIn = true;
+    state.username = u!.username;
+    ssSet(SS_SESSION, "1");
+    ssSet(SS_SESSION + ".user", u!.username);
+    u!.last_login = new Date().toISOString();
+    logAudit(u, "auth.login", u!.username, { ip: "127.0.0.1" });
+    return { user: currentUser() };
   },
   { auth: false },
-)
+);
 
-route('POST', '/api/auth/logout', () => {
-  state.loggedIn = false
-  ssSet(SS_SESSION, '0')
-  return NO_CONTENT
-}, { auth: false })
+route(
+  "POST",
+  "/api/auth/logout",
+  () => {
+    state.loggedIn = false;
+    ssSet(SS_SESSION, "0");
+    return NO_CONTENT;
+  },
+  { auth: false },
+);
 
-route('GET', '/api/auth/me', ({ user }) => ({ user }))
+route("GET", "/api/auth/me", ({ user }) => ({ user }));
 
-route('GET', '/healthz', () => ({ status: 'ok', event_store: 'ok' }), { auth: false })
+route("GET", "/healthz", () => ({ status: "ok", event_store: "ok" }), {
+  auth: false,
+});
 
 // --- overview -----------------------------------------------------------------------------
 
-route('GET', '/api/stats/overview', ({ query }) => {
-  const hours = Math.min(24 * 30, Math.max(1, Number(query.get('hours') ?? 24) || 24))
-  const now = Date.now()
-  const start = now - hours * HOUR
-  const inWin = (iso: string) => Date.parse(iso) >= start
-  const evs = events.filter((e) => inWin(e['@timestamp']))
-  const bucket = (ms: number) => new Date(Math.floor(ms / HOUR) * HOUR).toISOString()
+route("GET", "/api/stats/overview", ({ query }) => {
+  const hours = Math.min(
+    24 * 30,
+    Math.max(1, Number(query.get("hours") ?? 24) || 24),
+  );
+  const now = Date.now();
+  const start = now - hours * HOUR;
+  const inWin = (iso: string) => Date.parse(iso) >= start;
+  const evs = events.filter((e) => inWin(e["@timestamp"]));
+  const bucket = (ms: number) =>
+    new Date(Math.floor(ms / HOUR) * HOUR).toISOString();
   const timeline = (stamps: number[]) => {
-    const m = new Map<string, number>()
-    for (const s of stamps) m.set(bucket(s), (m.get(bucket(s)) ?? 0) + 1)
-    return [...m.entries()].sort().map(([t, count]) => ({ t, count }))
-  }
-  const open = alerts.filter((a) => OPEN_ALERT_STATUSES.includes(a.status))
-  const bySev = Object.fromEntries(SEVERITIES.map((s) => [s, open.filter((a) => a.severity === s).length])) as Record<Severity, number>
-  const winAlerts = alerts.filter((a) => inWin(a.last_seen))
-  const ruleCounts = new Map<string, { rule_id: string; title: string; severity: Severity; count: number }>()
+    const m = new Map<string, number>();
+    for (const s of stamps) m.set(bucket(s), (m.get(bucket(s)) ?? 0) + 1);
+    return [...m.entries()].sort().map(([t, count]) => ({ t, count }));
+  };
+  const open = alerts.filter((a) => OPEN_ALERT_STATUSES.includes(a.status));
+  const bySev = Object.fromEntries(
+    SEVERITIES.map((s) => [s, open.filter((a) => a.severity === s).length]),
+  ) as Record<Severity, number>;
+  const winAlerts = alerts.filter((a) => inWin(a.last_seen));
+  const ruleCounts = new Map<
+    string,
+    { rule_id: string; title: string; severity: Severity; count: number }
+  >();
   for (const a of winAlerts) {
-    const cur = ruleCounts.get(a.rule.id) ?? { rule_id: a.rule.id, title: a.rule.title, severity: a.severity, count: 0 }
-    cur.count += a.count
-    ruleCounts.set(a.rule.id, cur)
+    const cur = ruleCounts.get(a.rule.id) ?? {
+      rule_id: a.rule.id,
+      title: a.rule.title,
+      severity: a.severity,
+      count: 0,
+    };
+    cur.count += a.count;
+    ruleCounts.set(a.rule.id, cur);
   }
-  const hostCounts = new Map<string, { host_id: string; hostname: string; alerts: number }>()
+  const hostCounts = new Map<
+    string,
+    { host_id: string; hostname: string; alerts: number }
+  >();
   for (const a of winAlerts) {
-    const cur = hostCounts.get(a.host_id) ?? { host_id: a.host_id, hostname: a.hostname, alerts: 0 }
-    cur.alerts++
-    hostCounts.set(a.host_id, cur)
+    const cur = hostCounts.get(a.host_id) ?? {
+      host_id: a.host_id,
+      hostname: a.hostname,
+      alerts: 0,
+    };
+    cur.alerts++;
+    hostCounts.set(a.host_id, cur);
   }
-  const cats = new Map<string, number>()
+  const cats = new Map<string, number>();
   for (const e of evs) {
-    const c = e.event.category?.[0] ?? 'other'
-    cats.set(c, (cats.get(c) ?? 0) + 1)
+    const c = e.event.category?.[0] ?? "other";
+    cats.set(c, (cats.get(c) ?? 0) + 1);
   }
   const out: Overview = {
-    hosts_total: hosts.filter((h) => h.status !== 'revoked').length,
-    hosts_online: hosts.filter((h) => h.status === 'online' || h.status === 'isolated').length,
+    hosts_total: hosts.filter((h) => h.status !== "revoked").length,
+    hosts_online: hosts.filter(
+      (h) => h.status === "online" || h.status === "isolated",
+    ).length,
     hosts_isolated: hosts.filter((h) => h.isolated).length,
     alerts_open: open.length,
     alerts_by_severity: bySev,
     events_total: evs.length,
-    events_timeline: timeline(evs.map((e) => Date.parse(e['@timestamp']))),
+    events_timeline: timeline(evs.map((e) => Date.parse(e["@timestamp"]))),
     alerts_timeline: timeline(
-      alerts.flatMap((a) => a.event_ids.map((id) => eventById(id)).filter((e): e is Event => !!e && inWin(e['@timestamp'])).map((e) => Date.parse(e['@timestamp']))),
+      alerts.flatMap((a) =>
+        a.event_ids
+          .map((id) => eventById(id))
+          .filter((e): e is Event => !!e && inWin(e["@timestamp"]))
+          .map((e) => Date.parse(e["@timestamp"])),
+      ),
     ),
-    top_rules: [...ruleCounts.values()].sort((a, b) => b.count - a.count).slice(0, 8),
-    top_hosts: [...hostCounts.values()].sort((a, b) => b.alerts - a.alerts).slice(0, 8),
-    events_by_category: [...cats.entries()].map(([category, count]) => ({ category, count })).sort((a, b) => b.count - a.count),
-  }
-  return out
-})
+    top_rules: [...ruleCounts.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8),
+    top_hosts: [...hostCounts.values()]
+      .sort((a, b) => b.alerts - a.alerts)
+      .slice(0, 8),
+    events_by_category: [...cats.entries()]
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count),
+  };
+  return out;
+});
 
 // --- hosts --------------------------------------------------------------------------------
 
 function getHostOr404(id: string): Host {
-  return hostById(id) ?? fail(404, 'host not found')
+  return hostById(id) ?? fail(404, "host not found");
 }
 
-route('GET', '/api/hosts', ({ query }) => {
-  const q = (query.get('q') ?? '').toLowerCase()
-  const status = list(query, 'status')
-  const label = query.get('label')
-  const platform = query.get('platform')
-  advanceCommands()
-  recomputeOpenAlerts()
-  const withDecommissioned = status.includes('decommissioned') || query.get('include_decommissioned') === 'true'
+route("GET", "/api/hosts", ({ query }) => {
+  const q = (query.get("q") ?? "").toLowerCase();
+  const status = list(query, "status");
+  const label = query.get("label");
+  const platform = query.get("platform");
+  advanceCommands();
+  recomputeOpenAlerts();
+  const withDecommissioned =
+    status.includes("decommissioned") ||
+    query.get("include_decommissioned") === "true";
   const out = hosts.filter(
     (h) =>
-      (withDecommissioned || h.status !== 'decommissioned') &&
-      (!q || h.hostname.toLowerCase().includes(q) || h.ips.some((ip) => ip.includes(q))) &&
+      (withDecommissioned || h.status !== "decommissioned") &&
+      (!q ||
+        h.hostname.toLowerCase().includes(q) ||
+        h.ips.some((ip) => ip.includes(q))) &&
       (!status.length || status.includes(h.status)) &&
-      matchesGroupFilter(h.group_id, query.get('group')) &&
+      matchesGroupFilter(h.group_id, query.get("group")) &&
       (!label || h.labels.includes(label)) &&
       (!platform || h.os.platform === platform),
-  )
-  return { hosts: out.map(withUpdate), total: out.length }
-})
+  );
+  return { hosts: out.map(withUpdate), total: out.length };
+});
 
 // --- agent lifecycle ---------------------------------------------------------------------
 
 const RELEASES: ArchivedRelease[] = [
-  { version: '0.0.0-20261026120000.4d1c2b9', commit_time: Date.parse('2026-10-26T12:00:00Z') / 1000, archived_at: new Date(Date.now() - 20 * HOUR).toISOString(), bundled: true, files: ['homexdr-agent-linux-amd64'], agents: 0 },
-  { version: '0.1.0', commit_time: Date.parse('2026-10-15T08:00:00Z') / 1000, archived_at: new Date(Date.now() - 11 * 24 * HOUR).toISOString(), bundled: false, files: ['homexdr-agent-linux-amd64'], agents: 0 },
-]
+  {
+    version: "0.0.0-20261026120000.4d1c2b9",
+    commit_time: Date.parse("2026-10-26T12:00:00Z") / 1000,
+    archived_at: new Date(Date.now() - 20 * HOUR).toISOString(),
+    bundled: true,
+    files: ["homexdr-agent-linux-amd64"],
+    agents: 0,
+  },
+  {
+    version: "0.1.0",
+    commit_time: Date.parse("2026-10-15T08:00:00Z") / 1000,
+    archived_at: new Date(Date.now() - 11 * 24 * HOUR).toISOString(),
+    bundled: false,
+    files: ["homexdr-agent-linux-amd64"],
+    agents: 0,
+  },
+];
 
 const lifecycle: AgentLifecycle = {
   decommission_after_days: 0,
   updates: {
-    default: { mode: 'latest' },
+    default: { mode: "latest" },
     labels: [],
-    staged: { enabled: false, canary_label: 'canary', delay_hours: 24 },
-    window: { enabled: false, start: '02:00', end: '05:00', timezone: 'America/Chicago' },
+    staged: { enabled: false, canary_label: "canary", delay_hours: 24 },
+    window: {
+      enabled: false,
+      start: "02:00",
+      end: "05:00",
+      timezone: "America/Chicago",
+    },
   },
-}
+};
 
 function updateFor(h: Host): HostUpdate | undefined {
-  if (h.kind !== 'endpoint' || h.status === 'revoked') return undefined
-  const rule = lifecycle.updates.labels.find((l) => h.labels.some((x) => x.toLowerCase() === l.label.toLowerCase()))
-  const r = rule?.rule ?? lifecycle.updates.default
-  const source = rule?.label ?? 'default'
-  if (r.mode === 'off' && !h.update_now_at) return { rule: r, source, state: 'off', reason: 'updates are off for these agents' }
-  const target = r.mode === 'n-1' ? RELEASES[1] : r.mode === 'pinned' ? RELEASES.find((x) => x.version === r.version) : RELEASES[0]
-  if (!target) return { rule: r, source, state: 'none', reason: 'pinned version is not in the release archive' }
-  if (h.agent_version === target.version) return { rule: r, source, target: target.version, state: 'current' }
+  if (h.kind !== "endpoint" || h.status === "revoked") return undefined;
+  const rule = lifecycle.updates.labels.find((l) =>
+    h.labels.some((x) => x.toLowerCase() === l.label.toLowerCase()),
+  );
+  const r = rule?.rule ?? lifecycle.updates.default;
+  const source = rule?.label ?? "default";
+  if (r.mode === "off" && !h.update_now_at)
+    return {
+      rule: r,
+      source,
+      state: "off",
+      reason: "updates are off for these agents",
+    };
+  const target =
+    r.mode === "n-1"
+      ? RELEASES[1]
+      : r.mode === "pinned"
+        ? RELEASES.find((x) => x.version === r.version)
+        : RELEASES[0];
+  if (!target)
+    return {
+      rule: r,
+      source,
+      state: "none",
+      reason: "pinned version is not in the release archive",
+    };
+  if (h.agent_version === target.version)
+    return { rule: r, source, target: target.version, state: "current" };
   if (lifecycle.updates.window.enabled && !h.update_now_at)
-    return { rule: r, source, target: target.version, state: 'pending', reason: `waiting for the maintenance window (${lifecycle.updates.window.start}-${lifecycle.updates.window.end})` }
-  return { rule: r, source, target: target.version, state: 'updating', reason: h.update_now_at ? 'update requested now' : undefined }
+    return {
+      rule: r,
+      source,
+      target: target.version,
+      state: "pending",
+      reason: `waiting for the maintenance window (${lifecycle.updates.window.start}-${lifecycle.updates.window.end})`,
+    };
+  return {
+    rule: r,
+    source,
+    target: target.version,
+    state: "updating",
+    reason: h.update_now_at ? "update requested now" : undefined,
+  };
 }
 
 function withUpdate(h: Host): Host {
   return {
     ...h,
-    cert_expires: h.kind === 'endpoint' ? h.cert_expires ?? new Date(Date.parse(h.enrolled_at) + 365 * 24 * HOUR).toISOString() : undefined,
+    cert_expires:
+      h.kind === "endpoint"
+        ? (h.cert_expires ??
+          new Date(Date.parse(h.enrolled_at) + 365 * 24 * HOUR).toISOString())
+        : undefined,
     update: updateFor(h),
-  }
+  };
 }
 
 function lifecycleView() {
-  const releases = RELEASES.map((r) => ({ ...r, agents: hosts.filter((h) => h.agent_version === r.version).length }))
+  const releases = RELEASES.map((r) => ({
+    ...r,
+    agents: hosts.filter((h) => h.agent_version === r.version).length,
+  }));
   return {
     settings: lifecycle,
     releases,
-    release_status: { version: RELEASES[0].version, signed: true, update_key: 'ed25519:mock' },
-    canary_agents: hosts.filter((h) => h.labels.includes(lifecycle.updates.staged.canary_label)).length,
-    decommissioned_agents: hosts.filter((h) => h.status === 'decommissioned').length,
-  }
+    release_status: {
+      version: RELEASES[0].version,
+      signed: true,
+      update_key: "ed25519:mock",
+    },
+    canary_agents: hosts.filter((h) =>
+      h.labels.includes(lifecycle.updates.staged.canary_label),
+    ).length,
+    decommissioned_agents: hosts.filter((h) => h.status === "decommissioned")
+      .length,
+  };
 }
 
-route('GET', '/api/settings/agent-lifecycle', () => lifecycleView(), { role: 'admin' })
+route("GET", "/api/settings/agent-lifecycle", () => lifecycleView(), {
+  role: "admin",
+});
 route(
-  'PUT',
-  '/api/settings/agent-lifecycle',
+  "PUT",
+  "/api/settings/agent-lifecycle",
   ({ body }) => {
-    const b = obj(body) as unknown as AgentLifecycle
-    if (b.decommission_after_days < 0) fail(400, 'decommission_after_days must be between 0 (off) and 3650')
-    if (b.updates.default.mode === 'pinned' && !b.updates.default.version) fail(400, 'default rule: a pinned rule needs a release version')
-    Object.assign(lifecycle, b)
-    return lifecycleView()
+    const b = obj(body) as unknown as AgentLifecycle;
+    if (b.decommission_after_days < 0)
+      fail(400, "decommission_after_days must be between 0 (off) and 3650");
+    if (b.updates.default.mode === "pinned" && !b.updates.default.version)
+      fail(400, "default rule: a pinned rule needs a release version");
+    Object.assign(lifecycle, b);
+    return lifecycleView();
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 route(
-  'POST',
-  '/api/hosts/:id/decommission',
+  "POST",
+  "/api/hosts/:id/decommission",
   ({ params }) => {
-    const h = getHostOr404(params.id)
-    if (h.kind !== 'endpoint') fail(404, 'not found')
-    h.status = 'decommissioned'
-    h.decommissioned_at = new Date().toISOString()
-    return withUpdate(h)
+    const h = getHostOr404(params.id);
+    if (h.kind !== "endpoint") fail(404, "not found");
+    h.status = "decommissioned";
+    h.decommissioned_at = new Date().toISOString();
+    return withUpdate(h);
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 route(
-  'POST',
-  '/api/hosts/:id/recommission',
+  "POST",
+  "/api/hosts/:id/recommission",
   ({ params }) => {
-    const h = getHostOr404(params.id)
-    if (h.status === 'decommissioned') h.status = 'offline'
-    h.decommissioned_at = undefined
-    return withUpdate(h)
+    const h = getHostOr404(params.id);
+    if (h.status === "decommissioned") h.status = "offline";
+    h.decommissioned_at = undefined;
+    return withUpdate(h);
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 route(
-  'POST',
-  '/api/hosts/:id/update-now',
+  "POST",
+  "/api/hosts/:id/update-now",
   ({ params }) => {
-    const h = getHostOr404(params.id)
-    h.update_now_at = new Date().toISOString()
-    return withUpdate(h)
+    const h = getHostOr404(params.id);
+    h.update_now_at = new Date().toISOString();
+    return withUpdate(h);
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
-route('GET', '/api/hosts/:id', ({ params }) => {
-  advanceCommands()
-  recomputeOpenAlerts()
-  return withUpdate(getHostOr404(params.id))
-})
+route("GET", "/api/hosts/:id", ({ params }) => {
+  advanceCommands();
+  recomputeOpenAlerts();
+  return withUpdate(getHostOr404(params.id));
+});
 
 route(
-  'PATCH',
-  '/api/hosts/:id',
+  "PATCH",
+  "/api/hosts/:id",
   ({ params, body, user }) => {
-    const h = getHostOr404(params.id)
-    const b = obj(body)
-    if (!Array.isArray(b.labels) || !b.labels.every((l) => typeof l === 'string')) fail(400, 'labels must be an array of strings')
-    h.labels = [...new Set((b.labels as string[]).map((l) => l.trim().toLowerCase()).filter(Boolean))]
-    logAudit(user, 'host.update', h.hostname, { labels: h.labels })
-    return h
+    const h = getHostOr404(params.id);
+    const b = obj(body);
+    if (
+      !Array.isArray(b.labels) ||
+      !b.labels.every((l) => typeof l === "string")
+    )
+      fail(400, "labels must be an array of strings");
+    h.labels = [
+      ...new Set(
+        (b.labels as string[])
+          .map((l) => l.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    ];
+    logAudit(user, "host.update", h.hostname, { labels: h.labels });
+    return h;
   },
-  { role: 'analyst' },
-)
+  { role: "analyst" },
+);
 
 route(
-  'DELETE',
-  '/api/hosts/:id',
+  "DELETE",
+  "/api/hosts/:id",
   ({ params, user }) => {
-    const h = getHostOr404(params.id)
-    h.status = 'revoked'
-    logAudit(user, 'host.revoke', h.hostname, null)
-    return NO_CONTENT
+    const h = getHostOr404(params.id);
+    h.status = "revoked";
+    logAudit(user, "host.revoke", h.hostname, null);
+    return NO_CONTENT;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 function validateCommand(h: Host, req: CommandRequest) {
-  const p = (req.params ?? {}) as Record<string, unknown>
+  const p = (req.params ?? {}) as Record<string, unknown>;
   switch (req.type) {
-    case 'process.kill':
-      if (!Number.isInteger(p.pid) || (p.pid as number) <= 0) fail(400, 'params.pid must be a positive integer')
-      break
-    case 'file.quarantine':
-    case 'file.get':
-    case 'file.hash':
-      if (typeof p.path !== 'string' || !p.path.trim()) fail(400, 'params.path is required')
-      break
-    case 'file.restore':
-      if (typeof p.id !== 'string' || !p.id.trim()) fail(400, 'params.id is required')
-      break
-    case 'artifact.collect': {
-      const a = artifacts.find((x) => x.name === p.name) ?? fail(400, `unknown artifact "${String(p.name)}"`)
-      if (!a.platforms.includes(h.os.platform)) fail(400, `${a.name} is not available on ${h.os.platform}`)
+    case "process.kill":
+      if (!Number.isInteger(p.pid) || (p.pid as number) <= 0)
+        fail(400, "params.pid must be a positive integer");
+      break;
+    case "file.quarantine":
+    case "file.get":
+    case "file.hash":
+      if (typeof p.path !== "string" || !p.path.trim())
+        fail(400, "params.path is required");
+      break;
+    case "file.restore":
+      if (typeof p.id !== "string" || !p.id.trim())
+        fail(400, "params.id is required");
+      break;
+    case "artifact.collect": {
+      const a =
+        artifacts.find((x) => x.name === p.name) ??
+        fail(400, `unknown artifact "${String(p.name)}"`);
+      if (!a.platforms.includes(h.os.platform))
+        fail(400, `${a.name} is not available on ${h.os.platform}`);
       for (const arg of a.params ?? []) {
-        const v = (p.params as Record<string, string> | undefined)?.[arg.name]
-        if (arg.required && !v) fail(400, `parameter "${arg.name}" is required`)
+        const v = (p.params as Record<string, string> | undefined)?.[arg.name];
+        if (arg.required && !v)
+          fail(400, `parameter "${arg.name}" is required`);
       }
-      break
+      break;
     }
-    case 'host.isolate':
-      if (p.allow !== undefined && (!Array.isArray(p.allow) || !p.allow.every((x) => typeof x === 'string'))) fail(400, 'params.allow must be an array of strings')
-      break
-    case 'host.release':
-      break
+    case "host.isolate":
+      if (
+        p.allow !== undefined &&
+        (!Array.isArray(p.allow) ||
+          !p.allow.every((x) => typeof x === "string"))
+      )
+        fail(400, "params.allow must be an array of strings");
+      break;
+    case "host.release":
+      break;
     default:
-      fail(400, `unknown command type "${String((req as { type: unknown }).type)}"`)
+      fail(
+        400,
+        `unknown command type "${String((req as { type: unknown }).type)}"`,
+      );
   }
 }
 
 route(
-  'POST',
-  '/api/hosts/:id/actions',
+  "POST",
+  "/api/hosts/:id/actions",
   ({ params, body, user }) => {
-    const h = getHostOr404(params.id)
-    const req = obj(body) as unknown as CommandRequest
-    if (!COMMAND_TYPES.includes(req.type as CommandType)) fail(400, `unknown command type "${String(req.type)}"`)
-    if (h.kind === 'network') fail(409, 'network devices do not run commands')
-    if (h.status === 'revoked') fail(409, 'host is revoked')
-    if (h.allowed_actions && !h.allowed_actions.includes(req.type)) fail(409, `${req.type} is not allowed by the agent's local policy`)
-    validateCommand(h, req)
-    const now = Date.now()
+    const h = getHostOr404(params.id);
+    const req = obj(body) as unknown as CommandRequest;
+    if (!COMMAND_TYPES.includes(req.type as CommandType))
+      fail(400, `unknown command type "${String(req.type)}"`);
+    if (h.kind === "network") fail(409, "network devices do not run commands");
+    if (h.status === "revoked") fail(409, "host is revoked");
+    if (h.allowed_actions && !h.allowed_actions.includes(req.type))
+      fail(409, `${req.type} is not allowed by the agent's local policy`);
+    validateCommand(h, req);
+    const now = Date.now();
     const c: MockCommand & { _issued: number } = {
       id: makeId(now),
       host_id: h.id,
       hostname: h.hostname,
       type: req.type,
       params: req.params ?? {},
-      status: 'queued',
+      status: "queued",
       issued_by: user!.username,
       issued_at: new Date(now).toISOString(),
       expires_at: new Date(now + HOUR).toISOString(),
       _issued: now,
-      _outcome: 'completed',
-    }
-    commands.unshift(c)
-    logAudit(user, 'command.create', h.hostname, { type: req.type, params: req.params })
-    return c
+      _outcome: "completed",
+    };
+    commands.unshift(c);
+    logAudit(user, "command.create", h.hostname, {
+      type: req.type,
+      params: req.params,
+    });
+    return c;
   },
-  { role: 'analyst' },
-)
+  { role: "analyst" },
+);
 
 /** Moves live mock commands through queued → delivered → running → completed. */
 function advanceCommands() {
-  const now = Date.now()
+  const now = Date.now();
   for (const c of commands as (MockCommand & { _issued?: number })[]) {
-    if (c._issued === undefined) continue
-    if (['completed', 'failed', 'rejected', 'expired'].includes(c.status)) continue
-    const h = hostById(c.host_id)!
-    const reachable = h.status === 'online' || h.status === 'isolated'
-    const age = now - c._issued
+    if (c._issued === undefined) continue;
+    if (["completed", "failed", "rejected", "expired"].includes(c.status))
+      continue;
+    const h = hostById(c.host_id)!;
+    const reachable = h.status === "online" || h.status === "isolated";
+    const age = now - c._issued;
     if (!reachable) {
-      if (now > Date.parse(c.expires_at)) c.status = 'expired'
-      continue
+      if (now > Date.parse(c.expires_at)) c.status = "expired";
+      continue;
     }
-    if (age > 1500 && c.status === 'queued') {
-      c.status = 'delivered'
-      c.delivered_at = new Date(c._issued + 1500).toISOString()
+    if (age > 1500 && c.status === "queued") {
+      c.status = "delivered";
+      c.delivered_at = new Date(c._issued + 1500).toISOString();
     }
-    if (age > 2500 && c.status === 'delivered') c.status = 'running'
-    if (age > 4500 && c.status === 'running') finishCommand(c, h)
+    if (age > 2500 && c.status === "delivered") c.status = "running";
+    if (age > 4500 && c.status === "running") finishCommand(c, h);
   }
 }
 
 function finishCommand(c: MockCommand, h: Host) {
-  c.status = 'completed'
-  c.completed_at = new Date().toISOString()
-  const p = c.params as Record<string, unknown>
-  const sha = () => Array.from({ length: 64 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('')
+  c.status = "completed";
+  c.completed_at = new Date().toISOString();
+  const p = c.params as Record<string, unknown>;
+  const sha = () =>
+    Array.from(
+      { length: 64 },
+      () => "0123456789abcdef"[Math.floor(Math.random() * 16)],
+    ).join("");
   switch (c.type) {
-    case 'process.kill': {
-      const pid = Number(p.pid)
-      const mp = processes.find((x) => x.host_id === h.id && x.pid === pid && !x.end)
+    case "process.kill": {
+      const pid = Number(p.pid);
+      const mp = processes.find(
+        (x) => x.host_id === h.id && x.pid === pid && !x.end,
+      );
       if (!mp) {
-        c.status = 'failed'
-        c.error = `no running process with PID ${pid}`
-        break
+        c.status = "failed";
+        c.error = `no running process with PID ${pid}`;
+        break;
       }
-      if (typeof p.entity_id === 'string' && p.entity_id && p.entity_id !== mp.entity_id) {
-        c.status = 'failed'
-        c.error = 'PID was reused by a different process; nothing was killed'
-        break
+      if (
+        typeof p.entity_id === "string" &&
+        p.entity_id &&
+        p.entity_id !== mp.entity_id
+      ) {
+        c.status = "failed";
+        c.error = "PID was reused by a different process; nothing was killed";
+        break;
       }
-      const killed = [pid]
+      const killed = [pid];
       if (p.tree) {
-        const walk = (e: string) => processes.filter((x) => x.parent === e && !x.end).forEach((x) => (killed.push(x.pid), walk(x.entity_id)))
-        walk(mp.entity_id)
+        const walk = (e: string) =>
+          processes
+            .filter((x) => x.parent === e && !x.end)
+            .forEach((x) => (killed.push(x.pid), walk(x.entity_id)));
+        walk(mp.entity_id);
       }
       for (const k of killed) {
-        const x = processes.find((y) => y.host_id === h.id && y.pid === k && !y.end)
+        const x = processes.find(
+          (y) => y.host_id === h.id && y.pid === k && !y.end,
+        );
         if (x) {
-          x.end = Date.now()
-          x.exit_code = 1
+          x.end = Date.now();
+          x.exit_code = 1;
         }
       }
-      c.output = { killed }
-      break
+      c.output = { killed };
+      break;
     }
-    case 'host.isolate':
-      h.isolated = true
-      h.status = 'isolated'
-      c.output = {}
-      break
-    case 'host.release':
-      h.isolated = false
-      h.status = 'online'
-      c.output = {}
-      break
-    case 'file.quarantine':
-      c.output = { id: makeId(Date.now()), original_path: p.path, sha256: sha(), size: 4182 }
-      break
-    case 'file.restore':
-      c.output = {}
-      break
-    case 'file.hash':
-      c.output = { path: p.path, size: 4182, md5: sha().slice(0, 32), sha1: sha().slice(0, 40), sha256: sha() }
-      break
-    case 'file.get':
-      c.output = { path: p.path, size: 120, md5: sha().slice(0, 32), sha1: sha().slice(0, 40), sha256: sha() }
-      c._file = `HomeXDR mock mode: placeholder content for ${String(p.path)}\n`
-      break
-    case 'artifact.collect': {
-      const rows = artifactRows(String(p.name), h.id, (p.params as Record<string, string>) ?? {})
-      c._rows = rows
-      c.row_count = rows.length
-      c.output = { rows: rows.length }
-      break
+    case "host.isolate":
+      h.isolated = true;
+      h.status = "isolated";
+      c.output = {};
+      break;
+    case "host.release":
+      h.isolated = false;
+      h.status = "online";
+      c.output = {};
+      break;
+    case "file.quarantine":
+      c.output = {
+        id: makeId(Date.now()),
+        original_path: p.path,
+        sha256: sha(),
+        size: 4182,
+      };
+      break;
+    case "file.restore":
+      c.output = {};
+      break;
+    case "file.hash":
+      c.output = {
+        path: p.path,
+        size: 4182,
+        md5: sha().slice(0, 32),
+        sha1: sha().slice(0, 40),
+        sha256: sha(),
+      };
+      break;
+    case "file.get":
+      c.output = {
+        path: p.path,
+        size: 120,
+        md5: sha().slice(0, 32),
+        sha1: sha().slice(0, 40),
+        sha256: sha(),
+      };
+      c._file = `HomeXDR mock mode: placeholder content for ${String(p.path)}\n`;
+      break;
+    case "artifact.collect": {
+      const rows = artifactRows(
+        String(p.name),
+        h.id,
+        (p.params as Record<string, string>) ?? {},
+      );
+      c._rows = rows;
+      c.row_count = rows.length;
+      c.output = { rows: rows.length };
+      break;
     }
   }
 }
 
-route('GET', '/api/hosts/:id/commands', ({ params }) => {
-  getHostOr404(params.id)
-  advanceCommands()
-  return { commands: commands.filter((c) => c.host_id === params.id).map(publicCommand) }
-})
+route("GET", "/api/hosts/:id/commands", ({ params }) => {
+  getHostOr404(params.id);
+  advanceCommands();
+  return {
+    commands: commands
+      .filter((c) => c.host_id === params.id)
+      .map(publicCommand),
+  };
+});
 
 function publicCommand(c: MockCommand): MockCommand {
-  const { _outcome, _rows, _file, ...rest } = c as MockCommand & { _issued?: number }
-  void _outcome
-  void _rows
-  void _file
-  delete (rest as { _issued?: number })._issued
-  return rest
+  const { _outcome, _rows, _file, ...rest } = c as MockCommand & {
+    _issued?: number;
+  };
+  void _outcome;
+  void _rows;
+  void _file;
+  delete (rest as { _issued?: number })._issued;
+  return rest;
 }
 
 function timeFilter(e: Event, from: string | null, to: string | null) {
-  const t = e['@timestamp']
-  return (!from || t >= new Date(from).toISOString()) && (!to || t <= new Date(to).toISOString())
+  const t = e["@timestamp"];
+  return (
+    (!from || t >= new Date(from).toISOString()) &&
+    (!to || t <= new Date(to).toISOString())
+  );
 }
 
-route('GET', '/api/hosts/:id/timeline', ({ params, query }) => {
-  getHostOr404(params.id)
-  const cat = query.get('category')
-  const limit = Math.min(1000, Number(query.get('limit') ?? 100) || 100)
+route("GET", "/api/hosts/:id/timeline", ({ params, query }) => {
+  getHostOr404(params.id);
+  const cat = query.get("category");
+  const limit = Math.min(1000, Number(query.get("limit") ?? 100) || 100);
   const out = events
-    .filter((e) => e.host.id === params.id && timeFilter(e, query.get('from'), query.get('to')) && (!cat || e.event.category?.includes(cat)))
-    .slice(0, limit)
-  return { events: out }
-})
+    .filter(
+      (e) =>
+        e.host.id === params.id &&
+        timeFilter(e, query.get("from"), query.get("to")) &&
+        (!cat || e.event.category?.includes(cat)),
+    )
+    .slice(0, limit);
+  return { events: out };
+});
 
 // --- commands -------------------------------------------------------------------------------
 
 function getCommandOr404(id: string): MockCommand {
-  advanceCommands()
-  return commands.find((c) => c.id === id) ?? fail(404, 'command not found')
+  advanceCommands();
+  return commands.find((c) => c.id === id) ?? fail(404, "command not found");
 }
 
-route('GET', '/api/commands/:id', ({ params }) => publicCommand(getCommandOr404(params.id)))
+route("GET", "/api/commands/:id", ({ params }) =>
+  publicCommand(getCommandOr404(params.id)),
+);
 
-route('GET', '/api/commands/:id/rows', ({ params, query }) => {
-  const c = getCommandOr404(params.id)
-  const rows = c._rows ?? []
-  return { rows: page(rows, query), total: rows.length }
-})
+route("GET", "/api/commands/:id/rows", ({ params, query }) => {
+  const c = getCommandOr404(params.id);
+  const rows = c._rows ?? [];
+  return { rows: page(rows, query), total: rows.length };
+});
 
-route('GET', '/api/commands/:id/download', ({ params }) => {
-  const c = getCommandOr404(params.id)
-  if (c.type !== 'file.get' || !c._file) fail(404, 'no uploaded file for this command')
-  const path = String((c.params as { path?: string }).path ?? 'file')
-  const name = path.split(/[\\/]/).pop() || 'file'
+route("GET", "/api/commands/:id/download", ({ params }) => {
+  const c = getCommandOr404(params.id);
+  if (c.type !== "file.get" || !c._file)
+    fail(404, "no uploaded file for this command");
+  const path = String((c.params as { path?: string }).path ?? "file");
+  const name = path.split(/[\\/]/).pop() || "file";
   return new Response(c._file!, {
     status: 200,
-    headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${name}"` },
-  })
-})
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${name}"`,
+    },
+  });
+});
 
 // --- events ---------------------------------------------------------------------------------
 
-route('POST', '/api/events/search', ({ body }) => {
-  const b = obj(body)
-  const started = performance.now()
-  const query = String(b.query ?? '')
-  const invalid = validateQuery(query)
-  if (invalid) fail(400, `query: ${invalid.message} at position ${invalid.pos + 1}`)
-  const parts = splitPipeline(query)
-  let match: (e: unknown) => boolean
+route("POST", "/api/events/search", ({ body }) => {
+  const b = obj(body);
+  const started = performance.now();
+  const query = String(b.query ?? "");
+  const invalid = validateQuery(query);
+  if (invalid)
+    fail(400, `query: ${invalid.message} at position ${invalid.pos + 1}`);
+  const parts = splitPipeline(query);
+  let match: (e: unknown) => boolean;
   try {
-    match = compileQuery(parts.filter)
+    match = compileQuery(parts.filter);
   } catch (e) {
-    if (e instanceof QuerySyntaxError) fail(400, `query: ${e.message} at position ${e.pos + 1}`)
-    throw e
+    if (e instanceof QuerySyntaxError)
+      fail(400, `query: ${e.message} at position ${e.pos + 1}`);
+    throw e;
   }
-  const from = typeof b.from === 'string' ? b.from : null
-  const to = typeof b.to === 'string' ? b.to : null
-  const hostId = typeof b.host_id === 'string' ? b.host_id : null
-  let out = events.filter((e) => (!hostId || e.host.id === hostId) && timeFilter(e, from, to) && match(e))
-  const range = { from: from ? Date.parse(from) : Date.now() - 24 * HOUR, to: to ? Date.parse(to) : Date.now() }
-  const took_ms = () => Math.max(1, Math.round(performance.now() - started + 8))
-  let timeline: { timeline?: { t: string; count: number }[]; timeline_span?: number } = {}
+  const from = typeof b.from === "string" ? b.from : null;
+  const to = typeof b.to === "string" ? b.to : null;
+  const hostId = typeof b.host_id === "string" ? b.host_id : null;
+  let out = events.filter(
+    (e) =>
+      (!hostId || e.host.id === hostId) && timeFilter(e, from, to) && match(e),
+  );
+  const range = {
+    from: from ? Date.parse(from) : Date.now() - 24 * HOUR,
+    to: to ? Date.parse(to) : Date.now(),
+  };
+  const took_ms = () =>
+    Math.max(1, Math.round(performance.now() - started + 8));
+  let timeline: {
+    timeline?: { t: string; count: number }[];
+    timeline_span?: number;
+  } = {};
   if (b.timeline) {
-    const span = pickSpan(range.to - range.from)
-    const counts = new Map<number, number>()
+    const span = pickSpan(range.to - range.from);
+    const counts = new Map<number, number>();
     for (const e of out) {
-      const t = Math.floor(Date.parse(e['@timestamp']) / (span * 1000)) * span * 1000
-      counts.set(t, (counts.get(t) ?? 0) + 1)
+      const t =
+        Math.floor(Date.parse(e["@timestamp"]) / (span * 1000)) * span * 1000;
+      counts.set(t, (counts.get(t) ?? 0) + 1);
     }
-    timeline = { timeline: buckets(range.from, range.to, span).map((t) => ({ t: new Date(t).toISOString(), count: counts.get(t) ?? 0 })), timeline_span: span }
+    timeline = {
+      timeline: buckets(range.from, range.to, span).map((t) => ({
+        t: new Date(t).toISOString(),
+        count: counts.get(t) ?? 0,
+      })),
+      timeline_span: span,
+    };
   }
   if (parts.commands.length > 0) {
     try {
-      const res = runPipeline(out, query, range)
-      if (res.mode === 'events') {
-        const limit = Math.min(1000, Math.max(1, Number(b.limit ?? 100) || 100))
-        const offset = Math.max(0, Number(b.offset ?? 0) || 0)
-        res.events = res.events.slice(offset, offset + limit)
+      const res = runPipeline(out, query, range);
+      if (res.mode === "events") {
+        const limit = Math.min(
+          1000,
+          Math.max(1, Number(b.limit ?? 100) || 100),
+        );
+        const offset = Math.max(0, Number(b.offset ?? 0) || 0);
+        res.events = res.events.slice(offset, offset + limit);
       }
-      return { ...res, ...timeline, took_ms: took_ms() }
+      return { ...res, ...timeline, took_ms: took_ms() };
     } catch (e) {
-      fail(400, `invalid query: ${(e as Error).message}`)
+      fail(400, `invalid query: ${(e as Error).message}`);
     }
   }
-  if (b.order === 'asc') out = [...out].reverse()
-  const limit = Math.min(1000, Math.max(1, Number(b.limit ?? 100) || 100))
-  const offset = Math.max(0, Number(b.offset ?? 0) || 0)
-  return { mode: 'events', events: out.slice(offset, offset + limit), total: out.length, ...timeline, took_ms: took_ms() }
-})
+  if (b.order === "asc") out = [...out].reverse();
+  const limit = Math.min(1000, Math.max(1, Number(b.limit ?? 100) || 100));
+  const offset = Math.max(0, Number(b.offset ?? 0) || 0);
+  return {
+    mode: "events",
+    events: out.slice(offset, offset + limit),
+    total: out.length,
+    ...timeline,
+    took_ms: took_ms(),
+  };
+});
 
-route('GET', '/api/events/:id', ({ params }) => eventById(params.id) ?? fail(404, 'event not found'))
+route(
+  "GET",
+  "/api/events/:id",
+  ({ params }) => eventById(params.id) ?? fail(404, "event not found"),
+);
 
 // --- process trees ----------------------------------------------------------------------------
 
-function eventCounts(entityId: string): ProcessNode['event_counts'] {
-  const c = { network: 0, file: 0, registry: 0, dns: 0, library: 0 }
+function eventCounts(entityId: string): ProcessNode["event_counts"] {
+  const c = { network: 0, file: 0, registry: 0, dns: 0, library: 0 };
   for (const e of events) {
-    if (e.process?.entity_id !== entityId) continue
-    const cat = e.event.category ?? []
-    if (e.dns) c.dns++
-    else if (cat.includes('network')) c.network++
-    else if (cat.includes('file')) c.file++
-    else if (cat.includes('registry')) c.registry++
-    else if (cat.includes('library')) c.library++
+    if (e.process?.entity_id !== entityId) continue;
+    const cat = e.event.category ?? [];
+    if (e.dns) c.dns++;
+    else if (cat.includes("network")) c.network++;
+    else if (cat.includes("file")) c.file++;
+    else if (cat.includes("registry")) c.registry++;
+    else if (cat.includes("library")) c.library++;
   }
-  return c
+  return c;
 }
 
-function toNode(p: MockProcess, children: ProcessNode[], target: string): ProcessNode {
+function toNode(
+  p: MockProcess,
+  children: ProcessNode[],
+  target: string,
+): ProcessNode {
   return {
     entity_id: p.entity_id,
     pid: p.pid,
@@ -791,327 +1093,497 @@ function toNode(p: MockProcess, children: ProcessNode[], target: string): Proces
     parent_entity_id: p.parent,
     hash_sha256: p.sha256,
     signed: p.signed,
-    alert_count: alerts.filter((a) => a.process_entity_id === p.entity_id).length,
+    alert_count: alerts.filter((a) => a.process_entity_id === p.entity_id)
+      .length,
     event_counts: eventCounts(p.entity_id),
     children,
     is_target: p.entity_id === target || undefined,
-  }
+  };
 }
 
-function descendants(p: MockProcess, depth: number, target: string): ProcessNode {
-  const kids = depth > 0 ? processes.filter((x) => x.parent === p.entity_id).sort((a, b) => a.start - b.start) : []
+function descendants(
+  p: MockProcess,
+  depth: number,
+  target: string,
+): ProcessNode {
+  const kids =
+    depth > 0
+      ? processes
+          .filter((x) => x.parent === p.entity_id)
+          .sort((a, b) => a.start - b.start)
+      : [];
   return toNode(
     p,
     kids.map((k) => descendants(k, depth - 1, target)),
     target,
-  )
+  );
 }
 
-route('GET', '/api/process-tree', ({ query }) => {
-  const hostId = query.get('host_id') ?? ''
-  const entityId = query.get('entity_id') ?? ''
-  const depth = Math.min(10, Math.max(0, Number(query.get('depth') ?? 3) || 3))
-  const target = processes.find((p) => p.entity_id === entityId && p.host_id === hostId) ?? fail(404, 'process not found')
-  let node = descendants(target, depth, target.entity_id)
-  let cur = target
+route("GET", "/api/process-tree", ({ query }) => {
+  const hostId = query.get("host_id") ?? "";
+  const entityId = query.get("entity_id") ?? "";
+  const depth = Math.min(10, Math.max(0, Number(query.get("depth") ?? 3) || 3));
+  const target =
+    processes.find((p) => p.entity_id === entityId && p.host_id === hostId) ??
+    fail(404, "process not found");
+  let node = descendants(target, depth, target.entity_id);
+  let cur = target;
   while (cur.parent) {
-    const parent = processes.find((p) => p.entity_id === cur.parent)
-    if (!parent) break
-    node = toNode(parent, [node], target.entity_id)
-    cur = parent
+    const parent = processes.find((p) => p.entity_id === cur.parent);
+    if (!parent) break;
+    node = toNode(parent, [node], target.entity_id);
+    cur = parent;
   }
-  return { root: node }
-})
+  return { root: node };
+});
 
-route('GET', '/api/process-events', ({ query }) => {
-  const entityId = query.get('entity_id') ?? ''
-  const cat = query.get('category')
-  const limit = Math.min(1000, Number(query.get('limit') ?? 200) || 200)
+route("GET", "/api/process-events", ({ query }) => {
+  const entityId = query.get("entity_id") ?? "";
+  const cat = query.get("category");
+  const limit = Math.min(1000, Number(query.get("limit") ?? 200) || 200);
   const out = events.filter((e) => {
-    if (e.process?.entity_id !== entityId) return false
-    const c = e.event.category ?? []
-    if (c.includes('process') && !e.dns) return false
-    if (!cat) return true
-    if (cat === 'dns') return !!e.dns
-    if (cat === 'network') return c.includes('network') && !e.dns
-    return c.includes(cat)
-  })
-  return { events: out.slice(0, limit) }
-})
+    if (e.process?.entity_id !== entityId) return false;
+    const c = e.event.category ?? [];
+    if (c.includes("process") && !e.dns) return false;
+    if (!cat) return true;
+    if (cat === "dns") return !!e.dns;
+    if (cat === "network") return c.includes("network") && !e.dns;
+    return c.includes(cat);
+  });
+  return { events: out.slice(0, limit) };
+});
 
 // --- alerts ---------------------------------------------------------------------------------
 
 function getAlertOr404(id: string): Alert {
-  return alerts.find((a) => a.id === id) ?? fail(404, 'alert not found')
+  return alerts.find((a) => a.id === id) ?? fail(404, "alert not found");
 }
 
 function alertMatches(a: Alert, q: string) {
-  const hay = [a.rule.title, a.hostname, a.process_name, a.command_line, a.user, a.assignee, ...a.mitre.map((m) => `${m.technique_id} ${m.technique} ${m.tactic}`)]
+  const hay = [
+    a.rule.title,
+    a.hostname,
+    a.process_name,
+    a.command_line,
+    a.user,
+    a.assignee,
+    ...a.mitre.map((m) => `${m.technique_id} ${m.technique} ${m.tactic}`),
+  ]
     .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
+    .join(" ")
+    .toLowerCase();
   return q
     .toLowerCase()
     .split(/\s+/)
     .filter(Boolean)
-    .every((w) => hay.includes(w))
+    .every((w) => hay.includes(w));
 }
 
-registerNoiseMocks({ route, fail, obj, logAudit, noContent: NO_CONTENT })
-registerNotificationMocks({ route, fail, obj, logAudit, noContent: NO_CONTENT })
+registerNoiseMocks({ route, fail, obj, logAudit, noContent: NO_CONTENT });
+registerNotificationMocks({
+  route,
+  fail,
+  obj,
+  logAudit,
+  noContent: NO_CONTENT,
+});
 
-route('GET', '/api/alerts', ({ query }) => {
-  const status = list(query, 'status')
-  const sev = list(query, 'severity')
-  const hostId = query.get('host_id')
-  const ruleId = query.get('rule_id')
-  const q = query.get('q') ?? ''
+route("GET", "/api/alerts", ({ query }) => {
+  const status = list(query, "status");
+  const sev = list(query, "severity");
+  const hostId = query.get("host_id");
+  const ruleId = query.get("rule_id");
+  const q = query.get("q") ?? "";
   const out = alerts.filter(
     (a) =>
-      (status.length ? status.includes(a.status) : a.status !== 'suppressed') &&
+      (status.length ? status.includes(a.status) : a.status !== "suppressed") &&
       (!sev.length || sev.includes(a.severity)) &&
       (!hostId || a.host_id === hostId) &&
-      matchesGroupFilter(hosts.find((h) => h.id === a.host_id)?.group_id, query.get('group')) &&
+      matchesGroupFilter(
+        hosts.find((h) => h.id === a.host_id)?.group_id,
+        query.get("group"),
+      ) &&
       (!ruleId || a.rule.id === ruleId) &&
       (!q || alertMatches(a, q)),
-  )
-  return { alerts: page(out, query).map((a) => ({ ...a, events: undefined })), total: out.length }
-})
+  );
+  return {
+    alerts: page(out, query).map((a) => ({ ...a, events: undefined })),
+    total: out.length,
+  };
+});
 
-route('GET', '/api/alerts/:id', ({ params }) => {
-  const a = getAlertOr404(params.id)
-  return { ...a, events: a.event_ids.map((id) => eventById(id)).filter(Boolean).slice(0, 20) }
-})
+route("GET", "/api/alerts/:id", ({ params }) => {
+  const a = getAlertOr404(params.id);
+  return {
+    ...a,
+    events: a.event_ids
+      .map((id) => eventById(id))
+      .filter(Boolean)
+      .slice(0, 20),
+  };
+});
 
 function applyPatch(a: Alert, p: AlertPatch) {
   if (p.status !== undefined) {
-    if (!['new', 'in_progress', 'resolved', 'false_positive'].includes(p.status)) fail(400, 'invalid status')
-    a.status = p.status
+    if (
+      !["new", "in_progress", "resolved", "false_positive"].includes(p.status)
+    )
+      fail(400, "invalid status");
+    a.status = p.status;
   }
-  if (p.assignee !== undefined) a.assignee = p.assignee || undefined
-  a.updated_at = new Date().toISOString()
+  if (p.assignee !== undefined) a.assignee = p.assignee || undefined;
+  a.updated_at = new Date().toISOString();
 }
 
 route(
-  'PATCH',
-  '/api/alerts/:id',
+  "PATCH",
+  "/api/alerts/:id",
   ({ params, body, user }) => {
-    const a = getAlertOr404(params.id)
-    applyPatch(a, obj(body) as AlertPatch)
-    recomputeOpenAlerts()
-    logAudit(user, 'alert.update', a.rule.title, body)
-    return a
+    const a = getAlertOr404(params.id);
+    applyPatch(a, obj(body) as AlertPatch);
+    recomputeOpenAlerts();
+    logAudit(user, "alert.update", a.rule.title, body);
+    return a;
   },
-  { role: 'analyst' },
-)
+  { role: "analyst" },
+);
 
 route(
-  'POST',
-  '/api/alerts/bulk',
+  "POST",
+  "/api/alerts/bulk",
   ({ body, user }) => {
-    const b = obj(body) as { ids?: unknown } & AlertPatch
-    if (!Array.isArray(b.ids)) fail(400, 'ids must be an array')
-    let n = 0
+    const b = obj(body) as { ids?: unknown } & AlertPatch;
+    if (!Array.isArray(b.ids)) fail(400, "ids must be an array");
+    let n = 0;
     for (const id of b.ids as string[]) {
-      const a = alerts.find((x) => x.id === id)
-      if (!a) continue
-      applyPatch(a, { status: b.status, assignee: b.assignee })
-      n++
+      const a = alerts.find((x) => x.id === id);
+      if (!a) continue;
+      applyPatch(a, { status: b.status, assignee: b.assignee });
+      n++;
     }
-    recomputeOpenAlerts()
-    logAudit(user, 'alert.bulk_update', `${n} alerts`, { status: b.status, assignee: b.assignee })
-    return { updated: n }
+    recomputeOpenAlerts();
+    logAudit(user, "alert.bulk_update", `${n} alerts`, {
+      status: b.status,
+      assignee: b.assignee,
+    });
+    return { updated: n };
   },
-  { role: 'analyst' },
-)
+  { role: "analyst" },
+);
 
 route(
-  'POST',
-  '/api/alerts/:id/notes',
+  "POST",
+  "/api/alerts/:id/notes",
   ({ params, body, user }) => {
-    const a = getAlertOr404(params.id)
-    const text = String(obj(body).text ?? '').trim()
-    if (!text) fail(400, 'text is required')
-    a.notes = [...a.notes, { author: user!.username, text, at: new Date().toISOString() }]
-    a.updated_at = new Date().toISOString()
-    return a
+    const a = getAlertOr404(params.id);
+    const text = String(obj(body).text ?? "").trim();
+    if (!text) fail(400, "text is required");
+    a.notes = [
+      ...a.notes,
+      { author: user!.username, text, at: new Date().toISOString() },
+    ];
+    a.updated_at = new Date().toISOString();
+    return a;
   },
-  { role: 'analyst' },
-)
+  { role: "analyst" },
+);
 
 // --- rules ----------------------------------------------------------------------------------
 
 function getRuleOr404(id: string): Rule {
-  return ruleById(id) ?? fail(404, 'rule not found')
+  return ruleById(id) ?? fail(404, "rule not found");
 }
 
-route('GET', '/api/rules', ({ query }) => {
-  const q = (query.get('q') ?? '').toLowerCase()
-  const enabled = query.get('enabled')
-  const level = list(query, 'level')
-  const source = query.get('source')
-  const repo = query.get('repo')
+route("GET", "/api/rules", ({ query }) => {
+  const q = (query.get("q") ?? "").toLowerCase();
+  const enabled = query.get("enabled");
+  const level = list(query, "level");
+  const source = query.get("source");
+  const repo = query.get("repo");
   const out = rules.filter(
     (r) =>
-      (!q || [r.title, r.description, ...r.tags, ...r.mitre.map((m) => m.technique_id)].join(' ').toLowerCase().includes(q)) &&
+      (!q ||
+        [
+          r.title,
+          r.description,
+          ...r.tags,
+          ...r.mitre.map((m) => m.technique_id),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(q)) &&
       (!enabled || String(r.enabled) === enabled) &&
       (!level.length || level.includes(r.level)) &&
       (!source || r.source === source) &&
       (!repo || r.repo?.id === repo),
-  )
-  return { rules: out.map((r) => ({ ...r, yaml: undefined })), total: out.length }
-})
+  );
+  return {
+    rules: out.map((r) => ({ ...r, yaml: undefined })),
+    total: out.length,
+  };
+});
 
-route('GET', '/api/rules/:id', ({ params }) => getRuleOr404(params.id))
+route("GET", "/api/rules/:id", ({ params }) => getRuleOr404(params.id));
 
 route(
-  'POST',
-  '/api/rules',
+  "POST",
+  "/api/rules",
   ({ body, user }) => {
-    const res = parseRuleYaml(String(obj(body).yaml ?? ''))
-    if (!res.ok) fail(400, res.error)
-    const rule = (res as { rule: Rule }).rule
-    if (ruleById(rule.id)) fail(409, `a rule with id ${rule.id} already exists`)
-    rule.author = rule.author ?? user!.username
-    rules.unshift(rule)
-    logAudit(user, 'rule.create', rule.title, null)
-    return rule
+    const res = parseRuleYaml(String(obj(body).yaml ?? ""));
+    if (!res.ok) fail(400, res.error);
+    const rule = (res as { rule: Rule }).rule;
+    if (ruleById(rule.id))
+      fail(409, `a rule with id ${rule.id} already exists`);
+    rule.author = rule.author ?? user!.username;
+    rules.unshift(rule);
+    logAudit(user, "rule.create", rule.title, null);
+    return rule;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 route(
-  'PUT',
-  '/api/rules/:id',
+  "PUT",
+  "/api/rules/:id",
   ({ params, body, user }) => {
-    const r = getRuleOr404(params.id)
-    if (r.source !== 'custom') fail(400, `${r.repo ? 'repository' : 'built-in'} rules cannot be edited; copy it into a new custom rule`)
-    const res = parseRuleYaml(String(obj(body).yaml ?? ''))
-    if (!res.ok) fail(400, res.error)
-    const next = (res as { rule: Rule }).rule
-    Object.assign(r, { ...next, id: r.id, enabled: r.enabled, hits_24h: r.hits_24h, updated_at: new Date().toISOString() })
-    logAudit(user, 'rule.update', r.title, null)
-    return r
+    const r = getRuleOr404(params.id);
+    if (r.source !== "custom")
+      fail(
+        400,
+        `${r.repo ? "repository" : "built-in"} rules cannot be edited; copy it into a new custom rule`,
+      );
+    const res = parseRuleYaml(String(obj(body).yaml ?? ""));
+    if (!res.ok) fail(400, res.error);
+    const next = (res as { rule: Rule }).rule;
+    Object.assign(r, {
+      ...next,
+      id: r.id,
+      enabled: r.enabled,
+      hits_24h: r.hits_24h,
+      updated_at: new Date().toISOString(),
+    });
+    logAudit(user, "rule.update", r.title, null);
+    return r;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 route(
-  'PATCH',
-  '/api/rules/:id',
+  "PATCH",
+  "/api/rules/:id",
   ({ params, body, user }) => {
-    const r = getRuleOr404(params.id)
-    const b = obj(body)
-    if (typeof b.enabled !== 'boolean') fail(400, 'enabled must be a boolean')
-    r.enabled = b.enabled as boolean
-    r.updated_at = new Date().toISOString()
-    logAudit(user, r.enabled ? 'rule.enable' : 'rule.disable', r.title, null)
-    return r
+    const r = getRuleOr404(params.id);
+    const b = obj(body);
+    if (typeof b.enabled !== "boolean") fail(400, "enabled must be a boolean");
+    r.enabled = b.enabled as boolean;
+    r.updated_at = new Date().toISOString();
+    logAudit(user, r.enabled ? "rule.enable" : "rule.disable", r.title, null);
+    return r;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 route(
-  'DELETE',
-  '/api/rules/:id',
+  "DELETE",
+  "/api/rules/:id",
   ({ params, user }) => {
-    const r = getRuleOr404(params.id)
-    if (r.source !== 'custom') fail(400, `${r.repo ? 'repository' : 'built-in'} rules cannot be deleted; disable them instead`)
-    rules.splice(rules.indexOf(r), 1)
-    logAudit(user, 'rule.delete', r.title, null)
-    return NO_CONTENT
+    const r = getRuleOr404(params.id);
+    if (r.source !== "custom")
+      fail(
+        400,
+        `${r.repo ? "repository" : "built-in"} rules cannot be deleted; disable them instead`,
+      );
+    rules.splice(rules.indexOf(r), 1);
+    logAudit(user, "rule.delete", r.title, null);
+    return NO_CONTENT;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 route(
-  'POST',
-  '/api/rules/reload',
+  "POST",
+  "/api/rules/reload",
   ({ user }) => {
-    logAudit(user, 'rules.reload', `${rules.length} rules, 0 errors`, null)
-    return { total: rules.length, enabled: rules.filter((r) => r.enabled).length, load_errors: [] }
+    logAudit(user, "rules.reload", `${rules.length} rules, 0 errors`, null);
+    return {
+      total: rules.length,
+      enabled: rules.filter((r) => r.enabled).length,
+      load_errors: [],
+    };
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
-route('POST', '/api/rules/validate', ({ body }) => {
-  const res = parseRuleYaml(String(obj(body).yaml ?? ''))
-  return res.ok ? { ok: true, rule: res.rule } : { ok: false, error: res.error }
-})
+route("POST", "/api/rules/validate", ({ body }) => {
+  const res = parseRuleYaml(String(obj(body).yaml ?? ""));
+  return res.ok
+    ? { ok: true, rule: res.rule }
+    : { ok: false, error: res.error };
+});
 
-route('POST', '/api/rules/test', ({ body }) => {
-  const b = obj(body)
-  const yaml = String(b.yaml ?? '')
-  const res = parseRuleYaml(yaml)
-  if (!res.ok) fail(400, res.error)
-  const hours = Math.min(24 * 30, Math.max(1, Number(b.hours ?? 24) || 24))
-  const since = new Date(Date.now() - hours * HOUR).toISOString()
-  const scanned = events.filter((e) => e['@timestamp'] >= since)
-  const needles = detectionNeedles(yaml)
-  const need = Math.min(2, needles.length)
+route("POST", "/api/rules/test", ({ body }) => {
+  const b = obj(body);
+  const yaml = String(b.yaml ?? "");
+  const res = parseRuleYaml(yaml);
+  if (!res.ok) fail(400, res.error);
+  const hours = Math.min(24 * 30, Math.max(1, Number(b.hours ?? 24) || 24));
+  const since = new Date(Date.now() - hours * HOUR).toISOString();
+  const scanned = events.filter((e) => e["@timestamp"] >= since);
+  const needles = detectionNeedles(yaml);
+  const need = Math.min(2, needles.length);
   const matches = needles.length
     ? scanned.filter((e) => {
-        const hay = JSON.stringify(e).toLowerCase().replace(/\\\\/g, '\\')
-        return needles.filter((n) => hay.includes(n)).length >= need
+        const hay = JSON.stringify(e).toLowerCase().replace(/\\\\/g, "\\");
+        return needles.filter((n) => hay.includes(n)).length >= need;
       })
-    : []
-  return { matches: matches.slice(0, 200), scanned: scanned.length }
-})
+    : [];
+  return { matches: matches.slice(0, 200), scanned: scanned.length };
+});
 
 // --- rule repositories ------------------------------------------------------------------------
 // Downloads are simulated: a sync takes a couple of seconds and installs a handful of
 // generated rules. Check finds a new version about half the time.
 
-const REPO_RULE_TEMPLATES: { title: string; level: Severity; status: SigmaStatus; product: string; category: string; path: string }[] = [
-  { title: 'Suspicious Encoded PowerShell Command Line', level: 'high', status: 'test', product: 'windows', category: 'process_creation', path: 'rules/windows/process_creation/proc_creation_win_powershell_base64_encoded_cmd.yml' },
-  { title: 'Rundll32 Execution Without Parameters', level: 'high', status: 'test', product: 'windows', category: 'process_creation', path: 'rules/windows/process_creation/proc_creation_win_rundll32_without_parameters.yml' },
-  { title: 'Scheduled Task Creation Via Schtasks.EXE', level: 'low', status: 'test', product: 'windows', category: 'process_creation', path: 'rules/windows/process_creation/proc_creation_win_schtasks_creation.yml' },
-  { title: 'Certutil Download From Internet', level: 'medium', status: 'test', product: 'windows', category: 'process_creation', path: 'rules/windows/process_creation/proc_creation_win_certutil_download.yml' },
-  { title: 'Shadow Copies Deletion Using Operating Systems Utilities', level: 'high', status: 'stable', product: 'windows', category: 'process_creation', path: 'rules/windows/process_creation/proc_creation_win_susp_shadow_copies_deletion.yml' },
-  { title: 'Linux Reverse Shell Indicator', level: 'critical', status: 'test', product: 'linux', category: 'network_connection', path: 'rules/linux/network_connection/net_connection_lnx_back_connect_shell_dev.yml' },
-  { title: 'Crontab Enumeration', level: 'low', status: 'experimental', product: 'linux', category: 'process_creation', path: 'rules/linux/process_creation/proc_creation_lnx_crontab_enumeration.yml' },
-  { title: 'Base64 Encoded Shebang In CLI', level: 'medium', status: 'test', product: 'linux', category: 'process_creation', path: 'rules/linux/process_creation/proc_creation_lnx_base64_shebang_cli.yml' },
-]
+const REPO_RULE_TEMPLATES: {
+  title: string;
+  level: Severity;
+  status: SigmaStatus;
+  product: string;
+  category: string;
+  path: string;
+}[] = [
+  {
+    title: "Suspicious Encoded PowerShell Command Line",
+    level: "high",
+    status: "test",
+    product: "windows",
+    category: "process_creation",
+    path: "rules/windows/process_creation/proc_creation_win_powershell_base64_encoded_cmd.yml",
+  },
+  {
+    title: "Rundll32 Execution Without Parameters",
+    level: "high",
+    status: "test",
+    product: "windows",
+    category: "process_creation",
+    path: "rules/windows/process_creation/proc_creation_win_rundll32_without_parameters.yml",
+  },
+  {
+    title: "Scheduled Task Creation Via Schtasks.EXE",
+    level: "low",
+    status: "test",
+    product: "windows",
+    category: "process_creation",
+    path: "rules/windows/process_creation/proc_creation_win_schtasks_creation.yml",
+  },
+  {
+    title: "Certutil Download From Internet",
+    level: "medium",
+    status: "test",
+    product: "windows",
+    category: "process_creation",
+    path: "rules/windows/process_creation/proc_creation_win_certutil_download.yml",
+  },
+  {
+    title: "Shadow Copies Deletion Using Operating Systems Utilities",
+    level: "high",
+    status: "stable",
+    product: "windows",
+    category: "process_creation",
+    path: "rules/windows/process_creation/proc_creation_win_susp_shadow_copies_deletion.yml",
+  },
+  {
+    title: "Linux Reverse Shell Indicator",
+    level: "critical",
+    status: "test",
+    product: "linux",
+    category: "network_connection",
+    path: "rules/linux/network_connection/net_connection_lnx_back_connect_shell_dev.yml",
+  },
+  {
+    title: "Crontab Enumeration",
+    level: "low",
+    status: "experimental",
+    product: "linux",
+    category: "process_creation",
+    path: "rules/linux/process_creation/proc_creation_lnx_crontab_enumeration.yml",
+  },
+  {
+    title: "Base64 Encoded Shebang In CLI",
+    level: "medium",
+    status: "test",
+    product: "linux",
+    category: "process_creation",
+    path: "rules/linux/process_creation/proc_creation_lnx_base64_shebang_cli.yml",
+  },
+];
 
-type MockRepo = RuleRepo & { _hasNewVersion?: boolean }
-const LEVEL_RANK: Record<Severity, number> = { informational: 1, low: 2, medium: 3, high: 4, critical: 5 }
-const hex = () => Array.from({ length: 40 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('')
+type MockRepo = RuleRepo & { _hasNewVersion?: boolean };
+const LEVEL_RANK: Record<Severity, number> = {
+  informational: 1,
+  low: 2,
+  medium: 3,
+  high: 4,
+  critical: 5,
+};
+const hex = () =>
+  Array.from(
+    { length: 40 },
+    () => "0123456789abcdef"[Math.floor(Math.random() * 16)],
+  ).join("");
 
-function repoKind(url: string): RuleRepo['kind'] {
-  return isArchiveUrl(url) ? 'archive' : 'git'
+function repoKind(url: string): RuleRepo["kind"] {
+  return isArchiveUrl(url) ? "archive" : "git";
 }
 
 function repoNameFromUrl(url: string): string {
-  const segs = url.replace(/^[a-z]+:\/\//i, '').split(/[?#]/)[0].split('/').filter(Boolean)
-  if (isArchiveUrl(url)) return (segs.at(-1) ?? 'archive').replace(/\.(zip|tgz|tar\.gz)$/i, '')
-  return segs.length >= 3 ? `${segs.at(-2)}/${segs.at(-1)!.replace(/\.git$/, '')}` : url
+  const segs = url
+    .replace(/^[a-z]+:\/\//i, "")
+    .split(/[?#]/)[0]
+    .split("/")
+    .filter(Boolean);
+  if (isArchiveUrl(url))
+    return (segs.at(-1) ?? "archive").replace(/\.(zip|tgz|tar\.gz)$/i, "");
+  return segs.length >= 3
+    ? `${segs.at(-2)}/${segs.at(-1)!.replace(/\.git$/, "")}`
+    : url;
 }
 
-const ruleRepos: MockRepo[] = []
+const ruleRepos: MockRepo[] = [];
 
 /** Rebuilds the rules a repository contributes from its settings (as a reload would). */
 function loadRepoRules(r: MockRepo) {
-  const before = new Set(rules.filter((x) => x.repo?.id === r.id).map((x) => x.id))
-  for (let i = rules.length - 1; i >= 0; i--) if (rules[i].repo?.id === r.id) rules.splice(i, 1)
-  r.rules = r.rules_enabled = r.filtered = 0
-  if (!r.enabled || !r.version) return { added: 0, removed: before.size }
+  const before = new Set(
+    rules.filter((x) => x.repo?.id === r.id).map((x) => x.id),
+  );
+  for (let i = rules.length - 1; i >= 0; i--)
+    if (rules[i].repo?.id === r.id) rules.splice(i, 1);
+  r.rules = r.rules_enabled = r.filtered = 0;
+  if (!r.enabled || !r.version) return { added: 0, removed: before.size };
   REPO_RULE_TEMPLATES.forEach((t, i) => {
-    if (r.paths.length && !r.paths.some((p) => t.path === p || t.path.startsWith(p + '/'))) return
-    if ((r.min_level && LEVEL_RANK[t.level] < LEVEL_RANK[r.min_level]) || (r.statuses.length && !r.statuses.includes(t.status))) {
-      r.filtered++
-      return
+    if (
+      r.paths.length &&
+      !r.paths.some((p) => t.path === p || t.path.startsWith(p + "/"))
+    )
+      return;
+    if (
+      (r.min_level && LEVEL_RANK[t.level] < LEVEL_RANK[r.min_level]) ||
+      (r.statuses.length && !r.statuses.includes(t.status))
+    ) {
+      r.filtered++;
+      return;
     }
-    const id = `${r.id.slice(0, 8)}-0000-4000-8000-${String(i).padStart(12, '0')}`
-    const yaml = `title: ${t.title}\nid: ${id}\nstatus: ${t.status}\nlevel: ${t.level}\nlogsource:\n  product: ${t.product}\n  category: ${t.category}\ndetection:\n  selection:\n    CommandLine|contains: 'example'\n  condition: selection\n`
+    const id = `${r.id.slice(0, 8)}-0000-4000-8000-${String(i).padStart(12, "0")}`;
+    const yaml = `title: ${t.title}\nid: ${id}\nstatus: ${t.status}\nlevel: ${t.level}\nlogsource:\n  product: ${t.product}\n  category: ${t.category}\ndetection:\n  selection:\n    CommandLine|contains: 'example'\n  condition: selection\n`;
     rules.push({
       id,
       title: t.title,
       status: t.status,
       level: t.level,
       enabled: r.enable_rules,
-      source: 'repo',
+      source: "repo",
       tags: [],
-      author: 'SigmaHQ community',
+      author: "SigmaHQ community",
       logsource: { product: t.product, category: t.category },
       mitre: [],
       hits_24h: 0,
@@ -1121,118 +1593,162 @@ function loadRepoRules(r: MockRepo) {
         id: r.id,
         name: r.name,
         path: t.path,
-        url: r.kind === 'git' ? `${r.url}/blob/${r.version}/${t.path}` : undefined,
+        url:
+          r.kind === "git" ? `${r.url}/blob/${r.version}/${t.path}` : undefined,
       },
-    })
-    r.rules++
-    if (r.enable_rules) r.rules_enabled++
-  })
-  const after = new Set(rules.filter((x) => x.repo?.id === r.id).map((x) => x.id))
-  return { added: [...after].filter((id) => !before.has(id)).length, removed: [...before].filter((id) => !after.has(id)).length }
+    });
+    r.rules++;
+    if (r.enable_rules) r.rules_enabled++;
+  });
+  const after = new Set(
+    rules.filter((x) => x.repo?.id === r.id).map((x) => x.id),
+  );
+  return {
+    added: [...after].filter((id) => !before.has(id)).length,
+    removed: [...before].filter((id) => !after.has(id)).length,
+  };
 }
 
 function nextCheck(r: MockRepo): string | undefined {
-  if (!r.enabled) return undefined
-  if (!r.checked_at) return new Date().toISOString()
-  return new Date(Date.parse(r.checked_at) + r.interval_hours * HOUR).toISOString()
+  if (!r.enabled) return undefined;
+  if (!r.checked_at) return new Date().toISOString();
+  return new Date(
+    Date.parse(r.checked_at) + r.interval_hours * HOUR,
+  ).toISOString();
 }
 
 function repoView(r: MockRepo): RuleRepo {
-  const { _hasNewVersion, ...v } = r
-  void _hasNewVersion
-  return { ...v, update_available: !!r.version && !!r.latest_version && r.latest_version !== r.version, next_check_at: nextCheck(r), browse_url: r.kind === 'git' && r.version ? `${r.url}/tree/${r.version}` : undefined }
+  const { _hasNewVersion, ...v } = r;
+  void _hasNewVersion;
+  return {
+    ...v,
+    update_available:
+      !!r.version && !!r.latest_version && r.latest_version !== r.version,
+    next_check_at: nextCheck(r),
+    browse_url:
+      r.kind === "git" && r.version ? `${r.url}/tree/${r.version}` : undefined,
+  };
 }
 
 function startRepoSync(r: MockRepo, user: User | undefined) {
-  if (r.syncing) fail(409, 'this repository is being updated; try again when it finishes')
-  r.syncing = true
+  if (r.syncing)
+    fail(409, "this repository is being updated; try again when it finishes");
+  r.syncing = true;
   setTimeout(() => {
-    r.syncing = false
-    r.checked_at = new Date().toISOString()
-    if (r.url.includes('fail')) {
-      r.error = `download of ${r.url} failed: HTTP 404`
-      return
+    r.syncing = false;
+    r.checked_at = new Date().toISOString();
+    if (r.url.includes("fail")) {
+      r.error = `download of ${r.url} failed: HTTP 404`;
+      return;
     }
-    r.error = undefined
-    if (r.version && !r._hasNewVersion && r.latest_version === r.version) return
-    const v = r.kind === 'git' ? hex() : `sha256:${hex()}${hex().slice(0, 24)}`
-    r.version = r.latest_version = v
-    r.installed_at = r.checked_at
-    r._hasNewVersion = false
-    r.files = 4540
+    r.error = undefined;
+    if (r.version && !r._hasNewVersion && r.latest_version === r.version)
+      return;
+    const v = r.kind === "git" ? hex() : `sha256:${hex()}${hex().slice(0, 24)}`;
+    r.version = r.latest_version = v;
+    r.installed_at = r.checked_at;
+    r._hasNewVersion = false;
+    r.files = 4540;
     r.folders = [
-      { path: 'rules', files: 3161 },
-      { path: 'rules/linux', files: 211 },
-      { path: 'rules/linux/process_creation', files: 120 },
-      { path: 'rules/linux/network_connection', files: 8 },
-      { path: 'rules/windows', files: 2422 },
-      { path: 'rules/windows/process_creation', files: 1205 },
-      { path: 'rules-emerging-threats', files: 474 },
-      { path: 'rules-threat-hunting', files: 141 },
-    ]
-    const res = loadRepoRules(r)
-    r.added = res.added
-    r.removed = res.removed
-    logAudit(user, 'rule_repo.install', r.id, `${r.name}: installed ${v.replace('sha256:', '').slice(0, 12)}, ${r.rules} rules`)
-  }, 2200)
+      { path: "rules", files: 3161 },
+      { path: "rules/linux", files: 211 },
+      { path: "rules/linux/process_creation", files: 120 },
+      { path: "rules/linux/network_connection", files: 8 },
+      { path: "rules/windows", files: 2422 },
+      { path: "rules/windows/process_creation", files: 1205 },
+      { path: "rules-emerging-threats", files: 474 },
+      { path: "rules-threat-hunting", files: 141 },
+    ];
+    const res = loadRepoRules(r);
+    r.added = res.added;
+    r.removed = res.removed;
+    logAudit(
+      user,
+      "rule_repo.install",
+      r.id,
+      `${r.name}: installed ${v.replace("sha256:", "").slice(0, 12)}, ${r.rules} rules`,
+    );
+  }, 2200);
 }
 
-function repoSettingsFrom(b: Record<string, unknown>, base: RuleRepoSettings): RuleRepoSettings {
-  const out = { ...base }
-  if (typeof b.url === 'string') out.url = b.url.trim()
-  if (typeof b.name === 'string') out.name = b.name.trim()
-  if (typeof b.ref === 'string') out.ref = b.ref.trim()
-  if (Array.isArray(b.paths)) out.paths = (b.paths as unknown[]).map(String).map((p) => p.trim().replace(/^\/+|\/+$/g, '')).filter(Boolean)
-  if (typeof b.min_level === 'string') out.min_level = b.min_level as Severity | ''
-  if (Array.isArray(b.statuses)) out.statuses = b.statuses as SigmaStatus[]
-  for (const k of ['enable_rules', 'auto_update', 'enabled'] as const) if (typeof b[k] === 'boolean') out[k] = b[k] as boolean
-  if (typeof b.interval_hours === 'number') out.interval_hours = b.interval_hours
-  if (!/^https?:\/\/[^/]+\/.+/.test(out.url) && !/^[\w.-]+\/[\w.-]+$/.test(out.url)) fail(400, 'expected a repository URL such as https://github.com/SigmaHQ/sigma')
-  if (/^[\w.-]+\/[\w.-]+$/.test(out.url)) out.url = `https://github.com/${out.url}`
-  const tree = /^(https:\/\/github\.com\/[^/]+\/[^/]+)\/tree\/([^/]+)\/?(.*)$/.exec(out.url)
+function repoSettingsFrom(
+  b: Record<string, unknown>,
+  base: RuleRepoSettings,
+): RuleRepoSettings {
+  const out = { ...base };
+  if (typeof b.url === "string") out.url = b.url.trim();
+  if (typeof b.name === "string") out.name = b.name.trim();
+  if (typeof b.ref === "string") out.ref = b.ref.trim();
+  if (Array.isArray(b.paths))
+    out.paths = (b.paths as unknown[])
+      .map(String)
+      .map((p) => p.trim().replace(/^\/+|\/+$/g, ""))
+      .filter(Boolean);
+  if (typeof b.min_level === "string")
+    out.min_level = b.min_level as Severity | "";
+  if (Array.isArray(b.statuses)) out.statuses = b.statuses as SigmaStatus[];
+  for (const k of ["enable_rules", "auto_update", "enabled"] as const)
+    if (typeof b[k] === "boolean") out[k] = b[k] as boolean;
+  if (typeof b.interval_hours === "number")
+    out.interval_hours = b.interval_hours;
+  if (
+    !/^https?:\/\/[^/]+\/.+/.test(out.url) &&
+    !/^[\w.-]+\/[\w.-]+$/.test(out.url)
+  )
+    fail(
+      400,
+      "expected a repository URL such as https://github.com/SigmaHQ/sigma",
+    );
+  if (/^[\w.-]+\/[\w.-]+$/.test(out.url))
+    out.url = `https://github.com/${out.url}`;
+  const tree =
+    /^(https:\/\/github\.com\/[^/]+\/[^/]+)\/tree\/([^/]+)\/?(.*)$/.exec(
+      out.url,
+    );
   if (tree) {
-    out.url = tree[1]
-    if (!out.ref) out.ref = tree[2]
-    if (!out.paths.length && tree[3]) out.paths = [tree[3].replace(/\/+$/, '')]
+    out.url = tree[1];
+    if (!out.ref) out.ref = tree[2];
+    if (!out.paths.length && tree[3]) out.paths = [tree[3].replace(/\/+$/, "")];
   }
-  if (isArchiveUrl(out.url)) out.ref = ''
-  if (!out.name) out.name = repoNameFromUrl(out.url)
-  if (out.interval_hours < 1 || out.interval_hours > 720) fail(400, 'check for updates between every hour and every 30 days')
-  return out
+  if (isArchiveUrl(out.url)) out.ref = "";
+  if (!out.name) out.name = repoNameFromUrl(out.url);
+  if (out.interval_hours < 1 || out.interval_hours > 720)
+    fail(400, "check for updates between every hour and every 30 days");
+  return out;
 }
 
 function getRepoOr404(id: string): MockRepo {
-  return ruleRepos.find((r) => r.id === id) ?? fail(404, 'not found')
+  return ruleRepos.find((r) => r.id === id) ?? fail(404, "not found");
 }
 
 {
   // One installed repository in manual mode with an update waiting, to show every state.
   const seeded: MockRepo = {
     id: makeId(Date.now() - 9 * 24 * HOUR),
-    name: 'SigmaHQ Core',
-    url: 'https://github.com/SigmaHQ/sigma/releases/latest/download/sigma_core.zip',
-    ref: '',
-    paths: ['rules/windows', 'rules/linux'],
-    min_level: '',
-    statuses: ['stable', 'test', 'experimental'],
+    name: "SigmaHQ Core",
+    url: "https://github.com/SigmaHQ/sigma/releases/latest/download/sigma_core.zip",
+    ref: "",
+    paths: ["rules/windows", "rules/linux"],
+    min_level: "",
+    statuses: ["stable", "test", "experimental"],
     enable_rules: true,
     auto_update: false,
     interval_hours: 24,
     enabled: true,
-    kind: 'archive',
-    version: 'sha256:45ccbd62cbf0b1d6a3a4c1e7f0f5a0c9a1c3b2e8',
-    latest_version: 'sha256:9b1e2d0a7c33f1b0e5d4c3a2b1f0e9d8c7b6a5f4',
+    kind: "archive",
+    version: "sha256:45ccbd62cbf0b1d6a3a4c1e7f0f5a0c9a1c3b2e8",
+    latest_version: "sha256:9b1e2d0a7c33f1b0e5d4c3a2b1f0e9d8c7b6a5f4",
     update_available: true,
     syncing: false,
     checked_at: new Date(Date.now() - 2 * HOUR).toISOString(),
     installed_at: new Date(Date.now() - 9 * 24 * HOUR).toISOString(),
     files: 1377,
     folders: [
-      { path: 'rules', files: 1377 },
-      { path: 'rules/cloud', files: 64 },
-      { path: 'rules/linux', files: 64 },
-      { path: 'rules/windows', files: 1138 },
-      { path: 'rules/windows/process_creation', files: 640 },
+      { path: "rules", files: 1377 },
+      { path: "rules/cloud", files: 64 },
+      { path: "rules/linux", files: 64 },
+      { path: "rules/windows", files: 1138 },
+      { path: "rules/windows/process_creation", files: 640 },
     ],
     added: 0,
     removed: 0,
@@ -1242,22 +1758,41 @@ function getRepoOr404(id: string): MockRepo {
     duplicates: 0,
     load_errors: 0,
     created_at: new Date(Date.now() - 9 * 24 * HOUR).toISOString(),
-    created_by: 'admin',
+    created_by: "admin",
     _hasNewVersion: true,
-  }
-  ruleRepos.push(seeded)
-  seeded.added = loadRepoRules(seeded).added
+  };
+  ruleRepos.push(seeded);
+  seeded.added = loadRepoRules(seeded).added;
 }
 
-route('GET', '/api/rule-repos', () => ({ repos: ruleRepos.map(repoView) }))
-route('GET', '/api/rule-repos/:id', ({ params }) => repoView(getRepoOr404(params.id)))
+route("GET", "/api/rule-repos", () => ({ repos: ruleRepos.map(repoView) }));
+route("GET", "/api/rule-repos/:id", ({ params }) =>
+  repoView(getRepoOr404(params.id)),
+);
 
 route(
-  'POST',
-  '/api/rule-repos',
+  "POST",
+  "/api/rule-repos",
   ({ body, user }) => {
-    const set = repoSettingsFrom(obj(body), { name: '', url: '', ref: '', paths: [], min_level: '', statuses: [], enable_rules: true, auto_update: true, interval_hours: 24, enabled: true })
-    if (ruleRepos.some((r) => r.url.toLowerCase() === set.url.toLowerCase() && r.ref === set.ref)) fail(400, `${set.url} is already added; edit its folders instead`)
+    const set = repoSettingsFrom(obj(body), {
+      name: "",
+      url: "",
+      ref: "",
+      paths: [],
+      min_level: "",
+      statuses: [],
+      enable_rules: true,
+      auto_update: true,
+      interval_hours: 24,
+      enabled: true,
+    });
+    if (
+      ruleRepos.some(
+        (r) =>
+          r.url.toLowerCase() === set.url.toLowerCase() && r.ref === set.ref,
+      )
+    )
+      fail(400, `${set.url} is already added; edit its folders instead`);
     const r: MockRepo = {
       ...set,
       id: makeId(Date.now()),
@@ -1275,557 +1810,802 @@ route(
       load_errors: 0,
       created_at: new Date().toISOString(),
       created_by: user!.username,
-    }
-    ruleRepos.push(r)
-    logAudit(user, 'rule_repo.add', r.id, `${r.name} ${r.url}`)
-    startRepoSync(r, user)
-    return new Response(JSON.stringify(repoView(r)), { status: 201, headers: { 'Content-Type': 'application/json' } })
+    };
+    ruleRepos.push(r);
+    logAudit(user, "rule_repo.add", r.id, `${r.name} ${r.url}`);
+    startRepoSync(r, user);
+    return new Response(JSON.stringify(repoView(r)), {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    });
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 route(
-  'PATCH',
-  '/api/rule-repos/:id',
+  "PATCH",
+  "/api/rule-repos/:id",
   ({ params, body, user }) => {
-    const r = getRepoOr404(params.id)
-    const set = repoSettingsFrom(obj(body), r)
-    const moved = set.url !== r.url || set.ref !== r.ref
-    Object.assign(r, set, { kind: repoKind(set.url) })
-    loadRepoRules(r)
-    logAudit(user, 'rule_repo.update', r.id, r.name)
+    const r = getRepoOr404(params.id);
+    const set = repoSettingsFrom(obj(body), r);
+    const moved = set.url !== r.url || set.ref !== r.ref;
+    Object.assign(r, set, { kind: repoKind(set.url) });
+    loadRepoRules(r);
+    logAudit(user, "rule_repo.update", r.id, r.name);
     if (moved && r.enabled) {
-      r._hasNewVersion = true
-      startRepoSync(r, user)
+      r._hasNewVersion = true;
+      startRepoSync(r, user);
     }
-    return repoView(r)
+    return repoView(r);
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 route(
-  'DELETE',
-  '/api/rule-repos/:id',
+  "DELETE",
+  "/api/rule-repos/:id",
   ({ params, user }) => {
-    const r = getRepoOr404(params.id)
-    if (r.syncing) fail(409, 'this repository is being updated; try again when it finishes')
-    r.enabled = false
-    loadRepoRules(r)
-    ruleRepos.splice(ruleRepos.indexOf(r), 1)
-    logAudit(user, 'rule_repo.delete', r.id, r.name)
-    return NO_CONTENT
+    const r = getRepoOr404(params.id);
+    if (r.syncing)
+      fail(409, "this repository is being updated; try again when it finishes");
+    r.enabled = false;
+    loadRepoRules(r);
+    ruleRepos.splice(ruleRepos.indexOf(r), 1);
+    logAudit(user, "rule_repo.delete", r.id, r.name);
+    return NO_CONTENT;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 route(
-  'POST',
-  '/api/rule-repos/:id/check',
+  "POST",
+  "/api/rule-repos/:id/check",
   ({ params }) => {
-    const r = getRepoOr404(params.id)
-    if (r.syncing) fail(409, 'this repository is being updated; try again when it finishes')
-    r.checked_at = new Date().toISOString()
-    if (r.url.includes('fail')) {
-      r.error = `${r.url} was not found or is not public (HTTP 404)`
-      return repoView(r)
+    const r = getRepoOr404(params.id);
+    if (r.syncing)
+      fail(409, "this repository is being updated; try again when it finishes");
+    r.checked_at = new Date().toISOString();
+    if (r.url.includes("fail")) {
+      r.error = `${r.url} was not found or is not public (HTTP 404)`;
+      return repoView(r);
     }
-    r.error = undefined
-    if (!r._hasNewVersion && Math.random() < 0.5) r._hasNewVersion = true
-    if (r._hasNewVersion && r.latest_version === r.version) r.latest_version = r.kind === 'git' ? hex() : `sha256:${hex()}`
-    return repoView(r)
+    r.error = undefined;
+    if (!r._hasNewVersion && Math.random() < 0.5) r._hasNewVersion = true;
+    if (r._hasNewVersion && r.latest_version === r.version)
+      r.latest_version = r.kind === "git" ? hex() : `sha256:${hex()}`;
+    return repoView(r);
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 route(
-  'POST',
-  '/api/rule-repos/:id/update',
+  "POST",
+  "/api/rule-repos/:id/update",
   ({ params, user }) => {
-    const r = getRepoOr404(params.id)
-    startRepoSync(r, user)
-    return new Response(JSON.stringify(repoView(r)), { status: 202, headers: { 'Content-Type': 'application/json' } })
+    const r = getRepoOr404(params.id);
+    startRepoSync(r, user);
+    return new Response(JSON.stringify(repoView(r)), {
+      status: 202,
+      headers: { "Content-Type": "application/json" },
+    });
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
-route('GET', '/api/rule-repos/:id/files', ({ params }) => {
-  const r = getRepoOr404(params.id)
-  return r.version ? { files: repoFiles(), skipped: repoSkipped(r) } : { files: [], skipped: [] }
-})
+route("GET", "/api/rule-repos/:id/files", ({ params }) => {
+  const r = getRepoOr404(params.id);
+  return r.version
+    ? { files: repoFiles(), skipped: repoSkipped(r) }
+    : { files: [], skipped: [] };
+});
 
 route(
-  'POST',
-  '/api/rule-repos/:id/rules/enabled',
+  "POST",
+  "/api/rule-repos/:id/rules/enabled",
   ({ params, body, user }) => {
-    const r = getRepoOr404(params.id)
-    const enabled = obj(body).enabled
-    if (typeof enabled !== 'boolean') fail(400, 'enabled is required')
-    let changed = 0
+    const r = getRepoOr404(params.id);
+    const enabled = obj(body).enabled;
+    if (typeof enabled !== "boolean") fail(400, "enabled is required");
+    let changed = 0;
     for (const x of rules) {
-      if (x.repo?.id !== r.id || x.enabled === enabled) continue
-      x.enabled = enabled as boolean
-      changed++
+      if (x.repo?.id !== r.id || x.enabled === enabled) continue;
+      x.enabled = enabled as boolean;
+      changed++;
     }
-    r.rules_enabled = enabled ? r.rules : 0
-    logAudit(user, 'rule_repo.rules_enabled', r.id, `${r.name}: ${enabled ? 'enabled' : 'disabled'} ${changed} rules`)
-    return { changed }
+    r.rules_enabled = enabled ? r.rules : 0;
+    logAudit(
+      user,
+      "rule_repo.rules_enabled",
+      r.id,
+      `${r.name}: ${enabled ? "enabled" : "disabled"} ${changed} rules`,
+    );
+    return { changed };
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 // --- threat intelligence -----------------------------------------------------------------------
 
 route(
-  'POST',
-  '/api/intel/lookup',
+  "POST",
+  "/api/intel/lookup",
   ({ body, user }) => {
-    const b = obj(body)
-    const res = startLookup(String(b.indicator ?? ''), b.refresh === true, user!.username)
-    if ('error' in res) fail(400, res.error)
-    return res
+    const b = obj(body);
+    const res = startLookup(
+      String(b.indicator ?? ""),
+      b.refresh === true,
+      user!.username,
+    );
+    if ("error" in res) fail(400, res.error);
+    return res;
   },
-  { role: 'analyst' },
-)
-route('GET', '/api/intel/lookup', ({ query }) => getLookup(query.get('indicator') ?? '') ?? fail(404, 'not found'))
-route('GET', '/api/intel/history', () => ({ lookups: lookupHistory() }))
+  { role: "analyst" },
+);
 route(
-  'GET',
-  '/api/intel/sightings',
-  ({ query }) => sightings(query.get('indicator') ?? '', Number(query.get('days') ?? 30), events, alerts) ?? fail(400, 'enter an IP address, domain, URL or file hash'),
-)
-route('GET', '/api/settings/intel', () => getIntelSettings(), { role: 'admin' })
-route('PUT', '/api/settings/intel', ({ body }) => putIntelSettings(obj(body) as unknown as IntelSettingsUpdate), { role: 'admin' })
+  "GET",
+  "/api/intel/lookup",
+  ({ query }) =>
+    getLookup(query.get("indicator") ?? "") ?? fail(404, "not found"),
+);
+route("GET", "/api/intel/history", () => ({ lookups: lookupHistory() }));
+route(
+  "GET",
+  "/api/intel/sightings",
+  ({ query }) =>
+    sightings(
+      query.get("indicator") ?? "",
+      Number(query.get("days") ?? 30),
+      events,
+      alerts,
+    ) ?? fail(400, "enter an IP address, domain, URL or file hash"),
+);
+route("GET", "/api/settings/intel", () => getIntelSettings(), {
+  role: "admin",
+});
+route(
+  "PUT",
+  "/api/settings/intel",
+  ({ body }) => putIntelSettings(obj(body) as unknown as IntelSettingsUpdate),
+  { role: "admin" },
+);
 
-networkRoutes(route, fail)
+networkRoutes(route, fail);
 
 // --- artifacts and hunts -----------------------------------------------------------------------
 
-route('GET', '/api/artifacts', () => ({ artifacts }))
+route("GET", "/api/artifacts", () => ({ artifacts }));
 
-function huntHosts(t: HuntCreate['target'], artifact: string): Host[] {
-  const a = artifacts.find((x) => x.name === artifact)!
+function huntHosts(t: HuntCreate["target"], artifact: string): Host[] {
+  const a = artifacts.find((x) => x.name === artifact)!;
   return hosts.filter(
     (h) =>
-      h.kind === 'endpoint' &&
-      h.status !== 'revoked' &&
+      h.kind === "endpoint" &&
+      h.status !== "revoked" &&
       a.platforms.includes(h.os.platform) &&
       (t.all ||
-        (t.labels?.length ? t.labels.some((l) => h.labels.includes(l)) : false) ||
+        (t.labels?.length
+          ? t.labels.some((l) => h.labels.includes(l))
+          : false) ||
         (t.host_ids?.length ? t.host_ids.includes(h.id) : false) ||
         (t.platform ? h.os.platform === t.platform : false)),
-  )
+  );
 }
 
-type LiveHunt = MockHunt & { _created?: number; _hosts?: string[] }
+type LiveHunt = MockHunt & { _created?: number; _hosts?: string[] };
 
 function huntView(h: LiveHunt): MockHunt {
   if (h._created !== undefined && h._hosts) {
-    const now = Date.now()
-    const done: string[] = []
+    const now = Date.now();
+    const done: string[] = [];
     h._hosts.forEach((id, i) => {
-      const host = hostById(id)!
-      const reachable = host.status === 'online' || host.status === 'isolated'
-      if (h.status !== 'stopped' && reachable && now - h._created! > 2500 * (i + 1)) done.push(id)
-    })
-    h._rows = done.flatMap((id) => artifactRows(h.artifact, id, h.params).map((row) => ({ host_id: id, hostname: hostById(id)!.hostname, row })))
-    h.stats = { scheduled: h._hosts.length, completed: done.length, failed: 0, rows: h._rows.length }
-    if (h.status === 'running' && now > Date.parse(h.expires_at)) h.status = 'completed'
+      const host = hostById(id)!;
+      const reachable = host.status === "online" || host.status === "isolated";
+      if (
+        h.status !== "stopped" &&
+        reachable &&
+        now - h._created! > 2500 * (i + 1)
+      )
+        done.push(id);
+    });
+    h._rows = done.flatMap((id) =>
+      artifactRows(h.artifact, id, h.params).map((row) => ({
+        host_id: id,
+        hostname: hostById(id)!.hostname,
+        row,
+      })),
+    );
+    h.stats = {
+      scheduled: h._hosts.length,
+      completed: done.length,
+      failed: 0,
+      rows: h._rows.length,
+    };
+    if (h.status === "running" && now > Date.parse(h.expires_at))
+      h.status = "completed";
   }
-  const { _rows, ...rest } = h
-  void _rows
-  delete (rest as Partial<LiveHunt>)._created
-  delete (rest as Partial<LiveHunt>)._hosts
-  return rest as MockHunt
+  const { _rows, ...rest } = h;
+  void _rows;
+  delete (rest as Partial<LiveHunt>)._created;
+  delete (rest as Partial<LiveHunt>)._hosts;
+  return rest as MockHunt;
 }
 
 function getHuntOr404(id: string): LiveHunt {
-  return (hunts.find((h) => h.id === id) as LiveHunt) ?? fail(404, 'hunt not found')
+  return (
+    (hunts.find((h) => h.id === id) as LiveHunt) ?? fail(404, "hunt not found")
+  );
 }
 
 route(
-  'POST',
-  '/api/hunts',
+  "POST",
+  "/api/hunts",
   ({ body, user }) => {
-    const b = obj(body) as unknown as HuntCreate
-    const a = artifacts.find((x) => x.name === b.artifact) ?? fail(400, `unknown artifact "${String(b.artifact)}"`)
-    const t = b.target ?? {}
-    if (!t.all && !t.labels?.length && !t.host_ids?.length && !t.platform) fail(400, 'target must select at least one host')
-    for (const arg of a.params ?? []) if (arg.required && !b.params?.[arg.name]) fail(400, `parameter "${arg.name}" is required`)
-    const now = Date.now()
-    const matched = huntHosts(t, a.name)
+    const b = obj(body) as unknown as HuntCreate;
+    const a =
+      artifacts.find((x) => x.name === b.artifact) ??
+      fail(400, `unknown artifact "${String(b.artifact)}"`);
+    const t = b.target ?? {};
+    if (!t.all && !t.labels?.length && !t.host_ids?.length && !t.platform)
+      fail(400, "target must select at least one host");
+    for (const arg of a.params ?? [])
+      if (arg.required && !b.params?.[arg.name])
+        fail(400, `parameter "${arg.name}" is required`);
+    const now = Date.now();
+    const matched = huntHosts(t, a.name);
     const h: LiveHunt = {
       id: makeId(now),
       artifact: a.name,
       params: b.params ?? {},
       description: b.description,
       target: t,
-      status: 'running',
+      status: "running",
       created_by: user!.username,
       created_at: new Date(now).toISOString(),
-      expires_at: new Date(now + (b.expires_hours ?? 24 * 7) * HOUR).toISOString(),
+      expires_at: new Date(
+        now + (b.expires_hours ?? 24 * 7) * HOUR,
+      ).toISOString(),
       stats: { scheduled: matched.length, completed: 0, failed: 0, rows: 0 },
       _rows: [],
       _created: now,
       _hosts: matched.map((x) => x.id),
-    }
-    hunts.unshift(h)
-    logAudit(user, 'hunt.create', a.name, { target: t })
-    return huntView(h)
+    };
+    hunts.unshift(h);
+    logAudit(user, "hunt.create", a.name, { target: t });
+    return huntView(h);
   },
-  { role: 'analyst' },
-)
+  { role: "analyst" },
+);
 
-route('GET', '/api/hunts', () => ({ hunts: hunts.map((h) => huntView(h as LiveHunt)) }))
-route('GET', '/api/hunts/:id', ({ params }) => huntView(getHuntOr404(params.id)))
+route("GET", "/api/hunts", () => ({
+  hunts: hunts.map((h) => huntView(h as LiveHunt)),
+}));
+route("GET", "/api/hunts/:id", ({ params }) =>
+  huntView(getHuntOr404(params.id)),
+);
 
 route(
-  'POST',
-  '/api/hunts/:id/stop',
+  "POST",
+  "/api/hunts/:id/stop",
   ({ params, user }) => {
-    const h = getHuntOr404(params.id)
-    huntView(h)
-    if (h.status === 'running') h.status = 'stopped'
-    logAudit(user, 'hunt.stop', h.artifact, null)
-    return huntView(h)
+    const h = getHuntOr404(params.id);
+    huntView(h);
+    if (h.status === "running") h.status = "stopped";
+    logAudit(user, "hunt.stop", h.artifact, null);
+    return huntView(h);
   },
-  { role: 'analyst' },
-)
+  { role: "analyst" },
+);
 
-route('GET', '/api/hunts/:id/results', ({ params, query }) => {
-  const h = getHuntOr404(params.id)
-  huntView(h)
-  const hostId = query.get('host_id')
-  const rows = h._rows.filter((r) => !hostId || r.host_id === hostId)
-  return { rows: page(rows, query), total: rows.length }
-})
+route("GET", "/api/hunts/:id/results", ({ params, query }) => {
+  const h = getHuntOr404(params.id);
+  huntView(h);
+  const hostId = query.get("host_id");
+  const rows = h._rows.filter((r) => !hostId || r.host_id === hostId);
+  return { rows: page(rows, query), total: rows.length };
+});
 
 // --- AI analyst -----------------------------------------------------------------------------
 
 const aiSettings: AISettings = {
   enabled: true,
-  provider: 'anthropic',
-  model: 'claude-opus-5-5',
-  min_severity: 'medium',
+  provider: "anthropic",
+  model: "claude-opus-5-5",
+  min_severity: "medium",
   daily_limit: 50,
   max_tool_calls: 20,
   key_set: true,
-  key_source: 'settings',
-  key_hint: '...k3Yq',
-  keys: { anthropic: { set: true, source: 'settings', hint: '...k3Yq' }, openai: { set: false }, gemini: { set: false }, local: { set: false } },
+  key_source: "settings",
+  key_hint: "...k3Yq",
+  keys: {
+    anthropic: { set: true, source: "settings", hint: "...k3Yq" },
+    openai: { set: false },
+    gemini: { set: false },
+    local: { set: false },
+  },
   ready: true,
   providers: [
-    { id: 'anthropic', name: 'Claude (Anthropic)', available: true, needs_key: true, needs_base_url: false, key_env: 'HOMEXDR_ANTHROPIC_API_KEY' },
-    { id: 'openai', name: 'OpenAI (ChatGPT)', available: true, needs_key: true, needs_base_url: false, key_env: 'HOMEXDR_OPENAI_API_KEY', default_base_url: 'https://api.openai.com/v1' },
     {
-      id: 'gemini', name: 'Google Gemini', available: true, needs_key: true, needs_base_url: false, key_env: 'HOMEXDR_GEMINI_API_KEY',
-      default_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      id: "anthropic",
+      name: "Claude (Anthropic)",
+      available: true,
+      needs_key: true,
+      needs_base_url: false,
+      key_env: "HOMEXDR_ANTHROPIC_API_KEY",
     },
-    { id: 'local', name: 'Local model', available: true, needs_key: false, needs_base_url: true, key_env: 'HOMEXDR_LOCAL_AI_API_KEY' },
+    {
+      id: "openai",
+      name: "OpenAI (ChatGPT)",
+      available: true,
+      needs_key: true,
+      needs_base_url: false,
+      key_env: "HOMEXDR_OPENAI_API_KEY",
+      default_base_url: "https://api.openai.com/v1",
+    },
+    {
+      id: "gemini",
+      name: "Google Gemini",
+      available: true,
+      needs_key: true,
+      needs_base_url: false,
+      key_env: "HOMEXDR_GEMINI_API_KEY",
+      default_base_url:
+        "https://generativelanguage.googleapis.com/v1beta/openai",
+    },
+    {
+      id: "local",
+      name: "Local model",
+      available: true,
+      needs_key: false,
+      needs_base_url: true,
+      key_env: "HOMEXDR_LOCAL_AI_API_KEY",
+    },
   ],
-  default_model: 'claude-opus-5-5',
+  default_model: "claude-opus-5-5",
   auto_today: 3,
-  engine: 'api',
+  engine: "api",
   mcp_enabled: false,
   mcp_auto_trigger: false,
-  mcp: { pending: 0, tokens: 1, runner_name: 'DESKTOP-DOODLE', runner_seen_at: new Date(Date.now() - 40_000).toISOString() },
-}
+  mcp: {
+    pending: 0,
+    tokens: 1,
+    runner_name: "DESKTOP-DOODLE",
+    runner_seen_at: new Date(Date.now() - 40_000).toISOString(),
+  },
+};
 
 const mcpTokens: MCPToken[] = [
-  { id: 'mcp-1', name: 'desktop runner', created_at: new Date(Date.now() - 3 * 86_400_000).toISOString(), created_by: 'admin', last_used_at: new Date(Date.now() - 40_000).toISOString() },
-]
+  {
+    id: "mcp-1",
+    name: "desktop runner",
+    created_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+    created_by: "admin",
+    last_used_at: new Date(Date.now() - 40_000).toISOString(),
+  },
+];
 
-route('GET', '/api/settings/ai/mcp-tokens', () => ({ tokens: mcpTokens }), { role: 'admin' })
+route("GET", "/api/settings/ai/mcp-tokens", () => ({ tokens: mcpTokens }), {
+  role: "admin",
+});
 route(
-  'POST',
-  '/api/settings/ai/mcp-tokens',
+  "POST",
+  "/api/settings/ai/mcp-tokens",
   ({ body }) => {
-    const name = String(obj(body).name ?? '').trim() || 'mcp'
-    const t: MCPToken = { id: makeId(Date.now()), name, created_at: new Date().toISOString(), created_by: 'admin' }
-    mcpTokens.unshift(t)
-    aiSettings.mcp.tokens = mcpTokens.length
-    return { ...t, token: 'hxm_demo' + makeId(Date.now()).toLowerCase() }
+    const name = String(obj(body).name ?? "").trim() || "mcp";
+    const t: MCPToken = {
+      id: makeId(Date.now()),
+      name,
+      created_at: new Date().toISOString(),
+      created_by: "admin",
+    };
+    mcpTokens.unshift(t);
+    aiSettings.mcp.tokens = mcpTokens.length;
+    return { ...t, token: "hxm_demo" + makeId(Date.now()).toLowerCase() };
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 route(
-  'DELETE',
-  '/api/settings/ai/mcp-tokens/:id',
+  "DELETE",
+  "/api/settings/ai/mcp-tokens/:id",
   ({ params }) => {
-    const i = mcpTokens.findIndex((t) => t.id === params.id)
-    if (i < 0) fail(404, 'not found')
-    mcpTokens.splice(i, 1)
-    aiSettings.mcp.tokens = mcpTokens.length
-    return undefined
+    const i = mcpTokens.findIndex((t) => t.id === params.id);
+    if (i < 0) fail(404, "not found");
+    mcpTokens.splice(i, 1);
+    aiSettings.mcp.tokens = mcpTokens.length;
+    return undefined;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
-const triages: Record<string, AITriage> = {}
+const triages: Record<string, AITriage> = {};
 
 function sampleReport(a: Alert): AIReport {
   return {
-    verdict: 'suspicious',
-    confidence: 'medium',
+    verdict: "suspicious",
+    confidence: "medium",
     severity_assessment: a.severity,
-    summary: `${a.process_name ?? 'A process'} on ${a.hostname} matched "${a.rule.title}". The parent process and timing look unusual for this host; a person should confirm whether it was expected.`,
+    summary: `${a.process_name ?? "A process"} on ${a.hostname} matched "${a.rule.title}". The parent process and timing look unusual for this host; a person should confirm whether it was expected.`,
     analysis:
-      'The alerting process was started by an interactive shell outside the usual maintenance window. No other host shows the same command line in the last 7 days. The process made one outbound connection that the firewall allowed.',
-    evidence: a.event_ids.slice(0, 2).map((id) => ({ event_id: id, observation: 'Matching process start.' })),
-    mitre: a.mitre.filter((m) => m.technique_id).map((m) => ({ technique_id: m.technique_id!, name: m.technique ?? '' })),
+      "The alerting process was started by an interactive shell outside the usual maintenance window. No other host shows the same command line in the last 7 days. The process made one outbound connection that the firewall allowed.",
+    evidence: a.event_ids
+      .slice(0, 2)
+      .map((id) => ({ event_id: id, observation: "Matching process start." })),
+    mitre: a.mitre
+      .filter((m) => m.technique_id)
+      .map((m) => ({ technique_id: m.technique_id!, name: m.technique ?? "" })),
     recommended_actions: [
-      { action: 'Ask the owner of the host whether this was them', reason: 'Interactive use explains it if so.' },
-      { action: 'Check the destination of the outbound connection', reason: 'It is the only external contact.' },
+      {
+        action: "Ask the owner of the host whether this was them",
+        reason: "Interactive use explains it if so.",
+      },
+      {
+        action: "Check the destination of the outbound connection",
+        reason: "It is the only external contact.",
+      },
     ],
-    open_questions: ['Who was logged in at the time?'],
-  }
+    open_questions: ["Who was logged in at the time?"],
+  };
 }
 
 function finishTriage(a: Alert, t: AITriage) {
-  const report = sampleReport(a)
+  const report = sampleReport(a);
   Object.assign(t, {
-    status: 'done',
+    status: "done",
     verdict: report.verdict,
     confidence: report.confidence,
     report,
     model: aiSettings.model,
-    provider: 'anthropic',
+    provider: "anthropic",
     tool_calls: 4,
-    usage: { input_tokens: 21000, output_tokens: 1400, cache_read_tokens: 52000 },
+    usage: {
+      input_tokens: 21000,
+      output_tokens: 1400,
+      cache_read_tokens: 52000,
+    },
     finished_at: new Date().toISOString(),
     transcript: [
-      { tool: 'get_process_tree', input: { host_id: a.host_id, entity_id: a.process_entity_id }, output: '{"process": {...}}', at: new Date().toISOString(), ms: 12 },
-      { tool: 'search_events', input: { query: `process.name:${a.process_name ?? '*'}` }, output: '{"total_matching": 1, ...}', at: new Date().toISOString(), ms: 30 },
+      {
+        tool: "get_process_tree",
+        input: { host_id: a.host_id, entity_id: a.process_entity_id },
+        output: '{"process": {...}}',
+        at: new Date().toISOString(),
+        ms: 12,
+      },
+      {
+        tool: "search_events",
+        input: { query: `process.name:${a.process_name ?? "*"}` },
+        output: '{"total_matching": 1, ...}',
+        at: new Date().toISOString(),
+        ms: 30,
+      },
     ],
-  } satisfies Partial<AITriage>)
-  a.ai_triage = { status: 'done', verdict: t.verdict, confidence: t.confidence }
+  } satisfies Partial<AITriage>);
+  a.ai_triage = {
+    status: "done",
+    verdict: t.verdict,
+    confidence: t.confidence,
+  };
 }
 
 // One finished investigation so the panel has something to show.
 if (alerts[0]) {
-  const t: AITriage = { alert_id: alerts[0].id, status: 'done', trigger: 'auto', tool_calls: 0, usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, created_at: new Date().toISOString() }
-  triages[alerts[0].id] = t
-  finishTriage(alerts[0], t)
-  if (alerts[3]) triages[alerts[3].id] = reusedTriage(alerts[3], alerts[0])
+  const t: AITriage = {
+    alert_id: alerts[0].id,
+    status: "done",
+    trigger: "auto",
+    tool_calls: 0,
+    usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 },
+    created_at: new Date().toISOString(),
+  };
+  triages[alerts[0].id] = t;
+  finishTriage(alerts[0], t);
+  if (alerts[3]) triages[alerts[3].id] = reusedTriage(alerts[3], alerts[0]);
 }
 
-route('GET', '/api/alerts/:id/triage', ({ params }) => {
-  getAlertOr404(params.id)
-  return { triage: triages[params.id] ?? null, available: aiSettings.ready, reason: aiSettings.not_ready_reason }
-})
+route("GET", "/api/alerts/:id/triage", ({ params }) => {
+  getAlertOr404(params.id);
+  return {
+    triage: triages[params.id] ?? null,
+    available: aiSettings.ready,
+    reason: aiSettings.not_ready_reason,
+  };
+});
 
 route(
-  'POST',
-  '/api/alerts/:id/triage',
+  "POST",
+  "/api/alerts/:id/triage",
   ({ params, user }) => {
-    const a = getAlertOr404(params.id)
-    const cur = triages[a.id]
-    if (cur && (cur.status === 'queued' || cur.status === 'running')) fail(409, 'an investigation of this alert is already queued or running')
+    const a = getAlertOr404(params.id);
+    const cur = triages[a.id];
+    if (cur && (cur.status === "queued" || cur.status === "running"))
+      fail(409, "an investigation of this alert is already queued or running");
     const t: AITriage = {
-      alert_id: a.id, status: 'queued', trigger: 'manual', requested_by: user?.username, tool_calls: 0,
-      usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, created_at: new Date().toISOString(),
-    }
-    triages[a.id] = t
-    a.ai_triage = { status: 'queued' }
+      alert_id: a.id,
+      status: "queued",
+      trigger: "manual",
+      requested_by: user?.username,
+      tool_calls: 0,
+      usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 },
+      created_at: new Date().toISOString(),
+    };
+    triages[a.id] = t;
+    a.ai_triage = { status: "queued" };
     setTimeout(() => {
-      t.status = 'running'
-      t.started_at = new Date().toISOString()
-      a.ai_triage = { status: 'running' }
-    }, 1500)
-    setTimeout(() => finishTriage(a, t), 5000)
-    return t
+      t.status = "running";
+      t.started_at = new Date().toISOString();
+      a.ai_triage = { status: "running" };
+    }, 1500);
+    setTimeout(() => finishTriage(a, t), 5000);
+    return t;
   },
-  { role: 'analyst' },
-)
+  { role: "analyst" },
+);
 
-route('GET', '/api/settings/ai', () => aiSettings, { role: 'admin' })
+route("GET", "/api/settings/ai", () => aiSettings, { role: "admin" });
 
 route(
-  'POST',
-  '/api/settings/ai/models',
+  "POST",
+  "/api/settings/ai/models",
   ({ body }) => {
-    const b = obj(body) as Partial<AISettingsUpdate>
-    if (b.provider === 'local' && !b.base_url) return { models: [], error: 'no base URL is set' }
+    const b = obj(body) as Partial<AISettingsUpdate>;
+    if (b.provider === "local" && !b.base_url)
+      return { models: [], error: "no base URL is set" };
     const lists: Record<string, string[]> = {
-      anthropic: ['claude-haiku-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5'],
-      local: ['llama3.1:8b', 'qwen2.5:14b'],
-    }
-    return { models: lists[b.provider ?? 'anthropic'] ?? ['example-model-a', 'example-model-b'] }
+      anthropic: ["claude-haiku-5-5", "claude-opus-5-5", "claude-sonnet-5-5"],
+      local: ["llama3.1:8b", "qwen2.5:14b"],
+    };
+    return {
+      models: lists[b.provider ?? "anthropic"] ?? [
+        "example-model-a",
+        "example-model-b",
+      ],
+    };
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 route(
-  'PUT',
-  '/api/settings/ai',
+  "PUT",
+  "/api/settings/ai",
   ({ body }) => {
-    const b = obj(body) as Partial<AISettingsUpdate>
-    if (b.daily_limit !== undefined && (b.daily_limit < 1 || b.daily_limit > 10000)) fail(400, 'daily_limit must be between 1 and 10000')
-    const provider = b.provider ?? aiSettings.provider
+    const b = obj(body) as Partial<AISettingsUpdate>;
+    if (
+      b.daily_limit !== undefined &&
+      (b.daily_limit < 1 || b.daily_limit > 10000)
+    )
+      fail(400, "daily_limit must be between 1 and 10000");
+    const provider = b.provider ?? aiSettings.provider;
     Object.assign(aiSettings, {
-      enabled: !!b.enabled, provider, model: b.model || (provider === 'anthropic' ? aiSettings.default_model : ''),
+      enabled: !!b.enabled,
+      provider,
+      model:
+        b.model || (provider === "anthropic" ? aiSettings.default_model : ""),
       base_url: b.base_url || undefined,
-      min_severity: b.min_severity ?? aiSettings.min_severity, daily_limit: b.daily_limit ?? aiSettings.daily_limit,
+      min_severity: b.min_severity ?? aiSettings.min_severity,
+      daily_limit: b.daily_limit ?? aiSettings.daily_limit,
       max_tool_calls: b.max_tool_calls ?? aiSettings.max_tool_calls,
-      engine: b.engine ?? aiSettings.engine, mcp_enabled: b.mcp_enabled ?? aiSettings.mcp_enabled,
+      engine: b.engine ?? aiSettings.engine,
+      mcp_enabled: b.mcp_enabled ?? aiSettings.mcp_enabled,
       mcp_auto_trigger: b.mcp_auto_trigger ?? aiSettings.mcp_auto_trigger,
-    })
-    if (b.clear_api_key) aiSettings.keys[provider] = { set: false }
-    else if (b.api_key) aiSettings.keys[provider] = { set: true, hint: '...' + b.api_key.slice(-4), source: 'settings' }
-    const info = aiSettings.providers.find((p) => p.id === provider)
-    const k = aiSettings.keys[provider] ?? { set: false }
-    Object.assign(aiSettings, { key_set: k.set, key_hint: k.hint, key_source: k.source })
+    });
+    if (b.clear_api_key) aiSettings.keys[provider] = { set: false };
+    else if (b.api_key)
+      aiSettings.keys[provider] = {
+        set: true,
+        hint: "..." + b.api_key.slice(-4),
+        source: "settings",
+      };
+    const info = aiSettings.providers.find((p) => p.id === provider);
+    const k = aiSettings.keys[provider] ?? { set: false };
+    Object.assign(aiSettings, {
+      key_set: k.set,
+      key_hint: k.hint,
+      key_source: k.source,
+    });
     const reason = !aiSettings.enabled
-      ? 'the AI analyst is turned off'
-      : aiSettings.engine === 'mcp'
+      ? "the AI analyst is turned off"
+      : aiSettings.engine === "mcp"
         ? aiSettings.mcp_enabled
           ? undefined
-          : 'MCP access is turned off'
+          : "MCP access is turned off"
         : info?.needs_key && !k.set
-        ? 'no API key is set'
-        : provider === 'local' && !aiSettings.base_url
-          ? 'no base URL is set'
-          : !aiSettings.model
-            ? 'no model is set'
-            : undefined
-    Object.assign(aiSettings, { ready: !reason, not_ready_reason: reason })
-    return aiSettings
+          ? "no API key is set"
+          : provider === "local" && !aiSettings.base_url
+            ? "no base URL is set"
+            : !aiSettings.model
+              ? "no model is set"
+              : undefined;
+    Object.assign(aiSettings, { ready: !reason, not_ready_reason: reason });
+    return aiSettings;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 route(
-  'POST',
-  '/api/settings/ai/test',
+  "POST",
+  "/api/settings/ai/test",
   ({ body }) => {
-    const b = obj(body) as Partial<AISettingsUpdate>
-    if (!aiSettings.key_set && !b.api_key) return { ok: false, error: 'no API key is set' }
-    return { ok: true, model: b.model || aiSettings.model }
+    const b = obj(body) as Partial<AISettingsUpdate>;
+    if (!aiSettings.key_set && !b.api_key)
+      return { ok: false, error: "no API key is set" };
+    return { ok: true, model: b.model || aiSettings.model };
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 // --- settings and admin ---------------------------------------------------------------------------
 
-route('GET', '/api/settings/server', () => serverSettings)
-
-route('GET', '/api/enrollment-tokens', () => ({ tokens: tokens.map((t) => ({ ...t, token: undefined })) }), { role: 'admin' })
+route("GET", "/api/settings/server", () => serverSettings);
 
 route(
-  'POST',
-  '/api/enrollment-tokens',
+  "GET",
+  "/api/enrollment-tokens",
+  () => ({ tokens: tokens.map((t) => ({ ...t, token: undefined })) }),
+  { role: "admin" },
+);
+
+route(
+  "POST",
+  "/api/enrollment-tokens",
   ({ body, user }) => {
-    const b = obj(body)
-    const name = String(b.name ?? '').trim()
-    if (!name) fail(400, 'name is required')
-    const now = Date.now()
-    const B32 = 'abcdefghijklmnopqrstuvwxyz234567'
-    const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)), (x) => B32[x % 32]).join('')
+    const b = obj(body);
+    const name = String(b.name ?? "").trim();
+    if (!name) fail(400, "name is required");
+    const now = Date.now();
+    const B32 = "abcdefghijklmnopqrstuvwxyz234567";
+    const secret = Array.from(
+      crypto.getRandomValues(new Uint8Array(32)),
+      (x) => B32[x % 32],
+    ).join("");
     const t = {
       id: makeId(now),
       name,
       token: `hxe_${secret}`,
       created_at: new Date(now).toISOString(),
       created_by: user!.username,
-      expires_at: typeof b.expires_hours === 'number' && b.expires_hours > 0 ? new Date(now + b.expires_hours * HOUR).toISOString() : undefined,
-      max_uses: typeof b.max_uses === 'number' && b.max_uses > 0 ? b.max_uses : undefined,
+      expires_at: b.never_expires
+        ? undefined
+        : new Date(
+            now +
+              (typeof b.expires_hours === "number" && b.expires_hours > 0
+                ? b.expires_hours
+                : 168) *
+                HOUR,
+          ).toISOString(),
+      max_uses: b.unlimited_uses
+        ? undefined
+        : typeof b.max_uses === "number" && b.max_uses > 0
+          ? b.max_uses
+          : 1,
+      allow_agent_labels: b.allow_agent_labels === true,
       uses: 0,
       labels: Array.isArray(b.labels) ? (b.labels as string[]) : [],
-    }
-    tokens.unshift({ ...t, token: undefined })
-    logAudit(user, 'token.create', name, { expires_hours: b.expires_hours, max_uses: b.max_uses })
-    return t
+    };
+    tokens.unshift({ ...t, token: undefined });
+    logAudit(user, "token.create", name, {
+      expires_hours: b.expires_hours,
+      max_uses: b.max_uses,
+    });
+    return t;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
 route(
-  'DELETE',
-  '/api/enrollment-tokens/:id',
+  "DELETE",
+  "/api/enrollment-tokens/:id",
   ({ params, user }) => {
-    const i = tokens.findIndex((t) => t.id === params.id)
-    if (i < 0) fail(404, 'token not found')
-    const [t] = tokens.splice(i, 1)
-    logAudit(user, 'token.delete', t.name, null)
-    return NO_CONTENT
+    const i = tokens.findIndex((t) => t.id === params.id);
+    if (i < 0) fail(404, "token not found");
+    const [t] = tokens.splice(i, 1);
+    logAudit(user, "token.delete", t.name, null);
+    return NO_CONTENT;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
-route('GET', '/api/agent-config', () => agentConfig)
+route("GET", "/api/agent-config", () => agentConfig);
 
 route(
-  'PUT',
-  '/api/agent-config',
+  "PUT",
+  "/api/agent-config",
   ({ body, user }) => {
-    const b = obj(body) as unknown as AgentConfig
-    if (typeof b.heartbeat_interval_sec !== 'number' || b.heartbeat_interval_sec < 5) fail(400, 'heartbeat_interval_sec must be a number >= 5')
-    if (!b.sensors || !b.batch || !b.fim) fail(400, 'sensors, batch and fim are required')
-    Object.assign(agentConfig, b, { version: agentConfig.version + 1 })
-    logAudit(user, 'agent_config.update', 'default', { version: agentConfig.version })
-    return agentConfig
+    const b = obj(body) as unknown as AgentConfig;
+    if (
+      typeof b.heartbeat_interval_sec !== "number" ||
+      b.heartbeat_interval_sec < 5
+    )
+      fail(400, "heartbeat_interval_sec must be a number >= 5");
+    if (!b.sensors || !b.batch || !b.fim)
+      fail(400, "sensors, batch and fim are required");
+    Object.assign(agentConfig, b, { version: agentConfig.version + 1 });
+    logAudit(user, "agent_config.update", "default", {
+      version: agentConfig.version,
+    });
+    return agentConfig;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
-route('GET', '/api/users', () => ({ users }), { role: 'admin' })
+route("GET", "/api/users", () => ({ users }), { role: "admin" });
 
 route(
-  'POST',
-  '/api/users',
+  "POST",
+  "/api/users",
   ({ body, user }) => {
-    const b = obj(body)
-    const username = String(b.username ?? '').trim()
-    const password = String(b.password ?? '')
-    const role = String(b.role ?? '') as Role
-    if (!/^[a-zA-Z0-9._-]{2,32}$/.test(username)) fail(400, 'username must be 2-32 characters: letters, digits, . _ -')
-    if (users.some((u) => u.username === username)) fail(409, 'username already exists')
-    if (password.length < 10) fail(400, 'password must be at least 10 characters')
-    if (!['admin', 'analyst', 'viewer'].includes(role)) fail(400, 'invalid role')
-    const u: User = { id: makeId(Date.now()), username, role, created_at: new Date().toISOString() }
-    users.push(u)
-    logAudit(user, 'user.create', username, { role })
-    return u
+    const b = obj(body);
+    const username = String(b.username ?? "").trim();
+    const password = String(b.password ?? "");
+    const role = String(b.role ?? "") as Role;
+    if (!/^[a-zA-Z0-9._-]{2,32}$/.test(username))
+      fail(400, "username must be 2-32 characters: letters, digits, . _ -");
+    if (users.some((u) => u.username === username))
+      fail(409, "username already exists");
+    if (password.length < 10)
+      fail(400, "password must be at least 10 characters");
+    if (!["admin", "analyst", "viewer"].includes(role))
+      fail(400, "invalid role");
+    const u: User = {
+      id: makeId(Date.now()),
+      username,
+      role,
+      created_at: new Date().toISOString(),
+    };
+    users.push(u);
+    logAudit(user, "user.create", username, { role });
+    return u;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
-route('PATCH', '/api/users/:id', ({ params, body, user }) => {
-  const u = users.find((x) => x.id === params.id) ?? fail(404, 'user not found')
-  const b = obj(body)
-  const self = u.id === user!.id
-  if (!self && !hasRole(user, 'admin')) fail(403, 'forbidden: requires admin role')
+route("PATCH", "/api/users/:id", ({ params, body, user }) => {
+  const u =
+    users.find((x) => x.id === params.id) ?? fail(404, "user not found");
+  const b = obj(body);
+  const self = u.id === user!.id;
+  if (!self && !hasRole(user, "admin"))
+    fail(403, "forbidden: requires admin role");
   if (b.role !== undefined) {
-    if (!hasRole(user, 'admin')) fail(403, 'only admins can change roles')
-    if (self) fail(400, 'you cannot change your own role')
-    if (!['admin', 'analyst', 'viewer'].includes(String(b.role))) fail(400, 'invalid role')
-    u.role = b.role as Role
+    if (!hasRole(user, "admin")) fail(403, "only admins can change roles");
+    if (self) fail(400, "you cannot change your own role");
+    if (!["admin", "analyst", "viewer"].includes(String(b.role)))
+      fail(400, "invalid role");
+    u.role = b.role as Role;
   }
   if (b.password !== undefined) {
-    if (String(b.password).length < 10) fail(400, 'password must be at least 10 characters')
+    if (String(b.password).length < 10)
+      fail(400, "password must be at least 10 characters");
   }
-  logAudit(user, 'user.update', u.username, { role: b.role, password_changed: b.password !== undefined })
-  return u
-})
+  logAudit(user, "user.update", u.username, {
+    role: b.role,
+    password_changed: b.password !== undefined,
+  });
+  return u;
+});
 
 route(
-  'DELETE',
-  '/api/users/:id',
+  "DELETE",
+  "/api/users/:id",
   ({ params, user }) => {
-    const i = users.findIndex((x) => x.id === params.id)
-    if (i < 0) fail(404, 'user not found')
-    if (users[i].id === user!.id) fail(400, 'you cannot delete yourself')
-    const [u] = users.splice(i, 1)
-    logAudit(user, 'user.delete', u.username, null)
-    return NO_CONTENT
+    const i = users.findIndex((x) => x.id === params.id);
+    if (i < 0) fail(404, "user not found");
+    if (users[i].id === user!.id) fail(400, "you cannot delete yourself");
+    const [u] = users.splice(i, 1);
+    logAudit(user, "user.delete", u.username, null);
+    return NO_CONTENT;
   },
-  { role: 'admin' },
-)
+  { role: "admin" },
+);
 
-route('GET', '/api/audit', ({ query }) => ({ entries: page(audit, query), total: audit.length }), { role: 'admin' })
+route(
+  "GET",
+  "/api/audit",
+  ({ query }) => ({ entries: page(audit, query), total: audit.length }),
+  { role: "admin" },
+);
 
-route('GET', '/api/integrations', () => integrations)
-registerHealthMocks(route)
-registerHealthCheckMocks(route)
-registerListMocks(route)
-registerVulnMocks(route)
-registerFirewallMocks(route, fail)
+route("GET", "/api/integrations", () => integrations);
+registerHealthMocks(route);
+registerHealthCheckMocks(route);
+registerListMocks(route);
+registerVulnMocks(route);
+registerFirewallMocks(route, fail);

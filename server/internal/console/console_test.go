@@ -145,6 +145,16 @@ func TestConsoleFlow(t *testing.T) {
 	if code != 201 || tok["token"] == "" {
 		t.Fatalf("create token = %d %v", code, tok)
 	}
+	// Defaults: one use, 7 days. No limit has to be asked for.
+	if code, d := admin.do("POST", "/api/enrollment-tokens", map[string]any{"name": "d"}, true); code != 201 || d["max_uses"] != float64(1) || d["expires_at"] == nil || d["allow_agent_labels"] != false {
+		t.Fatalf("default token = %d %v", code, d)
+	}
+	if code, d := admin.do("POST", "/api/enrollment-tokens", map[string]any{"name": "u", "never_expires": true, "unlimited_uses": true, "allow_agent_labels": true}, true); code != 201 || d["max_uses"] != nil || d["expires_at"] != nil || d["allow_agent_labels"] != true {
+		t.Fatalf("unlimited token = %d %v", code, d)
+	}
+	if code, _ := admin.do("POST", "/api/enrollment-tokens", map[string]any{"name": "z", "max_uses": 0}, true); code != 400 {
+		t.Fatalf("max_uses 0 = %d", code)
+	}
 
 	// Seed a host and a small process tree through the ingest path.
 	host, err := c.State.CreateEndpoint(ctx, "agent-x", api.HostInfo{Hostname: "desk", OS: event.OS{Platform: "windows"}}, nil, "")
