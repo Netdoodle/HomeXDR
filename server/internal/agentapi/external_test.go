@@ -84,7 +84,7 @@ func TestExternalListener(t *testing.T) {
 	}
 
 	// Without a certificate, nothing is reachable: the handshake fails.
-	for _, path := range []string{api.PathEnroll, "/v1/ca.crt", "/v1/install/linux.sh", api.PathAgentRelease} {
+	for _, path := range []string{api.PathEnroll, "/v1/ca.crt", "/v1/install/linux.sh", "/v1/install/windows.ps1", api.PathAgentRelease} {
 		if resp, err := client().Get(ext.URL + path); err == nil {
 			resp.Body.Close()
 			t.Errorf("%s without a certificate: got HTTP %d", path, resp.StatusCode)
@@ -112,7 +112,7 @@ func TestExternalListener(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("heartbeat over the external listener = %d", resp.StatusCode)
 	}
-	for _, path := range []string{"/v1/ca.crt", "/v1/install/linux.sh"} {
+	for _, path := range []string{"/v1/ca.crt", "/v1/install/linux.sh", "/v1/install/windows.ps1"} {
 		resp, err := client(cert).Get(ext.URL + path)
 		if err != nil {
 			t.Fatal(err)

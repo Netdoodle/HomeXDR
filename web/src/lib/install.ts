@@ -58,10 +58,20 @@ export interface InstallCommands {
   windows: string
 }
 
+/** PowerShell single-quoted string literal, always quoted (for use as a value, not an argument). */
+export function psLiteral(s: string): string {
+  return `'${s.replace(/'/g, "''")}'`
+}
+
 /**
  * `updateKey` (the release key from the server settings) turns on signed automatic
  * updates on Linux and macOS. Windows agents cannot update themselves yet, so it is left
  * out there.
+ *
+ * The Windows command downloads windows.ps1 without checking the certificate (the CA is not
+ * trusted yet, like `curl -k` on Linux) and runs it; the script then checks the CA against
+ * the pin before it downloads the agent. Windows PowerShell 5.1 needs the
+ * ServicePointManager callback, PowerShell 7 has -SkipCertificateCheck.
  */
 export function buildInstallCommands(agentUrl: string, token: string, caPin: string, updateKey?: string): InstallCommands {
   const base = normalizeAgentUrl(agentUrl)
@@ -69,10 +79,16 @@ export function buildInstallCommands(agentUrl: string, token: string, caPin: str
     `curl -fsSLk ${shellQuote(base + '/v1/install/' + script)} | sudo sh -s -- ` +
     `--token ${shellQuote(token)} --ca-pin ${shellQuote(caPin)}` +
     (updateKey ? ` --update-key ${shellQuote(updateKey)}` : '')
+  const spm = '[Net.ServicePointManager]'
+  const windows =
+    `$u=${psLiteral(base + '/v1/install/windows.ps1')}; ` +
+    `if ($PSEdition -eq 'Core') { $s=Invoke-RestMethod $u -SkipCertificateCheck } else { ` +
+    `${spm}::SecurityProtocol=${spm}::SecurityProtocol -bor 3072; ${spm}::ServerCertificateValidationCallback={$true}; ` +
+    `try { $s=(New-Object Net.WebClient).DownloadString($u) } finally { ${spm}::ServerCertificateValidationCallback=$null } }; ` +
+    `& ([scriptblock]::Create($s)) -Server ${psQuote(base)} -Token ${psQuote(token)} -CaPin ${psQuote(caPin)}`
   return {
     linux: unix('linux.sh'),
     macos: unix('macos.sh'),
-    windows:
-      `homexdr-agent.exe install --server ${psQuote(base)} ` + `--token ${psQuote(token)} --ca-pin ${psQuote(caPin)}`,
+    windows,
   }
 }

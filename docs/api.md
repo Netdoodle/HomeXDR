@@ -616,8 +616,10 @@ and a token:
 ```
 # Linux (--update-key only when the server has a signed release)
 curl -fsSLk https://<server>:8443/v1/install/linux.sh | sudo sh -s -- --token <token> --ca-pin <pin> [--update-key <key>]
-# Windows (elevated PowerShell)
-homexdr-agent.exe install --server https://<server>:8443 --token <token> --ca-pin <pin>
+# Windows (PowerShell, Run as administrator): fetches /v1/install/windows.ps1 without
+# checking the certificate, then runs it; the script checks the CA pin, downloads the agent
+# over verified TLS, checks SHA256SUMS, installs to C:\Program Files\HomeXDR and enrolls
+$u='https://<server>:8443/v1/install/windows.ps1'; if ($PSEdition -eq 'Core') { ... } else { ... }; & ([scriptblock]::Create($s)) -Server https://<server>:8443 -Token <token> -CaPin <pin>
 ```
 
 ## Devices and behaviour detection

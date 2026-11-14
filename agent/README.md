@@ -325,8 +325,13 @@ homexdr-agent install --server https://xdr.example.lan:8443 \
 for"; otherwise the host gets the token's labels alone.
 
 `install` enrolls (unless already enrolled), writes `/etc/systemd/system/homexdr-agent.service`
-(`Restart=always`) and runs `systemctl enable --now`. On Windows, run the same command
-from an elevated PowerShell. On macOS the console's command runs the same script
+(`Restart=always`) and runs `systemctl enable --now`. On Windows the console's command (PowerShell, Run as
+administrator) runs `/v1/install/windows.ps1`, which checks the CA pin, downloads the
+agent over the pinned connection, checks `SHA256SUMS`, copies it to
+`C:\Program Files\HomeXDR\homexdr-agent.exe` and runs `install` from there, which
+registers the `HomeXDRAgent` service; manually, run the same `install` command from an
+elevated PowerShell in the folder that holds the binary (`.\homexdr-agent.exe install ...`).
+On macOS the console's command runs the same script
 (`/v1/install/macos.sh`), which installs `/usr/local/bin/homexdr-agent` and loads the
 launchd job; then grant Full Disk Access (above).
 

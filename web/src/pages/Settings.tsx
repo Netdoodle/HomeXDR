@@ -182,7 +182,7 @@ function InstallCommands({
       </div>
       <div className="field">
         <span className="label">
-          Windows (elevated PowerShell, from the folder with homexdr-agent.exe)
+          Windows (PowerShell, Run as administrator)
         </span>
         <div className="copy-field">
           <pre className="codeblock wrap">{cmds.windows}</pre>
@@ -191,9 +191,12 @@ function InstallCommands({
       </div>
       <p className="muted xsmall" style={{ margin: 0 }}>
         The <span className="mono">--ca-pin</span> makes the agent verify it is
-        talking to this server before it sends the token. The Linux and macOS
-        scripts are fetched with <span className="mono">-k</span> because the CA
-        is not installed yet; the agent then pins it.
+        talking to this server before it sends the token. The install
+        scripts are fetched without checking the certificate (
+        <span className="mono">-k</span> on Linux and macOS) because the CA is not
+        installed yet; each script checks the CA against the pin before it
+        downloads the agent, and the agent then pins it. On Windows the agent is
+        installed to <span className="mono">C:\Program Files\HomeXDR</span>.
         {settings.agent_release.signed && settings.update_key ? (
           <>
             {" "}

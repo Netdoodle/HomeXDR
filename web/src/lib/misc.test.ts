@@ -72,7 +72,14 @@ describe('install commands', () => {
     const c = buildInstallCommands('https://homexdr.lan:8443', 'hxe_abc123', 'sha256:00ff')
     expect(c.linux).toBe('curl -fsSLk https://homexdr.lan:8443/v1/install/linux.sh | sudo sh -s -- --token hxe_abc123 --ca-pin sha256:00ff')
     expect(c.macos).toBe('curl -fsSLk https://homexdr.lan:8443/v1/install/macos.sh | sudo sh -s -- --token hxe_abc123 --ca-pin sha256:00ff')
-    expect(c.windows).toBe('homexdr-agent.exe install --server https://homexdr.lan:8443 --token hxe_abc123 --ca-pin sha256:00ff')
+    expect(c.windows).toBe(
+      "$u='https://homexdr.lan:8443/v1/install/windows.ps1'; " +
+        "if ($PSEdition -eq 'Core') { $s=Invoke-RestMethod $u -SkipCertificateCheck } else { " +
+        '[Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor 3072; ' +
+        '[Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; ' +
+        'try { $s=(New-Object Net.WebClient).DownloadString($u) } finally { [Net.ServicePointManager]::ServerCertificateValidationCallback=$null } }; ' +
+        '& ([scriptblock]::Create($s)) -Server https://homexdr.lan:8443 -Token hxe_abc123 -CaPin sha256:00ff',
+    )
   })
 
   it('adds the update key to the Linux and macOS commands only', () => {

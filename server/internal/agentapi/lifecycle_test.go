@@ -300,4 +300,15 @@ func TestInstallScripts(t *testing.T) {
 			t.Fatalf("%s: %d\n%s", p, resp.StatusCode, s)
 		}
 	}
+	resp, err := anon.Get(l.srv.URL + "/v1/install/windows.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	ps := string(b)
+	if resp.StatusCode != 200 || strings.Contains(ps, "__SERVER__") || !strings.Contains(ps, "[string]$Server = '"+shellSafe(l.c.Cfg.AgentURL)+"'") ||
+		!strings.Contains(ps, "homexdr-agent-windows-amd64.exe") || !strings.Contains(ps, "CA pin mismatch") {
+		t.Fatalf("windows.ps1: %d\n%s", resp.StatusCode, ps)
+	}
 }
