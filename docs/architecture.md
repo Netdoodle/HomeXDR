@@ -72,7 +72,7 @@ directive, so modules build independently without a `go.work` file.
 | Port | Purpose | Notes |
 |---|---|---|
 | 8443/tcp | Agent API | TLS with the server's own CA. Client certs required except `/v1/enroll`. |
-| 8080/tcp | Web console + REST API | Plain HTTP; put it behind your reverse proxy for HTTPS. |
+| 8080/tcp | Web console + REST API | Plain HTTP; put it behind your reverse proxy for HTTPS. The session cookie is Secure on HTTPS requests. List the proxy in `HOMEXDR_TRUSTED_PROXIES` so failed logins are counted per visitor. The first account can only be created from the local network. |
 | 514/udp+tcp → 5514 | Syslog intake | RFC 3164/5424, OPNsense `filterlog`, Suricata EVE JSON, Unbound queries, DHCP leases. |
 | 2055/udp | NetFlow v5, v9 and IPFIX intake | Off unless `HOMEXDR_NETFLOW_ADDR` is set. See [network-visibility.md](network-visibility.md). |
 

@@ -153,7 +153,8 @@ HOMEXDR_NETFLOW_ALLOW=192.168.20.1
 
 The compose files publish `2055/udp` already (`HOMEXDR_NETFLOW_PORT` changes the host port). With
 `HOMEXDR_NETFLOW_ADDR` empty, nothing listens on it. Allow only the firewall: anyone who can send to this port
-can write events.
+can write events. With no allow list at all, private, loopback and link-local addresses may send, and at most
+25 new senders an hour become devices.
 
 ### On the firewall
 

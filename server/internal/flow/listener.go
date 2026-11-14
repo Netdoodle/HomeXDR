@@ -33,7 +33,8 @@ type packet struct {
 	data []byte
 }
 
-// New returns a listener. allow restricts exporters (empty = any).
+// New returns a listener. allow restricts exporters (empty = any; the server passes
+// config.LocalNetworks when none is set).
 func New(c *core.Core, allow []netip.Prefix) *Listener {
 	return &Listener{c: c, allow: allow, dec: NewDecoder(), in: make(chan packet, queueSize)}
 }
@@ -69,7 +70,7 @@ func (l *Listener) Run(ctx context.Context, addr string) error {
 			}
 			continue
 		}
-		src := from.Addr().Unmap()
+		src := from.Addr().Unmap().WithZone("")
 		if !l.allowed(src) {
 			st.Refused.Add(1)
 			continue

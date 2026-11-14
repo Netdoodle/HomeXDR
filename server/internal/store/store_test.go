@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -207,5 +208,23 @@ func TestHunts(t *testing.T) {
 	rows, total, err := s.HuntResults(ctx, h.ID, "", 10, 0)
 	if err != nil || total != 2 || rows[0].Hostname != "one" {
 		t.Fatalf("HuntResults = %v, %d, %v", rows, total, err)
+	}
+}
+
+// Log and flow sources cannot add network devices without limit: sender addresses can be
+// made up. Known sources keep working when the limit is reached.
+func TestNewNetworkHostLimit(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	for i := range MaxNewNetworkHostsPerHour {
+		if _, err := s.EnsureNetworkHost(ctx, fmt.Sprintf("10.0.0.%d", i+1), "", ""); err != nil {
+			t.Fatalf("host %d: %v", i, err)
+		}
+	}
+	if _, err := s.EnsureNetworkHost(ctx, "10.0.1.1", "", ""); !errors.Is(err, ErrTooManyNewHosts) {
+		t.Fatalf("over the limit: %v", err)
+	}
+	if _, err := s.EnsureNetworkHost(ctx, "10.0.0.1", "fw", ""); err != nil {
+		t.Fatalf("known source: %v", err)
 	}
 }

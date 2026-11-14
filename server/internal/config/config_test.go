@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"net/netip"
+	"testing"
+)
 
 func TestParseSize(t *testing.T) {
 	for in, want := range map[string]int64{
@@ -33,6 +36,37 @@ func TestLoadRetention(t *testing.T) {
 	t.Setenv("HOMEXDR_RETENTION_DAYS", "-1")
 	if _, err := Load(); err == nil {
 		t.Fatal("negative retention accepted")
+	}
+}
+
+// With no allow list, only local networks may send syslog and flows.
+func TestAllowDefaultsToLocalNetworks(t *testing.T) {
+	t.Setenv("HOMEXDR_DATA_DIR", t.TempDir())
+	t.Setenv("HOMEXDR_SYSLOG_ALLOW", "")
+	t.Setenv("HOMEXDR_NETFLOW_ALLOW", "")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := func(list []netip.Prefix, ip string) bool {
+		for _, p := range list {
+			if p.Contains(netip.MustParseAddr(ip)) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, list := range [][]netip.Prefix{c.SyslogAllow, c.NetFlowAllow} {
+		for _, ip := range []string{"192.168.20.1", "10.1.2.3", "172.17.0.1", "127.0.0.1", "100.100.1.1", "fd00::1", "fe80::1"} {
+			if !in(list, ip) {
+				t.Errorf("%s is not allowed", ip)
+			}
+		}
+		for _, ip := range []string{"8.8.8.8", "172.32.0.1", "100.128.0.1", "2001:db8::1"} {
+			if in(list, ip) {
+				t.Errorf("%s is allowed", ip)
+			}
+		}
 	}
 }
 

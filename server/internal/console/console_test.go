@@ -339,6 +339,13 @@ func TestAISettingsAndTriage(t *testing.T) {
 	if code != 200 || body["ready"] != true || body["base_url"] != "http://192.168.20.20:11434/v1" {
 		t.Fatalf("local = %d %v", code, body)
 	}
+	// Pointing a provider at another server does not take its stored key along.
+	code, body = admin.do("PUT", "/api/settings/ai", map[string]any{"enabled": true, "provider": "openai", "model": "some-model",
+		"base_url": "http://203.0.113.7/v1", "min_severity": "medium", "daily_limit": 25, "max_tool_calls": 15}, true)
+	keys, _ = body["keys"].(map[string]any)
+	if code != 200 || body["key_set"] != false || keys["anthropic"].(map[string]any)["set"] != true {
+		t.Fatalf("openai at a custom endpoint = %d %v", code, body)
+	}
 	code, body = admin.do("PUT", "/api/settings/ai", map[string]any{"enabled": true, "provider": "anthropic", "model": "claude-opus-5-5",
 		"min_severity": "high", "daily_limit": 25, "max_tool_calls": 15}, true)
 	if code != 200 || body["key_set"] != true || body["key_hint"] != "...cdef" {

@@ -684,17 +684,19 @@ function AccountTab() {
   const me = useUser()
   const toast = useToast()
   const navigate = useNavigate()
+  const [current, setCurrent] = useState('')
   const [pw, setPw] = useState('')
   const [confirm, setConfirm] = useState('')
   const change = useMutation({
-    mutationFn: () => api.patchUser(me.id, { password: pw }),
+    mutationFn: () => api.patchUser(me.id, { password: pw, current_password: current }),
     onSuccess: () => {
       toast.success('Password changed')
+      setCurrent('')
       setPw('')
       setConfirm('')
     },
   })
-  const valid = pw.length >= 10 && pw === confirm
+  const valid = current !== '' && pw.length >= 10 && pw === confirm
   return (
     <div className="grid grid-2" style={{ alignItems: 'start' }}>
       <section className="panel">
@@ -710,6 +712,10 @@ function AccountTab() {
           }}
         >
           <input type="text" autoComplete="username" value={me.username} readOnly hidden />
+          <div className="field">
+            <label htmlFor="pw-current">Current password</label>
+            <input id="pw-current" className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+          </div>
           <div className="field">
             <label htmlFor="pw-new">New password</label>
             <input id="pw-new" className={pw && pw.length < 10 ? 'input invalid' : 'input'} type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />

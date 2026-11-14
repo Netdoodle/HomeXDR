@@ -17,7 +17,7 @@ type Config struct {
 	HTTPAddr          string         // HOMEXDR_HTTP_ADDR: console + REST API
 	AgentAddr         string         // HOMEXDR_AGENT_ADDR: agent API (TLS)
 	SyslogAddr        string         // HOMEXDR_SYSLOG_ADDR: UDP+TCP syslog; "" disables
-	SyslogAllow       []netip.Prefix // HOMEXDR_SYSLOG_ALLOW: comma list of CIDRs/IPs allowed to send syslog
+	SyslogAllow       []netip.Prefix // HOMEXDR_SYSLOG_ALLOW: comma list of CIDRs/IPs allowed to send syslog (default: LocalNetworks)
 	NetFlowAddr       string         // HOMEXDR_NETFLOW_ADDR: UDP NetFlow/IPFIX; "" disables (the default)
 	NetFlowAllow      []netip.Prefix // HOMEXDR_NETFLOW_ALLOW: exporters allowed to send flows (default: SyslogAllow)
 	ClamdAddr         string         // HOMEXDR_CLAMD_ADDR: host:port of a ClamAV clamd for the antivirus; "" disables ClamAV scanning
@@ -34,7 +34,8 @@ type Config struct {
 	ReleasesDir       string         // HOMEXDR_RELEASES_DIR: archived signed agent releases (default <data>/releases)
 	ReleasesKeep      int            // HOMEXDR_RELEASES_KEEP: archived releases to retain (default 5)
 	WebDir            string         // HOMEXDR_WEB_DIR: serve the console from disk instead of the embedded copy
-	SecureCookies     bool           // HOMEXDR_SECURE_COOKIES: set when the console is behind HTTPS
+	SecureCookies     bool           // HOMEXDR_SECURE_COOKIES: always mark the session cookie Secure (it is anyway on HTTPS requests)
+	TrustedProxies    []netip.Prefix // HOMEXDR_TRUSTED_PROXIES: reverse proxies whose X-Forwarded-For names the real client
 	LogLevel          string         // HOMEXDR_LOG_LEVEL: debug | info | warn | error
 }
 
@@ -68,6 +69,10 @@ func Load() (Config, error) {
 
 	c.SecureCookies, _ = strconv.ParseBool(env("HOMEXDR_SECURE_COOKIES", "false"))
 
+	if c.TrustedProxies, err = parseAllow("HOMEXDR_TRUSTED_PROXIES"); err != nil {
+		return c, err
+	}
+
 	c.ReleasesDir = env("HOMEXDR_RELEASES_DIR", filepath.Join(c.DataDir, "releases"))
 	if c.ReleasesKeep, err = strconv.Atoi(env("HOMEXDR_RELEASES_KEEP", "5")); err != nil || c.ReleasesKeep < 2 {
 		return c, fmt.Errorf("HOMEXDR_RELEASES_KEEP must be a whole number, at least 2 (N-1 needs two)")
@@ -75,6 +80,9 @@ func Load() (Config, error) {
 
 	if c.SyslogAllow, err = parseAllow("HOMEXDR_SYSLOG_ALLOW"); err != nil {
 		return c, err
+	}
+	if len(c.SyslogAllow) == 0 {
+		c.SyslogAllow = LocalNetworks()
 	}
 	c.NetFlowAddr = strings.TrimSpace(os.Getenv("HOMEXDR_NETFLOW_ADDR"))
 	c.ClamdAddr = strings.TrimSpace(os.Getenv("HOMEXDR_CLAMD_ADDR"))
@@ -117,6 +125,19 @@ func Load() (Config, error) {
 		return c, err
 	}
 	return c, nil
+}
+
+// LocalNetworks are the private, loopback and link-local ranges (and the carrier-grade
+// NAT range VPNs such as Tailscale use). With no allow list set, only these may send
+// syslog and flows: a log source is a device on the home network, and anyone who can
+// send becomes a device in the console. Set 0.0.0.0/0,::/0 to accept any address.
+func LocalNetworks() []netip.Prefix {
+	var out []netip.Prefix
+	for _, s := range []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16",
+		"100.64.0.0/10", "::1/128", "fc00::/7", "fe80::/10"} {
+		out = append(out, netip.MustParsePrefix(s))
+	}
+	return out
 }
 
 // parseAllow reads a comma list of IPs and CIDRs from the environment.

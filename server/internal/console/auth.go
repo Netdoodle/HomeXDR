@@ -4,10 +4,12 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Netdoodle/homexdr/server/internal/config"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/shared/version"
 )
@@ -31,6 +33,13 @@ func (h *Handler) setup(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	// The first account is the admin, and whoever asks first gets it. That is only safe
+	// for someone on the home network: a console that is reachable from the internet
+	// before setup could otherwise be claimed by a stranger.
+	if !h.localRequest(r) {
+		writeErr(w, http.StatusForbidden, "the first account can only be created from the local network: open the console from a device on the same network as the server")
+		return
+	}
 	u, err := h.c.State.CreateFirstUser(r.Context(), req.Username, req.Password)
 	if errors.Is(err, store.ErrConflict) {
 		writeErr(w, http.StatusConflict, "setup is already complete")
@@ -40,7 +49,7 @@ func (h *Handler) setup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.c.Audit(r.Context(), u.Username, "setup", u.ID, "initial admin created from "+remoteIP(r))
+	h.c.Audit(r.Context(), u.Username, "setup", u.ID, "initial admin created from "+h.clientIP(r))
 	h.startSession(w, r, u)
 }
 
@@ -49,7 +58,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	key := remoteIP(r) + "|" + strings.ToLower(strings.TrimSpace(req.Username))
+	key := h.clientIP(r) + "|" + strings.ToLower(strings.TrimSpace(req.Username))
 	if !h.limiter.allow(key) {
 		writeErr(w, http.StatusTooManyRequests, "too many failed attempts; try again in 15 minutes")
 		return
@@ -57,7 +66,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	u, err := h.c.State.Authenticate(r.Context(), req.Username, req.Password)
 	if errors.Is(err, store.ErrNotFound) {
 		h.limiter.fail(key)
-		h.c.Audit(r.Context(), req.Username, "login.failed", "", "from "+remoteIP(r))
+		h.c.Audit(r.Context(), req.Username, "login.failed", "", "from "+h.clientIP(r))
 		writeErr(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
@@ -77,7 +86,7 @@ func (h *Handler) startSession(w http.ResponseWriter, r *http.Request, u *store.
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: tok, Path: "/", Expires: exp,
-		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: h.c.Cfg.SecureCookies,
+		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: h.secure(r),
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"user": u})
 }
@@ -88,7 +97,7 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: "", Path: "/", MaxAge: -1,
-		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: h.c.Cfg.SecureCookies,
+		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: h.secure(r),
 	})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -103,6 +112,76 @@ func remoteIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// secure reports whether the session cookie is marked Secure: when configured, and
+// whenever the request arrived over HTTPS (directly or at a reverse proxy). Believing
+// the proxy header here can only make the cookie stricter.
+func (h *Handler) secure(r *http.Request) bool {
+	return h.c.Cfg.SecureCookies || r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+}
+
+func forwardedFor(r *http.Request) []string {
+	var out []string
+	for _, v := range r.Header.Values("X-Forwarded-For") {
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}
+
+func inPrefixes(list []netip.Prefix, ip string) bool {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return false
+	}
+	a = a.Unmap().WithZone("")
+	for _, p := range list {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// clientIP is the address failed logins are counted against. Behind a reverse proxy
+// every request comes from the proxy, so its X-Forwarded-For is used, but only when the
+// proxy is listed in HOMEXDR_TRUSTED_PROXIES: anyone else could put any address there.
+func (h *Handler) clientIP(r *http.Request) string {
+	ip := remoteIP(r)
+	if !inPrefixes(h.c.Cfg.TrustedProxies, ip) {
+		return ip
+	}
+	fwd := forwardedFor(r)
+	for i := len(fwd) - 1; i >= 0; i-- {
+		if _, err := netip.ParseAddr(fwd[i]); err != nil {
+			break
+		}
+		ip = fwd[i]
+		if !inPrefixes(h.c.Cfg.TrustedProxies, ip) {
+			break
+		}
+	}
+	return ip
+}
+
+// localRequest reports whether a request comes from the home network: the peer is a
+// local address, and so is every address a reverse proxy says it forwarded for (a
+// visitor cannot take out what the proxy adds).
+func (h *Handler) localRequest(r *http.Request) bool {
+	local := config.LocalNetworks()
+	if !inPrefixes(local, remoteIP(r)) {
+		return false
+	}
+	for _, ip := range forwardedFor(r) {
+		if !inPrefixes(local, ip) {
+			return false
+		}
+	}
+	return true
 }
 
 // loginLimiter allows 5 failures per key per 15 minutes.

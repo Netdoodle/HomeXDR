@@ -20,7 +20,7 @@ Conventions:
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/api/setup/status` | | `{"needs_setup": bool, "version": string}` |
-| POST | `/api/setup` | `{"username","password"}` | `{"user": User}` (only when no users exist; logs in) |
+| POST | `/api/setup` | `{"username","password"}` | `{"user": User}` (only when no users exist, and only from a private, loopback or link-local address, also behind a reverse proxy; logs in) |
 | POST | `/api/auth/login` | `{"username","password"}` | `{"user": User}` + cookie |
 | POST | `/api/auth/logout` | | `204` |
 | GET | `/api/auth/me` | | `{"user": User}` |
@@ -566,7 +566,7 @@ each host its rule set itself.
 | PUT | `/api/settings/agent-lifecycle` | `AgentLifecycle` → `AgentLifecycleView` (admin, audited); `400` with the problem when invalid |
 | GET | `/api/users` | `{"users": User[]}` (admin) |
 | POST | `/api/users` | `{"username","password","role"}` → `User` (admin) |
-| PATCH | `/api/users/{id}` | `{"role"?, "password"?}` → `User` (admin, or self for password) |
+| PATCH | `/api/users/{id}` | `{"role"?, "password"?, "current_password"?}` → `User` (admin, or self for password). Changing your own password needs `current_password`; 403 when it is wrong |
 | DELETE | `/api/users/{id}` | `204` (admin; cannot delete self) |
 | GET | `/api/audit?limit=&offset=` | `{"entries": {id, at, user, action, target, details}[], "total": n}` (admin) |
 | GET | `/api/integrations` | `{"syslog": {"listening": bool, "addr", "received": n, "parsed": n, "failed": n, "sources": {ip, name, kind, last_seen, count}[]}, "netflow": {"enabled": bool, "listening": bool, "addr", "packets": n, "records": n, "dropped": n, "refused": n, "malformed": n, "waiting": n, "discarded": n, "failed": n, "exporters": {ip, version, packets, records, templates, last_seen}[]}}`. In netflow: `dropped` is packets lost to a full queue, `refused` is senders off the allow list, `waiting` is data sets that arrived before their template, `discarded` is those there was no room to keep, `failed` is records the event store refused. |
