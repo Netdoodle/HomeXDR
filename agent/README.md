@@ -386,6 +386,15 @@ The data dir (`/var/lib/homexdr`, mode 0700) holds the agent key and certificate
 `state.json`, the event spool, the FIM baseline, read offsets, `status.json` and the
 quarantine (`quarantine/<id>/file` with permissions removed, plus `meta.json`).
 
+Quarantine refuses the agent's own files, files on network shares, and operating-system
+files, so one command cannot leave a host unbootable: `%SystemRoot%` (except its `Temp`
+folder) and the boot files on Windows; `/bin`, `/sbin`, `/lib*`, `/usr`, `/boot` and
+`/etc` on Linux; `/System`, `/bin`, `/sbin`, `/usr` and `/etc` on macOS. `/usr/local`
+and the usual persistence places under `/etc` (cron, systemd units, `init.d`,
+`rc.local`, `profile.d`, XDG autostart, `ld.so.preload`) stay allowed. Links in the
+path are resolved before the check. The check runs on the agent, so the server cannot
+skip it; malware hidden among system files is still stopped and must be removed by hand.
+
 ## Automatic updates
 
 With `auto_update` on, the agent checks each heartbeat for an update offer. It then

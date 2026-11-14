@@ -46,12 +46,13 @@ type Meta struct {
 type Store struct {
 	dir       string
 	protected []string // paths (files or directories) that must never be moved
+	system    systemTrees
 }
 
 // NewStore returns a store keeping quarantined files in dir. protected lists paths the
 // agent refuses to quarantine (its data dir, config file and executable).
 func NewStore(dir string, protected ...string) *Store {
-	s := &Store{dir: dir}
+	s := &Store{dir: dir, system: localSystemTrees()}
 	for _, p := range protected {
 		if p != "" {
 			s.protected = append(s.protected, filepath.Clean(p))
@@ -79,9 +80,18 @@ func (s *Store) Quarantine(path string) (api.QuarantineResult, error) {
 	if err != nil {
 		return api.QuarantineResult{}, err
 	}
-	for _, p := range append([]string{s.dir}, s.protected...) {
-		if globs.Under(path, p) {
-			return api.QuarantineResult{}, fmt.Errorf("refusing to quarantine %s: it belongs to the agent", path)
+	if remoteOrDevicePath(path) {
+		return api.QuarantineResult{}, fmt.Errorf("refusing to quarantine %s: only files on local drives can be quarantined", path)
+	}
+	real := realPath(path)
+	for _, c := range []string{path, real} {
+		for _, p := range append([]string{s.dir}, s.protected...) {
+			if globs.Under(c, p) {
+				return api.QuarantineResult{}, fmt.Errorf("refusing to quarantine %s: it belongs to the agent", path)
+			}
+		}
+		if s.system.isSystem(c) {
+			return api.QuarantineResult{}, fmt.Errorf("refusing to quarantine %s: it is an operating-system file, and moving it could break the host", path)
 		}
 	}
 	fi, err := os.Lstat(path)

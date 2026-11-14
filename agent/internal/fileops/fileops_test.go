@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -124,4 +125,74 @@ func TestHashAndGet(t *testing.T) {
 		t.Fatalf("get: %v %d", err, n)
 	}
 	f.Close()
+}
+
+func TestSystemTrees(t *testing.T) {
+	cases := []struct {
+		goos, root, path string
+		want             bool
+	}{
+		{"windows", `C:\Windows`, `C:/Windows/System32/ntoskrnl.exe`, true},
+		{"windows", `C:\Windows`, `c:/WINDOWS/system32/drivers/x.sys`, true},
+		{"windows", `C:\Windows`, `C:/Windows`, true},
+		{"windows", `C:\Windows`, `C:/Windows/Temp/evil.exe`, false},
+		{"windows", `C:\Windows`, `C:/WindowsApps/x.exe`, false},
+		{"windows", `C:\Windows`, `C:/bootmgr`, true},
+		{"windows", `C:\Windows`, `C:/EFI/Microsoft/Boot/bootmgfw.efi`, true},
+		{"windows", `C:\Windows`, `C:/Users/u/Downloads/evil.exe`, false},
+		{"windows", `C:\Windows`, `C:/Program Files/App/app.exe`, false},
+		{"windows", `D:\WIN`, `D:/win/explorer.exe`, true},
+		{"linux", "", "/usr/bin/ls", true},
+		{"linux", "", "/bin/sh", true},
+		{"linux", "", "/lib/x86_64-linux-gnu/libc.so.6", true},
+		{"linux", "", "/etc/passwd", true},
+		{"linux", "", "/etc/sudoers.d/x", true},
+		{"linux", "", "/boot/vmlinuz", true},
+		{"linux", "", "/usr/local/bin/miner", false},
+		{"linux", "", "/etc/cron.d/evil", false},
+		{"linux", "", "/etc/systemd/system/evil.service", false},
+		{"linux", "", "/etc/ld.so.preload", false},
+		{"linux", "", "/etc/ld.so.preloadx", true},
+		{"linux", "", "/usrx/evil", false},
+		{"linux", "", "/tmp/evil", false},
+		{"linux", "", "/home/u/.ssh/authorized_keys", false},
+		{"darwin", "", "/System/Library/Kernels/kernel", true},
+		{"darwin", "", "/private/etc/hosts", true},
+		{"darwin", "", "/usr/local/bin/x", false},
+		{"darwin", "", "/Library/LaunchDaemons/evil.plist", false},
+		{"darwin", "", "/USR/bin/ls", true},
+	}
+	for _, c := range cases {
+		if got := systemTreesFor(c.goos, c.root).isSystem(c.path); got != c.want {
+			t.Errorf("%s %s = %v, want %v", c.goos, c.path, got, c.want)
+		}
+	}
+}
+
+func TestQuarantineRefusesSystemFiles(t *testing.T) {
+	work := t.TempDir()
+	s := NewStore(filepath.Join(t.TempDir(), "quarantine"))
+	sys := filepath.Join(work, "os")
+	os.MkdirAll(filepath.Join(sys, "tmp"), 0o755)
+	s.system = systemTrees{protected: []string{sys}, allowed: []string{filepath.Join(sys, "tmp")}, fold: runtime.GOOS == "windows"}
+	core := filepath.Join(sys, "core.bin")
+	os.WriteFile(core, []byte("c"), 0o644)
+	if _, err := s.Quarantine(core); err == nil || !strings.Contains(err.Error(), "operating-system file") {
+		t.Fatalf("system file: %v", err)
+	}
+	if _, err := os.Stat(core); err != nil {
+		t.Fatal("system file was moved")
+	}
+	drop := filepath.Join(sys, "tmp", "drop.bin")
+	os.WriteFile(drop, []byte("d"), 0o644)
+	if _, err := s.Quarantine(drop); err != nil {
+		t.Fatalf("allowed place: %v", err)
+	}
+	// A linked directory does not get around the check.
+	link := filepath.Join(work, "link")
+	if os.Symlink(sys, link) == nil {
+		if _, err := s.Quarantine(filepath.Join(link, "core.bin")); err == nil {
+			t.Fatal("system file quarantined through a linked directory")
+		}
+	}
 }

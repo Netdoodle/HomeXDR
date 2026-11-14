@@ -93,7 +93,8 @@ With "Stop the process and its children, quarantine the file" (the default), a
 detection sends two signed commands, the same ones a person can send from the host
 page: `process.kill` with the process' entity ID and `tree: true`, then
 `file.quarantine`. The kill checks the entity ID, so a PID reused since the event is
-never hit, and system-critical Windows processes are refused. A quarantined file can be
+never hit, and system-critical Windows processes are refused. Operating-system files are
+never quarantined (the process is still stopped; see the agent README). A quarantined file can be
 restored from the host's page. Either way a **critical** alert "Malware detected:
 <signature>" is raised (rule `av:malware`, dataset `homexdr.av`), with the hash, path,
 source and what was done in its data. YARA matches for hacking tools and suspicious
