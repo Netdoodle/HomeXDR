@@ -42,6 +42,10 @@ const (
 	// rescanAfter: a file that was clean is scanned again when seen after this long, so
 	// newer signatures get a chance.
 	rescanAfter = 7 * 24 * time.Hour
+	// retrySkippedAfter: a host that could not hand a file over is asked again when the
+	// file is seen there after this long.
+	retrySkippedAfter = 24 * time.Hour
+	maxSkipped        = 50000
 	// respondEvery limits repeated responses to the same process.
 	respondEvery = 10 * time.Minute
 	queueSize    = 2048
@@ -208,7 +212,8 @@ type Detection struct {
 func (d Detection) AlertOnly() bool { return AlertOnly(d.Source) }
 
 // ErrSkip means a file cannot be fetched for a lasting reason (too large, gone, not
-// allowed); the verdict "skipped" is stored so it is not fetched again and again.
+// allowed); the verdict "skipped" is stored, and that host is not asked again for a day.
+// Other hosts with the same file are still asked.
 var ErrSkip = errors.New("file cannot be scanned")
 
 // Deps connects the service to the rest of the server.
@@ -251,6 +256,7 @@ type Service struct {
 	allowed   map[string]bool
 	waiting   map[string][]Candidate // hash → candidates waiting for its verdict
 	responded map[string]time.Time
+	skipped   map[string]time.Time // host|hash → when that host could not hand the file over
 	lastErr   string
 
 	queue             chan string
@@ -260,7 +266,7 @@ type Service struct {
 
 // New returns the service with default settings; call Load.
 func New(d Deps) *Service {
-	s := &Service{d: d, waiting: map[string][]Candidate{}, responded: map[string]time.Time{},
+	s := &Service{d: d, waiting: map[string][]Candidate{}, responded: map[string]time.Time{}, skipped: map[string]time.Time{},
 		queue: make(chan string, queueSize), now: time.Now}
 	s.apply(DefaultSettings())
 	return s
@@ -433,6 +439,9 @@ func (s *Service) judge(ctx context.Context, c Candidate, want Scanners) (*Detec
 		return &Detection{Source: v.Source, Signature: v.Signature}, nil
 	case err == nil && v.Verdict == store.AVClean && (!want.coveredBy(v.Source) || s.now().Sub(v.CheckedAt) >= rescanAfter):
 		// Clean, but not yet scanned by every scanner wanted now, or a while ago: scan.
+	case err == nil && v.Verdict == store.AVSkipped && !s.skippedOn(c):
+		// Another host could not hand the file over. That says nothing about this host:
+		// if it did, one agent could keep a file from ever being scanned by refusing it.
 	case err == nil:
 		return nil, nil
 	case err != nil && !errors.Is(err, store.ErrNotFound):
@@ -463,6 +472,7 @@ func (s *Service) judge(ctx context.Context, c Candidate, want Scanners) (*Detec
 	path, err := s.d.Fetch(fctx, c, int64(set.MaxFileMB)<<20)
 	if err != nil {
 		if errors.Is(err, ErrSkip) {
+			s.noteSkipped(c)
 			_, verr := s.verdict(ctx, c, store.AVSkipped, "fetch", "")
 			return nil, errors.Join(err, verr)
 		}
@@ -498,6 +508,31 @@ func (s *Service) judge(ctx context.Context, c Candidate, want Scanners) (*Detec
 		return nil, err
 	}
 	return &Detection{Source: source, Signature: sig}, err
+}
+
+// noteSkipped remembers that a host could not hand a file over.
+func (s *Service) noteSkipped(c Candidate) {
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, t := range s.skipped {
+		if now.Sub(t) >= retrySkippedAfter {
+			delete(s.skipped, k)
+		}
+	}
+	if len(s.skipped) < maxSkipped {
+		s.skipped[c.HostID+"|"+c.SHA256] = now
+	}
+}
+
+// skippedOn reports whether this host itself failed to hand the file over recently, so
+// it is not asked every time the program runs. Kept in memory: after a restart each
+// host is asked once more.
+func (s *Service) skippedOn(c Candidate) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.skipped[c.HostID+"|"+c.SHA256]
+	return ok && s.now().Sub(t) < retrySkippedAfter
 }
 
 // ErrHashMismatch means a host uploaded a file other than the one it reported: the file
