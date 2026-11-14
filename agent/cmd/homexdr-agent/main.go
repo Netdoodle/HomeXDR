@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -70,7 +71,7 @@ func main() {
 	case "status":
 		err = cmdStatus(p, args)
 	case "version", "--version", "-v":
-		fmt.Println("homexdr-agent", version.String())
+		fmt.Println("homexdr-agent", version.String(), runtime.Version())
 	case "help", "-h", "--help":
 		fmt.Printf(usage, p.Paths().ConfigFile)
 	default:
