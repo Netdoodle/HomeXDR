@@ -1,13 +1,13 @@
 # HomeXDR in a single container, storing events in SQLite. Fine for a handful of hosts
 # or for trying it out:
-#   docker compose -f docker-compose.lite.yml up -d --build
+#   docker compose -f docker-compose.lite.yml up -d
 name: homexdr-lite
 
 services:
   homexdr:
+    image: ${HOMEXDR_IMAGE_REGISTRY:-ghcr.io/netdoodle}/homexdr:${HOMEXDR_VERSION:-v0.1.0}
     build:
       context: ..
-    image: homexdr/server:local
     restart: unless-stopped
     environment:
       HOMEXDR_EVENT_STORE: sqlite

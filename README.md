@@ -40,7 +40,9 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
   past its expiry. Agents offline for a set number of days are decommissioned (hidden from
   lists) and come back on their own when they reconnect.
 
-> Status: early development. Not ready for production use.
+> Status: beta, starting with v0.1.0. Meant for homelabs that can live with rough edges;
+> not for production. See the [release notes](https://github.com/Netdoodle/HomeXDR/releases)
+> for known limitations.
 
 ## Why this was built
 
@@ -58,10 +60,14 @@ HomeXDR is meant to close that gap:
 ## Quick start
 
 ```bash
-cd deploy
+git clone https://github.com/Netdoodle/HomeXDR.git && cd HomeXDR/deploy
 cp .env.example .env    # set HOMEXDR_SERVER_NAMES to the name/IP agents will use
 docker compose up -d
 ```
+
+This pulls the release images named in `.env` (`HOMEXDR_VERSION`). Releases, their notes
+and the agent binaries are on the [releases page](https://github.com/Netdoodle/HomeXDR/releases).
+HomeXDR is in beta: read the release notes' known limitations before relying on it.
 
 Open `http://<server>:8080`, create the admin account, then create an enrollment token
 under **Settings** and copy the install command for each host.

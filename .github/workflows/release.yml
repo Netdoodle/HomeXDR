@@ -1,0 +1,150 @@
+# Publishes a release when a version tag (v1.2.3 or v1.2.3-beta.1) is pushed:
+#   - the server and YARA scanner images for linux/amd64 and linux/arm64, to GitHub's
+#     container registry and, when the DOCKERHUB_USERNAME and DOCKERHUB_TOKEN secrets are
+#     set, to Docker Hub (namespace: the DOCKERHUB_NAMESPACE variable, else the username);
+#   - a GitHub release with docs/releases/<tag>.md as its notes and the agent binaries
+#     from the server image attached.
+# Run it by hand (Actions → Release → Run workflow) to publish an existing tag again, for
+# example after adding the Docker Hub secrets.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish again, for example v0.1.0
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  publish:
+    name: Images and GitHub release
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || secrets.DOCKERHUB_USERNAME }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Release details
+        id: meta
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::not a version tag: $TAG"; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$(git rev-parse "$TAG^{commit}")" ] || { echo "::error::checkout is not $TAG"; exit 1; }
+          [ -f "docs/releases/$TAG.md" ] || { echo "::error::docs/releases/$TAG.md is missing"; exit 1; }
+          echo "commit=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "commit_time=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
+          repos="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            repos="$repos docker.io/${DOCKERHUB_NAMESPACE,,}"
+            echo "dockerhub=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are not set; Docker Hub is skipped"
+          fi
+          latest=true
+          [[ "$TAG" == *-* ]] && latest=false
+          for img in homexdr homexdr-yara; do
+            tags=""
+            for r in $repos; do
+              tags="$tags,$r/$img:$TAG"
+              $latest && tags="$tags,$r/$img:latest"
+            done
+            echo "${img//-/_}=${tags#,}" >> "$GITHUB_OUTPUT"
+          done
+          echo "repos=$repos" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$([ "$latest" = true ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub's container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: steps.meta.outputs.dockerhub == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.homexdr }}
+          build-args: |
+            VERSION=${{ env.TAG }}
+            COMMIT=${{ steps.meta.outputs.commit }}
+            COMMIT_TIME=${{ steps.meta.outputs.commit_time }}
+
+      - name: YARA scanner image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/yara/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.homexdr_yara }}
+
+      - name: Agent binaries from the server image
+        run: |
+          set -euo pipefail
+          img="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/homexdr:$TAG"
+          docker pull --platform linux/amd64 "$img"
+          id=$(docker create --platform linux/amd64 "$img")
+          docker cp "$id:/usr/share/homexdr/downloads" dist
+          docker rm "$id"
+          cd dist && sha256sum -c SHA256SUMS && ls -la
+
+      - name: Release notes
+        run: |
+          set -euo pipefail
+          {
+            cat "docs/releases/$TAG.md"
+            echo
+            echo "### Images"
+            echo
+            for r in ${{ steps.meta.outputs.repos }}; do
+              echo "- \`$r/homexdr:$TAG\`"
+              echo "- \`$r/homexdr-yara:$TAG\`"
+            done
+            echo
+            echo "Built for linux/amd64 and linux/arm64. The agent binaries attached below are the ones the server image serves; check them against \`SHA256SUMS\`."
+          } > notes.md
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets=(dist/homexdr-agent-* dist/SHA256SUMS)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file notes.md
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            flags=()
+            [ "${{ steps.meta.outputs.prerelease }}" = true ] && flags+=(--prerelease)
+            gh release create "$TAG" --verify-tag --title "HomeXDR $TAG" --notes-file notes.md "${flags[@]}" "${assets[@]}"
+          fi
