@@ -21,6 +21,7 @@ type systemTrees struct {
 	protected []string
 	allowed   []string
 	fold      bool
+	win       bool // backslash separators
 }
 
 func systemTreesFor(goos, systemRoot string) systemTrees {
@@ -29,12 +30,13 @@ func systemTreesFor(goos, systemRoot string) systemTrees {
 		if systemRoot == "" {
 			systemRoot = `C:\Windows`
 		}
-		root := filepath.ToSlash(systemRoot)
+		root := slashes(systemRoot)
 		drive := root[:min(2, len(root))] // "C:"
 		return systemTrees{
 			protected: []string{root, drive + "/bootmgr", drive + "/BOOTNXT", drive + "/EFI", drive + "/Boot"},
 			allowed:   []string{root + "/Temp"},
 			fold:      true,
+			win:       true,
 		}
 	case "darwin":
 		return systemTrees{
@@ -55,8 +57,14 @@ func systemTreesFor(goos, systemRoot string) systemTrees {
 	}
 }
 
+// slashes turns backslashes into forward slashes whatever the OS the code runs on
+// (filepath.ToSlash only does on Windows), so the Windows list can be tested anywhere.
+func slashes(p string) string { return strings.ReplaceAll(p, `\`, "/") }
+
 func (t systemTrees) norm(p string) string {
-	p = filepath.ToSlash(p)
+	if t.win { // elsewhere a backslash is part of a file name, not a separator
+		p = slashes(p)
+	}
 	if t.fold {
 		p = strings.ToLower(p)
 	}
