@@ -358,10 +358,14 @@ func (s *Service) Key(set Settings) (key, source string) {
 	return KeyFor(set, set.Provider)
 }
 
+// EnvBaseURL names the environment variable that approves a custom base URL for a key
+// set in the environment.
+const EnvBaseURL = "HOMEXDR_AI_BASE_URL"
+
 // KeyFor returns a provider's API key in effect and its source.
 func KeyFor(set Settings, providerID string) (key, source string) {
 	if info, ok := providerInfo(providerID); ok && info.KeyEnv != "" {
-		if v := strings.TrimSpace(os.Getenv(info.KeyEnv)); v != "" {
+		if v := strings.TrimSpace(os.Getenv(info.KeyEnv)); v != "" && envKeyEndpointOK(set, info) {
 			return v, "environment"
 		}
 	}
@@ -372,6 +376,30 @@ func KeyFor(set Settings, providerID string) (key, source string) {
 		return set.APIKey, "settings"
 	}
 	return "", ""
+}
+
+// envKeyEndpointOK reports whether a key from the environment may be sent to the
+// endpoint the provider would use. Anyone who can change the settings could otherwise
+// point the provider at their own server and receive the key, which they cannot read
+// in the console. The provider's own endpoint is always fine; a custom base URL must
+// match HOMEXDR_AI_BASE_URL, which only whoever runs the server can set.
+func envKeyEndpointOK(set Settings, info ProviderInfo) bool {
+	if info.ID == ProviderAnthropic { // always talks to Anthropic's API
+		return true
+	}
+	norm := func(u string) string { return strings.TrimRight(strings.TrimSpace(u), "/") }
+	endpoint := norm(set.BaseURL)
+	if endpoint == "" || endpoint == norm(info.DefaultBaseURL) {
+		return true // the provider's own endpoint, or none at all (nothing is sent)
+	}
+	return endpoint == norm(os.Getenv(EnvBaseURL))
+}
+
+// EnvKeyHeldBack reports whether a provider's environment key is set but not used
+// because the base URL in the settings is not approved by HOMEXDR_AI_BASE_URL.
+func EnvKeyHeldBack(set Settings, providerID string) bool {
+	info, ok := providerInfo(providerID)
+	return ok && info.KeyEnv != "" && strings.TrimSpace(os.Getenv(info.KeyEnv)) != "" && !envKeyEndpointOK(set, info)
 }
 
 // Ready reports whether investigations can run with the selected engine, and if not, why.
@@ -390,6 +418,8 @@ func (s *Service) Ready(set Settings) (bool, string) {
 	switch {
 	case !known || !info.Available:
 		return false, "the selected provider is not available"
+	case key == "" && EnvKeyHeldBack(set, set.Provider):
+		return false, "the API key from " + info.KeyEnv + " is only sent to the provider's own endpoint, or to the base URL in " + EnvBaseURL
 	case info.NeedsKey && key == "":
 		return false, "no API key is set"
 	case set.Provider != ProviderAnthropic && set.EndpointURL() == "":
