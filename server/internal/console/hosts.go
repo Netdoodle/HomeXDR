@@ -76,10 +76,15 @@ func (h *Handler) hostAction(w http.ResponseWriter, r *http.Request, u *store.Us
 	if !decode(w, r, &req) {
 		return
 	}
-	if req.Type == api.CmdFirewall {
-		// The reconcile loop owns each host's rule set (firewall.go); a hand-sent one
-		// would be out of step with it.
+	// Policies are sent by the server's reconcile loops from settings only an admin can
+	// change. A hand-sent one would be out of step with them, and would let an analyst
+	// set a host's policy (for App Control, which programs Windows refuses to run).
+	switch req.Type {
+	case api.CmdFirewall:
 		writeErr(w, http.StatusBadRequest, "firewall rules are sent by the server: manage them under Settings > Firewall")
+		return
+	case api.CmdAppControl, api.CmdDefenderHarden:
+		writeErr(w, http.StatusBadRequest, req.Type+" is sent by the server: manage it under Settings > Antivirus")
 		return
 	}
 	host, err := h.c.State.GetHost(r.Context(), r.PathValue("id"))

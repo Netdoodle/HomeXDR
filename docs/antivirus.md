@@ -28,7 +28,9 @@ Windows from Sysmon or computed by the agent, on Linux computed by the agent whe
    signatures cover known samples; YARA's community rules describe malware families and
    tools by their code and strings, so they often catch new builds that have no signature
    yet. The upload is deleted after the scan. If either scanner fails, no verdict is
-   stored and the file is tried again the next time it runs.
+   stored and the file is tried again the next time it runs. A host that cannot hand a
+   file over (too large, gone, not allowed) is not asked for it again for a day; other
+   hosts that run the same file are still asked.
 
 ### Scanner switches
 

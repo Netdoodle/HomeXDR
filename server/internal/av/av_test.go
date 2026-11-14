@@ -298,6 +298,39 @@ func TestUploadMustMatchReportedHash(t *testing.T) {
 	}
 }
 
+// A host that cannot (or will not) hand a file over does not keep it from being scanned
+// when another host has it; the host itself is not asked again for a day.
+func TestSkippedHoldsOnlyForItsHost(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	evil := sum("MZ...EVIL...")
+	on := func(host, path string) Candidate {
+		return Candidate{HostID: host, Hostname: host, Platform: "windows", Path: path, SHA256: evil, PID: 60, EntityID: host}
+	}
+	now := time.Now()
+	h.s.now = func() time.Time { return now }
+	h.run(t, on("rogue", `C:\Users\a\gone.exe`))
+	h.run(t, on("rogue", `C:\Users\a\gone.exe`)) // not asked twice
+	if v, err := h.st.GetAVVerdict(ctx, evil); err != nil || v.Verdict != store.AVSkipped || len(h.fetched) != 1 {
+		t.Fatalf("after the skip: %+v, %v, fetched %v", v, err, h.fetched)
+	}
+	h.files[`C:\Users\b\evil.exe`] = "MZ...EVIL..."
+	h.run(t, on("honest", `C:\Users\b\evil.exe`))
+	if v, err := h.st.GetAVVerdict(ctx, evil); err != nil || v.Verdict != store.AVMalicious || len(h.detected) != 1 || h.detected[0].HostID != "honest" {
+		t.Fatalf("another host: %+v, %v, detected %+v", v, err, h.detected)
+	}
+
+	// A day later the first host is asked again.
+	h2 := newHarness(t)
+	h2.s.now = func() time.Time { return now }
+	h2.run(t, on("h1", `C:\Users\a\big.exe`))
+	now = now.Add(retrySkippedAfter + time.Minute)
+	h2.run(t, on("h1", `C:\Users\a\big.exe`))
+	if len(h2.fetched) != 2 {
+		t.Fatalf("retry after a day: fetched %v", h2.fetched)
+	}
+}
+
 func TestDisabled(t *testing.T) {
 	h := newHarness(t)
 	if _, err := h.s.Save(context.Background(), Settings{Enabled: false, Action: ActionQuarantine}); err != nil {

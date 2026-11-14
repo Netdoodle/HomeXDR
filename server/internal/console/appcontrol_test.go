@@ -86,6 +86,17 @@ func TestAppControlReconcile(t *testing.T) {
 		t.Fatalf("view = %d %v", code, view)
 	}
 
+	// Hand-sent policies are refused, for every role: the reconcile loops own them.
+	for _, typ := range []string{api.CmdAppControl, api.CmdDefenderHarden} {
+		body := map[string]any{"type": typ, "params": map[string]any{"mode": "enforce", "version": "x"}}
+		if code, _ := admin.do("POST", "/api/hosts/w1/actions", body, true); code != 400 {
+			t.Fatalf("hand-sent %s = %d", typ, code)
+		}
+	}
+	if len(commands()) != 1 {
+		t.Fatal("a hand-sent policy was queued")
+	}
+
 	// Authenticode hashes an agent reports with a quarantine never reach the block list,
 	// which goes to every Windows host: not for a blocklisted hash, not for a file with a
 	// verdict (whose server-computed hashes stay), and not for one without.
