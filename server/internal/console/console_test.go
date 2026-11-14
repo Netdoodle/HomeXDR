@@ -223,6 +223,28 @@ func TestConsoleFlow(t *testing.T) {
 		t.Fatalf("relative path = %d %v", code, cmd)
 	}
 
+	// Getting files is admin only: an analyst can act on hosts but not pull files.
+	if code, _ := admin.do("POST", "/api/users", map[string]string{"username": "ana", "password": "analyst password!", "role": "analyst"}, true); code != 201 {
+		t.Fatalf("create analyst = %d", code)
+	}
+	ana := newClient(t, srv)
+	if code, _ := ana.do("POST", "/api/auth/login", map[string]string{"username": "ana", "password": "analyst password!"}, true); code != 200 {
+		t.Fatalf("analyst login = %d", code)
+	}
+	getFile := map[string]any{"type": "file.get", "params": map[string]any{"path": "C:/Users/u/.ssh/id_ed25519"}}
+	if code, _ := ana.do("POST", "/api/hosts/agent-x/actions", getFile, true); code != http.StatusForbidden {
+		t.Fatalf("analyst file.get = %d", code)
+	}
+	if code, _ := ana.do("GET", "/api/commands/any/download", nil, false); code != http.StatusForbidden {
+		t.Fatalf("analyst download = %d", code)
+	}
+	if code, _ := ana.do("POST", "/api/hosts/agent-x/actions", map[string]any{"type": "process.kill", "params": map[string]any{"pid": 1400}}, true); code != 201 {
+		t.Fatalf("analyst kill = %d", code)
+	}
+	if code, _ := admin.do("POST", "/api/hosts/agent-x/actions", getFile, true); code != 201 {
+		t.Fatalf("admin file.get = %d", code)
+	}
+
 	// Rules: list, validate, test, custom create/disable/delete.
 	if code, rl := admin.do("GET", "/api/rules", nil, false); code != 200 || rl["total"].(float64) != 1 {
 		t.Fatalf("rules = %d %v", code, rl)

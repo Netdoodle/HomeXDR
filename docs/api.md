@@ -105,12 +105,15 @@ type HostUpdate = {
 `file.quarantine`, `file.restore`, `file.get`, `file.hash`, `artifact.collect`.
 There is no arbitrary-command type. Params match `shared/api/agent.go` (`KillParams`, `IsolateParams`, ...). The
 server rejects types not in the host's `allowed_actions` with `409`.
+`file.get` and the download need the admin role (`403` for analysts): a file pull can read
+anything on a host, such as SSH keys or browser data. The antivirus's own uploads are
+issued by the server and are not affected.
 
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/commands/{id}` | `CommandRecord` |
 | GET | `/api/commands/{id}/rows?limit=&offset=` | `{"rows": object[], "total": n}` (artifact output) |
-| GET | `/api/commands/{id}/download` | the uploaded file (`file.get`), as `application/octet-stream` |
+| GET | `/api/commands/{id}/download` | admin: the uploaded file (`file.get`), as `application/octet-stream` |
 
 ```ts
 type CommandRecord = {
