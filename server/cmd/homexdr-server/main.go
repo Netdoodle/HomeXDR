@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -36,7 +37,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "version":
-			fmt.Println("homexdr-server", version.String())
+			fmt.Println("homexdr-server", version.String(), runtime.Version())
 			return
 		case "healthcheck":
 			os.Exit(healthcheck())
@@ -90,7 +91,7 @@ func serve() error {
 	}
 	log := newLogger(cfg.LogLevel)
 	slog.SetDefault(log)
-	log.Info("starting homexdr-server", "version", version.String(), "data", cfg.DataDir, "event_store", cfg.EventStore)
+	log.Info("starting homexdr-server", "version", version.String(), "go", runtime.Version(), "data", cfg.DataDir, "event_store", cfg.EventStore)
 
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return err
