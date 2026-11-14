@@ -924,6 +924,10 @@ a.stat:hover {
   --c: var(--sev-informational);
 }
 
+.badge.warn {
+  border-color: color-mix(in srgb, var(--warn) 70%, transparent);
+  background: var(--warn-soft);
+}
 .badge.status {
   font-weight: 500;
   background: transparent;

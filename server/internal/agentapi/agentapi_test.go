@@ -98,6 +98,7 @@ func TestAgentLifecycle(t *testing.T) {
 		Token:  tok.Token,
 		CSRPEM: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})),
 		Host:   api.HostInfo{Hostname: "lab-1", OS: event.OS{Platform: "linux", Name: "Ubuntu"}, Arch: "amd64"},
+		Labels: []string{"test"}, // the token does not allow agent labels: ignored
 	}
 	body, _ := json.Marshal(req)
 	resp, err := anon.Post(srv.URL+api.PathEnroll, "application/json", bytes.NewReader(body))
@@ -109,6 +110,9 @@ func TestAgentLifecycle(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 200 || enr.AgentID == "" {
 		t.Fatalf("enroll status %d %+v", resp.StatusCode, enr)
+	}
+	if h, err := c.State.GetHost(ctx, enr.AgentID); err != nil || len(h.Labels) != 1 || h.Labels[0] != "lab" {
+		t.Fatalf("labels after enroll = %v %v", h, err)
 	}
 
 	// Unauthenticated access to agent routes is refused.

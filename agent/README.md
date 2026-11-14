@@ -321,6 +321,9 @@ homexdr-agent install --server https://xdr.example.lan:8443 \
   --token <enrollment token> --ca-pin sha256:<hex> [--labels lab,linux]
 ```
 
+`--labels` are only kept when the token was created with "Keep labels the agent asks
+for"; otherwise the host gets the token's labels alone.
+
 `install` enrolls (unless already enrolled), writes `/etc/systemd/system/homexdr-agent.service`
 (`Restart=always`) and runs `systemctl enable --now`. On Windows, run the same command
 from an elevated PowerShell. On macOS the console's command runs the same script

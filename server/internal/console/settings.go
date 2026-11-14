@@ -38,6 +38,12 @@ func (h *Handler) listTokens(w http.ResponseWriter, r *http.Request, _ *store.Us
 	writeJSON(w, http.StatusOK, map[string]any{"tokens": toks})
 }
 
+// Token defaults: a token that is never used up and never expires is a standing way in.
+const (
+	defaultTokenHours = 7 * 24
+	maxTokenHours     = 365 * 24
+)
+
 func (h *Handler) createToken(w http.ResponseWriter, r *http.Request, u *store.User) {
 	var req struct {
 		Name         string   `json:"name"`
@@ -45,6 +51,10 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request, u *store.U
 		MaxUses      *int     `json:"max_uses"`
 		Labels       []string `json:"labels"`
 		GroupID      string   `json:"group_id"`
+		// Without these, a token expires after 7 days and enrolls one host.
+		NeverExpires     bool `json:"never_expires"`
+		UnlimitedUses    bool `json:"unlimited_uses"`
+		AllowAgentLabels bool `json:"allow_agent_labels"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -56,12 +66,26 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request, u *store.U
 		}
 	}
 	var exp *time.Time
-	if req.ExpiresHours > 0 {
+	if !req.NeverExpires {
+		if req.ExpiresHours <= 0 {
+			req.ExpiresHours = defaultTokenHours
+		}
+		if req.ExpiresHours > maxTokenHours {
+			writeErr(w, http.StatusBadRequest, "expires_hours can be at most a year; use never_expires for a token that does not expire")
+			return
+		}
 		t := time.Now().Add(time.Duration(req.ExpiresHours) * time.Hour).UTC()
 		exp = &t
 	}
-	if req.MaxUses != nil && *req.MaxUses <= 0 {
+	switch {
+	case req.UnlimitedUses:
 		req.MaxUses = nil
+	case req.MaxUses == nil:
+		one := 1
+		req.MaxUses = &one
+	case *req.MaxUses <= 0:
+		writeErr(w, http.StatusBadRequest, "max_uses must be at least 1; use unlimited_uses for no limit")
+		return
 	}
 	tok, err := h.c.State.CreateToken(r.Context(), req.Name, u.Username, exp, req.MaxUses, req.Labels)
 	if err != nil {
@@ -74,6 +98,13 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request, u *store.U
 			return
 		}
 		tok.GroupID = req.GroupID
+	}
+	if req.AllowAgentLabels {
+		if err := h.c.State.SetTokenAllowAgentLabels(r.Context(), tok.ID, true); err != nil {
+			h.fail(w, err)
+			return
+		}
+		tok.AllowAgentLabels = true
 	}
 	h.c.Audit(r.Context(), u.Username, "token.create", tok.ID, tok.Name)
 	writeJSON(w, http.StatusCreated, tok)
