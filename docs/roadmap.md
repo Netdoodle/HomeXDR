@@ -59,22 +59,16 @@ Reviews still to do:
 - the live server configuration on the home server
 
 ### Agents away from home
-Keep full visibility and response for laptops off the home network by publishing only
-the agent port under one name (split DNS: the public address outside, the server's LAN
-address inside). The console stays on the LAN. Agents already pin the server's own CA and
-authenticate every request with a client certificate, so the work is hardening the parts
-that do not need a certificate before the port faces the internet:
-- **Rate limits** on enrollment, renewal and the other unauthenticated routes, per source
-  address, with failed enrollments in the audit log and an alert on repeated failures.
-- **Enrollment from inside only, by default.** A setting to accept enrollment only from
-  private addresses, so a leaked token is useless from the internet.
-- **Less to fetch without a certificate.** The installer scripts, agent downloads and CA
-  certificate stay available on the LAN; from outside they need a certificate or a token.
-- **Connection limits** for clients that never send a certificate, and a short handshake
-  timeout.
-- **A console view** of each host's last address and whether it is connecting from
-  outside, and a one-click revoke.
-- **A setup guide** for the port forward, split DNS and certificate names.
+Started November 2026 ([away-from-home.md](away-from-home.md)). A second agent listener
+for a port forward requires a valid, unrevoked agent certificate in the TLS handshake and
+serves only enrolled agents' routes; enrollment, installer scripts and the CA certificate
+stay on the local listener. One name with split DNS works at home and away. Still to do:
+- **A console view** of each host's last address and whether it reaches the server from
+  outside, with a one-click revoke from there.
+- **Visibility into refused connections:** count failed handshakes on the internet
+  listener, show them under Data health, and alert on a sudden rise.
+- **Penetration testing of the open port** (TLS settings, handshake floods, what an
+  attacker with a stolen device's certificate can reach).
 
 ### Data saver on metered networks
 Detect a metered or low-data connection (Windows connection cost, macOS expensive and

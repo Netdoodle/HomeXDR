@@ -5,10 +5,12 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +20,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/net/netutil"
 
 	"github.com/Netdoodle/homexdr/server/internal/agentapi"
 	"github.com/Netdoodle/homexdr/server/internal/config"
@@ -166,8 +170,21 @@ func serve() error {
 		TLSNextProto: map[string]func(*http.Server, *tls.Conn, http.Handler){},
 	}
 
+	// Internet-facing agent API (optional): certificate required at the handshake.
+	var extSrv *http.Server
+	if cfg.AgentExternalAddr != "" {
+		extSrv = &http.Server{
+			Addr: cfg.AgentExternalAddr, Handler: agentapi.NewExternal(c),
+			TLSConfig:         p.StrictTLSConfig(knownAgent(st)),
+			ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 5 * time.Minute, WriteTimeout: 5 * time.Minute,
+			IdleTimeout:  2 * time.Minute,
+			ErrorLog:     slog.NewLogLogger(log.Handler(), slog.LevelDebug),
+			TLSNextProto: map[string]func(*http.Server, *tls.Conn, http.Handler){},
+		}
+	}
+
 	var wg sync.WaitGroup
-	errc := make(chan error, 3)
+	errc := make(chan error, 4)
 	run := func(name string, fn func() error) {
 		wg.Add(1)
 		go func() {
@@ -185,6 +202,16 @@ func serve() error {
 		log.Info("agent api listening", "addr", cfg.AgentAddr, "agent_url", cfg.AgentURL, "ca_pin", p.CAPin())
 		return agentSrv.ListenAndServeTLS("", "")
 	})
+	if extSrv != nil {
+		run("external agent api", func() error {
+			ln, err := net.Listen("tcp", extSrv.Addr)
+			if err != nil {
+				return err
+			}
+			log.Info("external agent api listening (agent certificate required)", "addr", extSrv.Addr)
+			return extSrv.ServeTLS(netutil.LimitListener(ln, maxExternalConns), "", "")
+		})
+	}
 	if cfg.SyslogAddr != "" {
 		lis := syslog.New(c, cfg.SyslogAllow)
 		run("syslog", func() error { return lis.Run(ctx, cfg.SyslogAddr) })
@@ -220,6 +247,9 @@ func serve() error {
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = agentSrv.Shutdown(shutdownCtx)
+	if extSrv != nil {
+		_ = extSrv.Shutdown(shutdownCtx)
+	}
 	wg.Wait()
 	return runErr
 }
@@ -360,4 +390,25 @@ func releaseManifest(args []string) int {
 	}
 	fmt.Printf("wrote %s/agent-release.json: %s, %d binaries\n", args[0], rel.Version, len(rel.Files))
 	return 0
+}
+
+// maxExternalConns caps open connections on the internet-facing agent listener, so a
+// flood of handshakes cannot use up the server's file descriptors.
+const maxExternalConns = 512
+
+// knownAgent refuses, during the TLS handshake on the external listener, certificates
+// whose agent is unknown or revoked. The certificate itself was already verified.
+func knownAgent(st *store.Store) func(*x509.Certificate) error {
+	return func(cert *x509.Certificate) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		host, err := st.GetHost(ctx, cert.Subject.CommonName)
+		switch {
+		case err != nil:
+			return errors.New("unknown agent")
+		case host.Revoked:
+			return errors.New("agent revoked")
+		}
+		return nil
+	}
 }

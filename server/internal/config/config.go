@@ -13,9 +13,13 @@ import (
 
 // Config is the server configuration.
 type Config struct {
-	DataDir           string         // HOMEXDR_DATA_DIR
-	HTTPAddr          string         // HOMEXDR_HTTP_ADDR: console + REST API
-	AgentAddr         string         // HOMEXDR_AGENT_ADDR: agent API (TLS)
+	DataDir   string // HOMEXDR_DATA_DIR
+	HTTPAddr  string // HOMEXDR_HTTP_ADDR: console + REST API
+	AgentAddr string // HOMEXDR_AGENT_ADDR: agent API (TLS)
+	// AgentExternalAddr is a second agent API listener for the internet (off when empty).
+	// It refuses any connection without a valid, unrevoked agent certificate and serves only
+	// what enrolled agents need.
+	AgentExternalAddr string         // HOMEXDR_AGENT_EXTERNAL_ADDR
 	SyslogAddr        string         // HOMEXDR_SYSLOG_ADDR: UDP+TCP syslog; "" disables
 	SyslogAllow       []netip.Prefix // HOMEXDR_SYSLOG_ALLOW: comma list of CIDRs/IPs allowed to send syslog (default: LocalNetworks)
 	NetFlowAddr       string         // HOMEXDR_NETFLOW_ADDR: UDP NetFlow/IPFIX; "" disables (the default)
@@ -42,17 +46,18 @@ type Config struct {
 // Load reads the environment and applies defaults.
 func Load() (Config, error) {
 	c := Config{
-		DataDir:       env("HOMEXDR_DATA_DIR", "data"),
-		HTTPAddr:      env("HOMEXDR_HTTP_ADDR", ":8080"),
-		AgentAddr:     env("HOMEXDR_AGENT_ADDR", ":8443"),
-		SyslogAddr:    env("HOMEXDR_SYSLOG_ADDR", ":5514"),
-		EventStore:    strings.ToLower(env("HOMEXDR_EVENT_STORE", "sqlite")),
-		ClickHouseDSN: env("HOMEXDR_CLICKHOUSE_DSN", "clickhouse://default:@localhost:9000/homexdr"),
-		RulesDir:      env("HOMEXDR_RULES_DIR", firstExisting("rules", "../rules", "/usr/share/homexdr/rules")),
-		DownloadsDir:  env("HOMEXDR_DOWNLOADS_DIR", firstExisting("downloads", "/usr/share/homexdr/downloads")),
-		SignaturesDir: env("HOMEXDR_SIGNATURES_DIR", firstExisting("signatures", "/usr/share/homexdr/signatures")),
-		WebDir:        os.Getenv("HOMEXDR_WEB_DIR"),
-		LogLevel:      env("HOMEXDR_LOG_LEVEL", "info"),
+		DataDir:           env("HOMEXDR_DATA_DIR", "data"),
+		HTTPAddr:          env("HOMEXDR_HTTP_ADDR", ":8080"),
+		AgentAddr:         env("HOMEXDR_AGENT_ADDR", ":8443"),
+		AgentExternalAddr: os.Getenv("HOMEXDR_AGENT_EXTERNAL_ADDR"),
+		SyslogAddr:        env("HOMEXDR_SYSLOG_ADDR", ":5514"),
+		EventStore:        strings.ToLower(env("HOMEXDR_EVENT_STORE", "sqlite")),
+		ClickHouseDSN:     env("HOMEXDR_CLICKHOUSE_DSN", "clickhouse://default:@localhost:9000/homexdr"),
+		RulesDir:          env("HOMEXDR_RULES_DIR", firstExisting("rules", "../rules", "/usr/share/homexdr/rules")),
+		DownloadsDir:      env("HOMEXDR_DOWNLOADS_DIR", firstExisting("downloads", "/usr/share/homexdr/downloads")),
+		SignaturesDir:     env("HOMEXDR_SIGNATURES_DIR", firstExisting("signatures", "/usr/share/homexdr/signatures")),
+		WebDir:            os.Getenv("HOMEXDR_WEB_DIR"),
+		LogLevel:          env("HOMEXDR_LOG_LEVEL", "info"),
 	}
 	if v, ok := os.LookupEnv("HOMEXDR_SYSLOG_ADDR"); ok {
 		c.SyslogAddr = v

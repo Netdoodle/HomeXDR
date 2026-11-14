@@ -40,21 +40,35 @@ type Handler struct {
 func New(c *core.Core) *Handler {
 	h := &Handler{c: c, mux: http.NewServeMux()}
 	h.mux.HandleFunc("POST "+api.PathEnroll, h.enroll)
+	h.mux.HandleFunc("GET /v1/install/linux.sh", h.installScript)
+	h.mux.HandleFunc("GET /v1/install/macos.sh", h.installScript)
+	h.mux.HandleFunc("GET /v1/ca.crt", h.caCert)
+	h.agentRoutes()
+	return h
+}
+
+// NewExternal returns the handler for the internet-facing listener. It serves only what an
+// enrolled agent needs (reports, commands, renewal and updates); enrollment, installer
+// scripts and the CA certificate stay on the local listener. The listener's TLS config
+// (pki.StrictTLSConfig) already refuses connections without a valid agent certificate.
+func NewExternal(c *core.Core) *Handler {
+	h := &Handler{c: c, mux: http.NewServeMux()}
+	h.agentRoutes()
+	return h
+}
+
+func (h *Handler) agentRoutes() {
 	h.mux.HandleFunc("POST "+api.PathRenew, h.renew)
 	h.mux.HandleFunc("GET "+api.PathAgentRelease, h.releaseManifest)
 	h.mux.HandleFunc("GET "+api.PathAgentReleaseSig, h.releaseSignature)
 	h.mux.HandleFunc("GET /v1/download/{name}", h.download)
 	h.mux.HandleFunc("GET "+api.PathReleases+"{version}/{name}", h.archivedRelease)
-	h.mux.HandleFunc("GET /v1/install/linux.sh", h.installScript)
-	h.mux.HandleFunc("GET /v1/install/macos.sh", h.installScript)
-	h.mux.HandleFunc("GET /v1/ca.crt", h.caCert)
 	h.mux.Handle("POST "+api.PathHeartbeat, h.agent(h.heartbeat))
 	h.mux.Handle("POST "+api.PathEvents, h.agent(h.events))
 	h.mux.Handle("GET "+api.PathCommands, h.agent(h.commands))
 	h.mux.Handle("POST /v1/commands/{id}/result", h.agent(h.result))
 	h.mux.Handle("POST /v1/commands/{id}/rows", h.agent(h.rows))
 	h.mux.Handle("POST /v1/commands/{id}/upload", h.agent(h.upload))
-	return h
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.mux.ServeHTTP(w, r) }
