@@ -18,8 +18,9 @@ import (
 // Windows App Control: confirmed malware becomes a deny policy on Windows hosts, so
 // Windows refuses to start those files. Each Windows host gets the mode its group
 // resolves to (off, audit, enforce). The block list is every malicious verdict with
-// Authenticode hashes (taken from files the server scanned, or reported by the agent when
-// it quarantined one), except hacking tools and suspicious traits and allowlisted hashes.
+// Authenticode hashes, which the server computes itself from files it fetched to scan
+// (never taken from an agent's word), except hacking tools and suspicious traits and
+// allowlisted hashes.
 // A reconcile loop sends appcontrol.apply when a host's applied version differs.
 
 const (
@@ -217,8 +218,8 @@ func (c *Core) ReconcileAppControl(ctx context.Context) {
 	}
 }
 
-// CommandFinished takes what finished commands tell the server: App Control results, and
-// the Authenticode hashes of files the agent quarantined.
+// CommandFinished takes what finished commands tell the server about the host they ran
+// on: App Control, Defender hardening and firewall results.
 func (c *Core) CommandFinished(ctx context.Context, host *store.Host, rec *store.CommandRecord) {
 	switch rec.Type {
 	case api.CmdDefenderHarden:
@@ -239,28 +240,11 @@ func (c *Core) CommandFinished(ctx context.Context, host *store.Host, rec *store
 			st.Status, st.Message = "failed", firstNonEmpty(rec.Error, rec.Status)
 		}
 		c.saveAppControlState(ctx, st)
-	case api.CmdFileQuarantine:
-		if rec.Status != api.StatusCompleted {
-			return
-		}
-		var r api.QuarantineResult
-		if json.Unmarshal(rec.Output, &r) != nil || r.AuthSHA256 == "" || r.SHA256 == "" {
-			return
-		}
-		blocked := false
-		for _, h := range c.AV.Settings().BlockedHashes {
-			blocked = blocked || h == r.SHA256
-		}
-		// Only files the antivirus judged (or the blocklist names) join the block list;
-		// a file someone quarantined by hand only gets its hashes recorded if it has a
-		// verdict already.
-		if _, err := c.State.GetAVVerdict(ctx, r.SHA256); err != nil && !blocked {
-			return
-		}
-		if err := c.State.SetAVAuthHashes(ctx, r.SHA256, r.AuthSHA256, r.AuthSHA1, "blocklist", "Blocked hash", r.OriginalPath, host.ID); err != nil {
-			c.Log.Warn("app control: record Authenticode hashes", "err", err)
-		}
 	}
+	// A file.quarantine result also carries Authenticode hashes, but they are not taken
+	// into the block list: the list goes to every Windows host, and an agent could name
+	// the hash of any program there. Only hashes the server computed from a file it
+	// received and checked (av.judge) are blocked.
 }
 
 // AppControlHostState returns one host's stored state.

@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
@@ -164,6 +166,12 @@ func newHarness(t *testing.T) *harness {
 
 func sha(c byte) string { return strings.Repeat(string(c), 64) }
 
+// sum is the real SHA-256 of a file body: fetched files are checked against it.
+func sum(body string) string {
+	h := sha256.Sum256([]byte(body))
+	return hex.EncodeToString(h[:])
+}
+
 func (h *harness) run(t *testing.T, cands ...Candidate) {
 	t.Helper()
 	for _, c := range cands {
@@ -197,22 +205,23 @@ func TestJudge(t *testing.T) {
 	}
 	h.files[`C:\Users\a\Downloads\evil.exe`] = "MZ...EVIL..."
 	h.files[`C:\Users\a\Downloads\fine.exe`] = "MZ...fine..."
+	evil, fine := sum("MZ...EVIL..."), sum("MZ...fine...")
 	h.rep[sha('c')] = Reputation{Malicious: true, Name: "AgentTesla", Source: "malwarebazaar"}
 	h.rep[sha('d')] = Reputation{Known: true, Source: "circl"}
 
 	h.run(t,
-		win(`C:\Users\a\Downloads\evil.exe`, sha('a'), 100), // ClamAV finds it
-		win(`C:\Users\a\Downloads\fine.exe`, sha('b'), 101), // clean
-		win(`C:\Users\a\x.exe`, sha('c'), 102),              // intel says malware: not fetched
-		win(`C:\Users\a\y.exe`, sha('d'), 103),              // known good: not fetched
-		win(`C:\Windows\System32\z.exe`, sha('e'), 104),     // system folder: ignored
-		win(`C:\Users\a\gone.exe`, sha('f'), 105),           // cannot be fetched: skipped
+		win(`C:\Users\a\Downloads\evil.exe`, evil, 100), // ClamAV finds it
+		win(`C:\Users\a\Downloads\fine.exe`, fine, 101), // clean
+		win(`C:\Users\a\x.exe`, sha('c'), 102),          // intel says malware: not fetched
+		win(`C:\Users\a\y.exe`, sha('d'), 103),          // known good: not fetched
+		win(`C:\Windows\System32\z.exe`, sha('e'), 104), // system folder: ignored
+		win(`C:\Users\a\gone.exe`, sha('f'), 105),       // cannot be fetched: skipped
 	)
 	got := map[string]string{}
 	for _, d := range h.detected {
 		got[d.SHA256] = d.Source + "/" + d.Signature
 	}
-	if got[sha('a')] != "clamav/Win.Test.Evil-1" || got[sha('c')] != "intel:malwarebazaar/AgentTesla" || len(got) != 2 {
+	if got[evil] != "clamav/Win.Test.Evil-1" || got[sha('c')] != "intel:malwarebazaar/AgentTesla" || len(got) != 2 {
 		t.Fatalf("detections = %v", got)
 	}
 	for _, p := range h.fetched {
@@ -220,10 +229,10 @@ func TestJudge(t *testing.T) {
 			t.Errorf("fetched %s", p)
 		}
 	}
-	for c, want := range map[byte]string{'a': store.AVMalicious, 'b': store.AVClean, 'c': store.AVMalicious, 'd': store.AVKnown, 'f': store.AVSkipped} {
-		v, err := h.st.GetAVVerdict(ctx, sha(c))
+	for hash, want := range map[string]string{evil: store.AVMalicious, fine: store.AVClean, sha('c'): store.AVMalicious, sha('d'): store.AVKnown, sha('f'): store.AVSkipped} {
+		v, err := h.st.GetAVVerdict(ctx, hash)
 		if err != nil || v.Verdict != want {
-			t.Errorf("verdict %c = %+v, %v; want %s", c, v, err, want)
+			t.Errorf("verdict %s = %+v, %v; want %s", hash[:8], v, err, want)
 		}
 	}
 	if _, err := h.st.GetAVVerdict(ctx, sha('e')); !errors.Is(err, store.ErrNotFound) {
@@ -233,9 +242,9 @@ func TestJudge(t *testing.T) {
 	// The same malware on another host, seen later, is answered from the stored verdict
 	// without fetching it again; the same process is not reported twice.
 	h.fetched, h.detected = nil, nil
-	other := win(`C:\Users\b\Desktop\evil.exe`, sha('a'), 200)
+	other := win(`C:\Users\b\Desktop\evil.exe`, evil, 200)
 	other.HostID, other.Hostname, other.EntityID = "h2", "laptop", "other"
-	h.run(t, other, win(`C:\Users\a\Downloads\evil.exe`, sha('a'), 100))
+	h.run(t, other, win(`C:\Users\a\Downloads\evil.exe`, evil, 100))
 	if len(h.fetched) != 0 || len(h.detected) != 1 || h.detected[0].HostID != "h2" || h.detected[0].Path != `C:\Users\b\Desktop\evil.exe` {
 		t.Fatalf("second round: fetched %v, detected %+v", h.fetched, h.detected)
 	}
@@ -260,6 +269,32 @@ func TestJudge(t *testing.T) {
 	h2 := New(Deps{State: h.st, Log: h.s.d.Log})
 	if err := h2.Load(ctx); err != nil || h2.Settings().Action != ActionAlert || len(h2.Settings().BlockedHashes) != 1 {
 		t.Fatalf("reload: %+v, %v", h2.Settings(), err)
+	}
+}
+
+// An agent that reports one program's hash and uploads another file gets no verdict
+// stored under that hash, in either direction.
+func TestUploadMustMatchReportedHash(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	cand := func(path, hash string) Candidate {
+		return Candidate{HostID: "rogue", Hostname: "rogue", Platform: "windows", Path: path, SHA256: hash, PID: 50, EntityID: path}
+	}
+	// Malware uploaded under a trusted program's hash: no detection, no verdict.
+	h.files[`C:\Users\a\trusted.exe`] = "MZ...EVIL..."
+	// A harmless file uploaded under malware's hash: not remembered as clean.
+	h.files[`C:\Users\a\malware.exe`] = "MZ...fine..."
+	h.run(t, cand(`C:\Users\a\trusted.exe`, sha('a')), cand(`C:\Users\a\malware.exe`, sha('b')))
+	if len(h.fetched) != 2 || len(h.detected) != 0 {
+		t.Fatalf("fetched %v, detected %+v", h.fetched, h.detected)
+	}
+	for _, hash := range []string{sha('a'), sha('b'), sum("MZ...EVIL..."), sum("MZ...fine...")} {
+		if v, err := h.st.GetAVVerdict(ctx, hash); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("verdict stored for %s: %+v", hash[:8], v)
+		}
+	}
+	if !strings.Contains(h.s.Status(ctx).LastError, "does not match the reported hash") {
+		t.Errorf("last error = %q", h.s.Status(ctx).LastError)
 	}
 }
 

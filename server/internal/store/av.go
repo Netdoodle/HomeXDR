@@ -77,20 +77,6 @@ func (s *Store) PutAVVerdict(ctx context.Context, v *AVVerdict) error {
 	return err
 }
 
-// SetAVAuthHashes records a file's Authenticode hashes on its verdict. Without a verdict
-// the file is recorded as malicious from source (a blocklisted file has none).
-func (s *Store) SetAVAuthHashes(ctx context.Context, sha256, auth256, auth1, source, signature, path, hostID string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE av_verdicts SET auth_sha256 = ?, auth_sha1 = ? WHERE sha256 = ?`, auth256, auth1, sha256)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		return nil
-	}
-	return s.PutAVVerdict(ctx, &AVVerdict{SHA256: sha256, Verdict: AVMalicious, Source: source, Signature: signature,
-		Path: path, HostID: hostID, AuthSHA256: auth256, AuthSHA1: auth1})
-}
-
 // AVBlockList returns the malicious files with Authenticode hashes, oldest first, for
 // App Control. Sources in skipSources (hacking tools, suspicious traits) are left out.
 func (s *Store) AVBlockList(ctx context.Context, skipSources []string, limit int) ([]*AVVerdict, error) {

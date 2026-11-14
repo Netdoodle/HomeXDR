@@ -91,7 +91,7 @@ func TestJudgeWithYara(t *testing.T) {
 	h.s.d.Yara = fakeYara(t)
 	ctx := context.Background()
 	win := func(name string, c byte) Candidate {
-		return Candidate{HostID: "h1", Hostname: "desk", Platform: "windows", Path: `C:\Users\a\` + name, SHA256: sha(c), PID: 10, EntityID: "e" + string(c)}
+		return Candidate{HostID: "h1", Hostname: "desk", Platform: "windows", Path: `C:\Users\a\` + name, SHA256: sum(h.files[`C:\Users\a\`+name]), PID: 10, EntityID: "e" + string(c)}
 	}
 	h.files[`C:\Users\a\both.exe`] = "EVIL YARA-MAL"
 	h.files[`C:\Users\a\mal.exe`] = "YARA-MAL"
@@ -123,10 +123,10 @@ func TestJudgeWithYara(t *testing.T) {
 			t.Errorf("%s AlertOnly = %v", d.Path, d.AlertOnly())
 		}
 	}
-	if v, err := h.st.GetAVVerdict(ctx, sha('e')); err != nil || v.Source != "clamav+yara" {
+	if v, err := h.st.GetAVVerdict(ctx, sum("fine")); err != nil || v.Source != "clamav+yara" {
 		t.Errorf("clean verdict = %+v, %v", v, err)
 	}
-	if _, err := h.st.GetAVVerdict(ctx, sha('f')); err == nil {
+	if _, err := h.st.GetAVVerdict(ctx, sum("YARA-FAIL")); err == nil {
 		t.Error("a failed scan stored a verdict")
 	}
 	if v := h.s.Status(ctx); !v.Yara.OK || v.Yara.Rules != 5128 {
@@ -152,7 +152,7 @@ func TestGroupScanners(t *testing.T) {
 	}
 	ctx := context.Background()
 	cand := func(group, path string, c byte, pid int64) Candidate {
-		return Candidate{HostID: "h-" + group, Hostname: group, Platform: "windows", Path: path, SHA256: sha(c), PID: pid,
+		return Candidate{HostID: "h-" + group, Hostname: group, Platform: "windows", Path: path, SHA256: sum(h.files[path]), PID: pid,
 			EntityID: group + string(c), GroupID: group}
 	}
 	h.files[`C:\a\mal.exe`] = "YARA-MAL"
@@ -163,7 +163,7 @@ func TestGroupScanners(t *testing.T) {
 	if len(h.detected) != 0 {
 		t.Fatalf("clam-only host: %+v", h.detected)
 	}
-	if v, err := h.st.GetAVVerdict(ctx, sha('a')); err != nil || v.Source != "clamav" {
+	if v, err := h.st.GetAVVerdict(ctx, sum("YARA-MAL")); err != nil || v.Source != "clamav" {
 		t.Fatalf("verdict %+v %v", v, err)
 	}
 	// A host that wants YARA too: the clean ClamAV-only verdict is not enough, so it is
@@ -196,7 +196,7 @@ func TestScannersResolverReadsSettings(t *testing.T) {
 		return Scanners{ClamAV: set.UseClamAV, YARA: set.UseYARA}
 	}
 	h.files[`C:\a\evil.exe`] = "EVIL"
-	h.run(t, Candidate{HostID: "h", Platform: "windows", Path: `C:\a\evil.exe`, SHA256: sha('a'), PID: 9})
+	h.run(t, Candidate{HostID: "h", Platform: "windows", Path: `C:\a\evil.exe`, SHA256: sum("EVIL"), PID: 9})
 	if len(h.detected) != 1 {
 		t.Fatalf("detected %+v", h.detected)
 	}
@@ -215,8 +215,8 @@ func TestGroupAction(t *testing.T) {
 	}
 	h.files[`C:\a\evil.exe`] = "EVIL"
 	h.run(t,
-		Candidate{HostID: "h1", Platform: "windows", Path: `C:\a\evil.exe`, SHA256: sha('a'), PID: 1, EntityID: "1", GroupID: "lab"},
-		Candidate{HostID: "h2", Platform: "windows", Path: `C:\a\evil.exe`, SHA256: sha('a'), PID: 2, EntityID: "2", GroupID: "office"})
+		Candidate{HostID: "h1", Platform: "windows", Path: `C:\a\evil.exe`, SHA256: sum("EVIL"), PID: 1, EntityID: "1", GroupID: "lab"},
+		Candidate{HostID: "h2", Platform: "windows", Path: `C:\a\evil.exe`, SHA256: sum("EVIL"), PID: 2, EntityID: "2", GroupID: "office"})
 	got := strings.Join(actions, ",")
 	if got != "lab=alert,office=quarantine" && got != "office=quarantine,lab=alert" {
 		t.Fatalf("actions = %s", got)

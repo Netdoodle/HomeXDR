@@ -16,8 +16,11 @@ package av
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"regexp"
@@ -466,6 +469,18 @@ func (s *Service) judge(ctx context.Context, c Candidate, want Scanners) (*Detec
 		return nil, fmt.Errorf("fetch %s from %s: %w", c.Path, c.Hostname, err)
 	}
 	defer os.Remove(path)
+	// The hash came from the agent, and the verdict stored under it applies to every
+	// host. Only the uploaded file proves it: without this check one agent could have a
+	// program of its choosing stopped everywhere, or have malware remembered as clean.
+	// Nothing is stored on a mismatch, so the file is judged again when it is next seen.
+	got, err := fileSHA256(path)
+	if err != nil {
+		return nil, fmt.Errorf("hash the upload of %s: %w", c.Path, err)
+	}
+	if !strings.EqualFold(got, c.SHA256) {
+		return nil, fmt.Errorf("%w: %s uploaded a file with SHA-256 %s for %s, reported as %s",
+			ErrHashMismatch, c.Hostname, got, c.Path, c.SHA256)
+	}
 	source, sig, err := s.scanFile(fctx, path, want)
 	if err != nil {
 		return nil, fmt.Errorf("scan of %s: %w", c.Path, err)
@@ -483,6 +498,23 @@ func (s *Service) judge(ctx context.Context, c Candidate, want Scanners) (*Detec
 		return nil, err
 	}
 	return &Detection{Source: source, Signature: sig}, err
+}
+
+// ErrHashMismatch means a host uploaded a file other than the one it reported: the file
+// changed in between, or the agent is not telling the truth.
+var ErrHashMismatch = errors.New("the uploaded file does not match the reported hash")
+
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // scanFile runs a fetched file through ClamAV and YARA. On a match it returns the
