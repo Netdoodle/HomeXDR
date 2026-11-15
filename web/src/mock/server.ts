@@ -242,7 +242,7 @@ export async function handleMockRequest(
     } catch (e) {
       if (e instanceof HttpError) return json(e.status, { error: e.message });
       console.error("[mock]", e);
-      return json(500, { error: e instanceof Error ? e.message : String(e) });
+      return json(500, { error: "mock server error (details in the browser console)" });
     }
   }
   return json(404, { error: `no mock route for ${method} ${path}` });

@@ -133,6 +133,9 @@ func (s *processSensor) runProcConn(ctx context.Context, out platform.Emitter) e
 	starts := newLRU[uint32, uint64](65536)
 	if pids, err := listPIDs(); err == nil {
 		for _, pid := range pids {
+			if pid <= 0 || pid > maxPID {
+				continue
+			}
 			if k, err := startKey(pid); err == nil {
 				starts.put(uint32(pid), k)
 			}

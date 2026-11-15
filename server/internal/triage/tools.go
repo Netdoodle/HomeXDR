@@ -258,7 +258,7 @@ func compact(v any) any {
 		if n > maxArrayItems {
 			x = x[:maxArrayItems]
 		}
-		out := make([]any, 0, len(x)+1)
+		out := make([]any, 0, maxArrayItems+1) // at most maxArrayItems values and a "more" note
 		for _, val := range x {
 			out = append(out, compact(val))
 		}

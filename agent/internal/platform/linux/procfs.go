@@ -23,6 +23,10 @@ var procRoot = "/proc"
 // _SC_CLK_TCK returns it), independent of the kernel's internal CONFIG_HZ.
 const userHZ = 100
 
+// maxStartTicks is about 100 years of uptime in clock ticks, far below where the
+// conversion to time.Duration could overflow.
+const maxStartTicks = 100 * 365 * 24 * 3600 * userHZ
+
 // nsPerTick converts task->start_boottime (ns) to /proc clock ticks: the kernel's
 // nsec_to_clock_t() is a plain division by NSEC_PER_SEC / USER_HZ.
 const nsPerTick = uint64(time.Second) / userHZ
@@ -238,7 +242,7 @@ func BootTime() time.Time {
 // the result is accurate to about a second.
 func startTimeFromTicks(ticks uint64) time.Time {
 	bt := BootTime()
-	if bt.IsZero() {
+	if bt.IsZero() || ticks > maxStartTicks {
 		return time.Time{}
 	}
 	return bt.Add(time.Duration(ticks) * (time.Second / userHZ)).UTC()

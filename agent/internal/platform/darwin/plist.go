@@ -122,7 +122,7 @@ func xmlValue(d *xml.Decoder, se xml.StartElement, depth int) (any, error) {
 			return n, nil
 		}
 		if n, err := strconv.ParseUint(s, 0, 64); err == nil {
-			return int64(n), nil
+			return n, nil // above the int64 range: kept unsigned rather than wrapped
 		}
 		return nil, fmt.Errorf("plist: bad integer %q", s)
 	case "real":

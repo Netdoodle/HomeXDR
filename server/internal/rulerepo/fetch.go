@@ -360,6 +360,9 @@ func (f *Fetcher) extract(file, dir string, strip bool) (Stats, error) {
 			return nil
 		}
 		dst := filepath.Join(dir, filepath.FromSlash(rel))
+		if r, err := filepath.Rel(dir, dst); err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) || filepath.IsAbs(r) {
+			return fmt.Errorf("archive entry %q is outside the rules folder", name)
+		}
 		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 			return err
 		}
