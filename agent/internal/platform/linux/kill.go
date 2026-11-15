@@ -16,10 +16,16 @@ import (
 // errGone means the PID no longer refers to the expected process.
 var errGone = errors.New("process is gone or the PID was reused")
 
+// maxPID is the largest PID Linux can hand out (PID_MAX_LIMIT, 2^22).
+const maxPID = 1 << 22
+
 // signalExact sends sig to pid only if the process still has start key want. With a
 // pidfd (5.3+) the check and the signal refer to the same process even if the PID is
 // recycled in between; on older kernels it falls back to kill(2).
 func signalExact(pid int64, want uint64, sig unix.Signal) error {
+	if pid <= 0 || pid > maxPID {
+		return errGone
+	}
 	fd, err := unix.PidfdOpen(int(pid), 0)
 	switch {
 	case err == nil:

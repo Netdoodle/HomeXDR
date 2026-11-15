@@ -242,7 +242,11 @@ func (c *Core) InboundThreats(ctx context.Context, hours int) (*InboundView, err
 			if len(row) < 4 {
 				continue
 			}
-			v.Ports = append(v.Ports, InboundPort{Port: int(toInt64(row[0])), Transport: fmt.Sprint(row[1]),
+			port := toInt64(row[0])
+			if port < 0 || port > 65535 {
+				continue
+			}
+			v.Ports = append(v.Ports, InboundPort{Port: int(port), Transport: fmt.Sprint(row[1]),
 				Attempts: toInt64(row[2]), Sources: toInt64(row[3])})
 		}
 	}

@@ -38,7 +38,11 @@ func (c *S3) client() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
 	}
-	return &http.Client{Timeout: 10 * time.Minute}
+	return &http.Client{
+		Timeout: 10 * time.Minute,
+		// Requests go only to the configured endpoint: a redirect elsewhere is an error.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 }
 
 // objectURL builds the URL of key (empty key: the bucket).
