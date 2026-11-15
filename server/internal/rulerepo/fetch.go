@@ -333,8 +333,7 @@ func (f *Fetcher) extract(file, dir string, strip bool) (Stats, error) {
 	}
 	write := func(name string, size int64, open func() (io.ReadCloser, error)) error {
 		if strings.Contains(name, "..") {
-			st.Skipped++ // never a path out of the folder, even before rulePath's checks
-			return nil
+			return nil // never a path out of the folder; ignored like other non-rule entries
 		}
 		rel, ok := rulePath(name, strip)
 		if !ok {
