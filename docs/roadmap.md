@@ -10,6 +10,12 @@ An authenticator-app code on top of the password, since an admin session control
 endpoint. QR enrollment, one-time recovery codes, a command-line reset for a locked-out
 admin, and an option to require it for admins (or everyone).
 
+### Windows install turns on the Task Scheduler log
+`Microsoft-Windows-TaskScheduler/Operational` is off by default, so the eventlog sensor
+reports degraded on every Windows host and scheduled-task persistence goes unseen. The
+agent's `install` should enable it (saving the previous state, as it does for process
+auditing) and `uninstall` should restore it.
+
 ### Built-in HTTPS for the console
 Serve the console over TLS directly, so a password and session never cross the LAN in the
 clear when the console is opened without the reverse proxy. A certificate from the
