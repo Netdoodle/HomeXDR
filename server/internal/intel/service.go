@@ -284,8 +284,11 @@ func (s *Service) Start(ctx context.Context, raw string, refresh bool, user stri
 			s.log.Warn("audit intel lookup", "err", err)
 		}
 	}
+	// The view is built before the sources are asked, so it reports this run as running
+	// even when they answer at once (it used to race with execute finishing).
+	v, err := s.view(ctx, ind, set)
 	go s.execute(ind, set, tasks, have, r, user)
-	return s.view(ctx, ind, set)
+	return v, err
 }
 
 // LookupAndWait is Start followed by waiting, until ctx ends, for the sources to answer.
