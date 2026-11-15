@@ -5,7 +5,7 @@
 #   - a GitHub release with docs/releases/<tag>.md as its notes and the agent binaries
 #     from the server image attached.
 # Run it by hand (Actions → Release → Run workflow) to publish an existing tag again, for
-# example after adding the Docker Hub secrets.
+# example after adding the Docker Hub secrets. 0.x releases are marked as pre-releases.
 name: Release
 
 on:
@@ -66,7 +66,11 @@ jobs:
             echo "${img//-/_}=${tags#,}" >> "$GITHUB_OUTPUT"
           done
           echo "repos=$repos" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$([ "$latest" = true ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+          # Betas (0.x) and suffixed tags (v1.2.0-rc.1) are GitHub pre-releases. The images
+          # still get :latest for 0.x, as long as there is no 1.x line.
+          prerelease=false
+          [[ "$TAG" == *-* || "$TAG" == v0.* ]] && prerelease=true
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -121,8 +125,10 @@ jobs:
       - name: Release notes
         run: |
           set -euo pipefail
+          # The notes as they are now on the default branch (corrections made after the
+          # tag), else as tagged.
           {
-            cat "docs/releases/$TAG.md"
+            git show "origin/${{ github.event.repository.default_branch }}:docs/releases/$TAG.md" 2>/dev/null || cat "docs/releases/$TAG.md"
             echo
             echo "### Images"
             echo
@@ -141,7 +147,7 @@ jobs:
           set -euo pipefail
           assets=(dist/homexdr-agent-* dist/SHA256SUMS)
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --notes-file notes.md
+            gh release edit "$TAG" --notes-file notes.md --prerelease="${{ steps.meta.outputs.prerelease }}"
             gh release upload "$TAG" "${assets[@]}" --clobber
           else
             flags=()
