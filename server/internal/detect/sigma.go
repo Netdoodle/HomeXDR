@@ -3,9 +3,12 @@
 // Supported: field matching with the modifiers contains, startswith, endswith, all, re
 // (with i/m/s), cidr, base64, base64offset, utf16le/utf16be/utf16/wide, windash, exists,
 // cased, gt/gte/lt/lte, fieldref, plain wildcards (* ?), null values, keyword lists, and
-// conditions with and/or/not, parentheses, "1 of X*", "all of X*", "any of", "of them".
-// Not supported (rules using them fail to compile): aggregations ("| count()"),
-// correlation rules and placeholders ("%name%" with |expand).
+// conditions with and/or/not, parentheses, "1 of X*", "all of X*", "any of", "of them",
+// the count aggregation with timeframe ("sel | count() by x > 5") and Sigma correlation
+// rules (event_count, value_count, temporal, temporal_ordered; see correlation.go).
+// Not supported (rules using them fail to compile): other aggregations (min, max, avg,
+// sum, near), "less than" thresholds, the value_sum/avg/percentile correlation types,
+// correlations of correlations, and placeholders ("%name%" with |expand).
 package detect
 
 import (
@@ -38,13 +41,25 @@ type Rule struct {
 	Detection      yaml.Node `yaml:"detection"`
 	FalsePositives []string  `yaml:"falsepositives"`
 	Level          string    `yaml:"level"`
+	// Name is the Sigma rule name correlation rules may reference instead of the id.
+	Name string `yaml:"name"`
 
 	// YAML is the source text.
 	YAML string `yaml:"-"`
 
+	// Correlation is set for Sigma correlation rules (which have no detection of their
+	// own) and for rules whose condition aggregates ("sel | count() > 5" with timeframe).
+	// Such rules alert when the threshold is met, never on a single event.
+	Correlation *Correlation `yaml:"-"`
+
 	cond      condNode
 	logsource *logsourceFilter
+	levelSet  bool // the rule names a level (rather than defaulting to medium)
 }
+
+// IsCorrelation reports whether the rule alerts on a threshold or correlation rather than
+// on single events.
+func (r *Rule) IsCorrelation() bool { return r.Correlation != nil }
 
 // LogSource is the Sigma logsource block.
 type LogSource struct {
@@ -67,6 +82,7 @@ func ParseRule(src []byte) (*Rule, error) {
 		return nil, errors.New("rule has no id")
 	}
 	r.Level = strings.ToLower(strings.TrimSpace(r.Level))
+	r.levelSet = r.Level != ""
 	switch r.Level {
 	case "informational", "low", "medium", "high", "critical":
 	case "":
@@ -74,8 +90,28 @@ func ParseRule(src []byte) (*Rule, error) {
 	default:
 		return nil, fmt.Errorf("unknown level %q", r.Level)
 	}
+	var corr struct {
+		Correlation yaml.Node `yaml:"correlation"` // (a *yaml.Node field decodes empty)
+	}
+	if err := yaml.Unmarshal(src, &corr); err != nil {
+		return nil, fmt.Errorf("yaml: %w", err)
+	}
+	if corr.Correlation.Kind != 0 {
+		if r.Detection.Kind != 0 {
+			return nil, errors.New("a rule cannot have both detection and correlation")
+		}
+		c, err := parseCorrelation(&corr.Correlation)
+		if err != nil {
+			return nil, err
+		}
+		r.Correlation = c
+		return &r, nil
+	}
 	if err := r.compile(); err != nil {
 		return nil, err
+	}
+	if r.Correlation != nil {
+		r.Correlation.Rules = []string{r.ID}
 	}
 	return &r, nil
 }
@@ -110,7 +146,17 @@ type Document struct {
 // one rule the engine cannot run does not hide the others in the file. Documents that are
 // not Sigma rules (no detection or correlation) are skipped. The error is for YAML the
 // decoder cannot read; documents before it are returned.
+//
+// Correlation rules that reference rules of the same file by name or id are linked to
+// them here; references to rules elsewhere are resolved when the rule set is assembled
+// (ResolveCorrelations).
 func ParseDocuments(src []byte) ([]Document, error) {
+	out, err := parseDocuments(src)
+	linkLocal(out)
+	return out, err
+}
+
+func parseDocuments(src []byte) ([]Document, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(src))
 	var out []Document
 	for {
@@ -145,11 +191,7 @@ func ParseDocuments(src []byte) ([]Document, error) {
 		if d.Level == "" {
 			d.Level = "medium"
 		}
-		if probe.Correlation != nil {
-			d.Err = errors.New("correlation rules are not supported")
-		} else {
-			d.Rule, d.Err = ParseRule(b)
-		}
+		d.Rule, d.Err = ParseRule(b)
 		out = append(out, d)
 	}
 }
@@ -163,8 +205,12 @@ func scalar(v any) string {
 	return ""
 }
 
-// Match evaluates the rule against a document.
+// Match evaluates the rule against a document. For a rule with an aggregation condition
+// it tests the part before "|"; a correlation rule matches no single event.
 func (r *Rule) Match(d *Doc) bool {
+	if r.cond == nil {
+		return false
+	}
 	if r.logsource != nil && !r.logsource.match(d) {
 		return false
 	}
@@ -177,6 +223,7 @@ func (r *Rule) compile() error {
 	}
 	searches := map[string]matcher{}
 	var condition []string
+	var timeframe *yaml.Node
 	for i := 0; i+1 < len(r.Detection.Content); i += 2 {
 		key := r.Detection.Content[i].Value
 		val := r.Detection.Content[i+1]
@@ -194,7 +241,8 @@ func (r *Rule) compile() error {
 			continue
 		}
 		if key == "timeframe" {
-			return errors.New("timeframe/aggregation rules are not supported")
+			timeframe = val
+			continue
 		}
 		m, err := compileSearch(val)
 		if err != nil {
@@ -207,14 +255,28 @@ func (r *Rule) compile() error {
 	}
 	var conds []condNode
 	for _, c := range condition {
-		if strings.Contains(c, "|") {
-			return errors.New("aggregation conditions are not supported")
+		if expr, agg, ok := strings.Cut(c, "|"); ok {
+			if len(condition) > 1 {
+				return errors.New("an aggregation condition must be the rule's only condition")
+			}
+			if timeframe == nil {
+				return errors.New("an aggregation condition needs a timeframe")
+			}
+			corr, err := parseAggregation(agg, timeframe)
+			if err != nil {
+				return fmt.Errorf("condition %q: %w", c, err)
+			}
+			r.Correlation = corr
+			c = expr
 		}
 		n, err := parseCondition(c, searches)
 		if err != nil {
 			return fmt.Errorf("condition %q: %w", c, err)
 		}
 		conds = append(conds, n)
+	}
+	if timeframe != nil && r.Correlation == nil {
+		return errors.New("timeframe without an aggregation condition is not supported")
 	}
 	if len(conds) == 1 {
 		r.cond = conds[0]
