@@ -143,7 +143,14 @@ func (c *Core) LastSelfCheck(ctx context.Context) *SelfCheckResult {
 // RunSelfCheck runs the self-check and saves the result in the settings database.
 func (c *Core) RunSelfCheck(ctx context.Context) *SelfCheckResult {
 	start := time.Now()
-	rules := c.Engine.Rules()
+	// Correlation and threshold rules never fire on one event; their base rules are
+	// checked on their own when enabled.
+	var rules []*detect.Rule
+	for _, r := range c.Engine.Rules() {
+		if !r.IsCorrelation() {
+			rules = append(rules, r)
+		}
+	}
 	res := &SelfCheckResult{At: start.UTC(), Rules: len(rules), Failures: []SelfCheckFailure{}, Rate: 100}
 	var pipeRule *detect.Rule
 	var pipeEvent *event.Event

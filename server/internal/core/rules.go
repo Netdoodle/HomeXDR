@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -54,6 +55,7 @@ type RuleRepoRef struct {
 
 type ruleEntry struct {
 	rule      *detect.Rule
+	path      string // for load errors: the file, "custom:<id>", or "<repository>: <file>"
 	source    string
 	enabled   bool
 	updatedAt time.Time
@@ -134,9 +136,12 @@ func (rs *RuleSet) Reload(ctx context.Context) error {
 	rs.loadMu.Lock()
 	defer rs.loadMu.Unlock()
 	fp := detect.DirFingerprint(rs.c.Cfg.RulesDir)
-	builtin, errs := detect.LoadDir(rs.c.Cfg.RulesDir)
-	// Large community rule sets contain rules this engine cannot run (aggregations,
-	// unsupported modifiers); log a few and keep the rest at debug level.
+	builtin, errs := detect.LoadTree(rs.c.Cfg.RulesDir, nil)
+	for i := range errs {
+		errs[i].Path = filepath.Join(rs.c.Cfg.RulesDir, filepath.FromSlash(errs[i].Path))
+	}
+	// Large community rule sets contain rules this engine cannot run (unsupported
+	// aggregations or modifiers); log a few and keep the rest at debug level.
 	for i, e := range errs {
 		if i < 10 {
 			rs.c.Log.Warn("rule failed to load", "path", e.Path, "err", e.Err)
@@ -156,8 +161,9 @@ func (rs *RuleSet) Reload(ctx context.Context) error {
 		return err
 	}
 	entries := map[string]*ruleEntry{}
-	for _, r := range builtin {
-		entries[r.ID] = &ruleEntry{rule: r, source: SourceBuiltin, enabled: true}
+	for _, fr := range builtin {
+		entries[fr.Rule.ID] = &ruleEntry{rule: fr.Rule, source: SourceBuiltin, enabled: true,
+			path: filepath.Join(rs.c.Cfg.RulesDir, filepath.FromSlash(fr.Path))}
 	}
 	for _, row := range rows {
 		if row.Source != SourceCustom {
@@ -172,7 +178,7 @@ func (rs *RuleSet) Reload(ctx context.Context) error {
 		if _, clash := entries[r.ID]; clash {
 			continue
 		}
-		entries[r.ID] = &ruleEntry{rule: r, source: SourceCustom, enabled: row.Enabled, updatedAt: row.UpdatedAt}
+		entries[r.ID] = &ruleEntry{rule: r, source: SourceCustom, enabled: row.Enabled, updatedAt: row.UpdatedAt, path: "custom:" + row.ID}
 	}
 	stats := map[string]RepoRuleStats{}
 	skips := map[string][]RepoSkip{}
@@ -203,12 +209,42 @@ func (rs *RuleSet) Reload(ctx context.Context) error {
 					skips[repo.ID] = append(skips[repo.ID], RepoSkip{Path: fr.Path, Title: r.Title, Error: "same id as " + other.describe()})
 					continue
 				}
-				entries[r.ID] = &ruleEntry{rule: r, source: SourceRepo, enabled: repo.EnableRules, updatedAt: installed,
+				entries[r.ID] = &ruleEntry{rule: r, source: SourceRepo, enabled: repo.EnableRules, updatedAt: installed, path: repo.Name + ": " + fr.Path,
 					repo: &RuleRepoRef{ID: repo.ID, Name: repo.Name, Path: fr.Path, URL: src.FileURL(repo.Version, fr.Path)}}
 				st.Rules++
 			}
 		}
 		stats[repo.ID] = st
+	}
+	// Correlation rules need their base rules, which may come from any source. One whose
+	// base rules are missing cannot run, and is reported like a rule that failed to load.
+	all := make([]*detect.Rule, 0, len(entries))
+	for _, e := range entries {
+		all = append(all, e.rule)
+	}
+	unresolved := detect.ResolveCorrelations(all)
+	broken := make([]*detect.Rule, 0, len(unresolved))
+	for r := range unresolved {
+		broken = append(broken, r)
+	}
+	sort.Slice(broken, func(i, j int) bool { return broken[i].ID < broken[j].ID })
+	for _, r := range broken {
+		err := unresolved[r]
+		e := entries[r.ID]
+		if e == nil || e.rule != r {
+			continue
+		}
+		delete(entries, r.ID)
+		msg := r.Title + ": " + err.Error()
+		errs = append(errs, detect.LoadError{Path: e.path, Err: msg})
+		rs.c.Log.Warn("correlation rule cannot run", "path", e.path, "err", msg)
+		if e.repo != nil {
+			st := stats[e.repo.ID]
+			st.Rules--
+			st.Errors++
+			stats[e.repo.ID] = st
+			skips[e.repo.ID] = append(skips[e.repo.ID], RepoSkip{Path: e.repo.Path, Title: r.Title, Error: err.Error()})
+		}
 	}
 	for id := range rs.repoCache {
 		if !live[id] {
@@ -379,15 +415,18 @@ func (rs *RuleSet) repoRuleIDs(repoID string) map[string]bool {
 
 func (rs *RuleSet) sync() {
 	rs.mu.RLock()
-	var enabled []*detect.Rule
+	var enabled, all []*detect.Rule
 	for _, e := range rs.entries {
+		all = append(all, e.rule)
 		if e.enabled {
 			enabled = append(enabled, e.rule)
 		}
 	}
 	rs.mu.RUnlock()
 	sort.Slice(enabled, func(i, j int) bool { return enabled[i].ID < enabled[j].ID })
-	rs.c.Engine.SetRules(enabled)
+	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
+	// Base rules of correlations run even when disabled, so the engine sees every rule.
+	rs.c.Engine.SetRuleSet(enabled, all)
 }
 
 // LoadErrors returns rules that failed to load.
@@ -479,6 +518,20 @@ func (rs *RuleSet) Validate(yamlSrc string) (*detect.Rule, error) {
 	r, err := detect.ParseRule([]byte(yamlSrc))
 	if err != nil {
 		return nil, invalid("%v", err)
+	}
+	if r.IsCorrelation() {
+		// Its base rules must be loaded (a saved rule replaces the loaded one of its id).
+		rs.mu.RLock()
+		pool := []*detect.Rule{r}
+		for id, e := range rs.entries {
+			if id != r.ID {
+				pool = append(pool, e.rule)
+			}
+		}
+		rs.mu.RUnlock()
+		if err := detect.ResolveCorrelations(pool)[r]; err != nil {
+			return nil, invalid("%v", err)
+		}
 	}
 	return r, nil
 }

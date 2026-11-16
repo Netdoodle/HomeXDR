@@ -78,7 +78,8 @@ func (c *Core) detect(ctx context.Context, e *event.Event) {
 	// A Defender detection folds with HomeXDR's antivirus alert for the same file, and
 	// detections of different files on one host stay apart.
 	link := defenderLinkKey(e)
-	for _, r := range c.Engine.Evaluate(e) {
+	res := c.Engine.Detect(e)
+	for _, r := range res.Rules {
 		in := store.AlertInput{
 			Rule: store.AlertRule{
 				ID: r.ID, Title: r.Title, Description: r.Description, Level: r.Level,
@@ -92,6 +93,9 @@ func (c *Core) detect(ctx context.Context, e *event.Event) {
 			in.LinkKey, in.LinkSource, in.DedupEntity = link, linkSourceDefender, link
 		}
 		c.recordAlert(ctx, in)
+	}
+	for i := range res.Correlations {
+		c.recordAlert(ctx, correlationAlert(&res.Correlations[i], e))
 	}
 	// IDS alerts (Suricata) become alerts directly.
 	if e.Event.Kind == event.KindAlert && e.Rule != nil && e.Event.Module == event.ModuleSuricata {
@@ -141,6 +145,31 @@ func (c *Core) recordAlert(ctx context.Context, in store.AlertInput) {
 		c.Triage.AlertCreated(ctx, a)
 		// Only an outbox write. The agent hanging up must not lose the notification.
 		c.Notify.AlertCreated(context.WithoutCancel(ctx), a)
+	}
+}
+
+// correlationAlert turns a met correlation or threshold rule into an alert on the event
+// that completed it. The summary (count, window, group) leads the description, and each
+// group gets its own alert.
+func correlationAlert(m *detect.CorrelationMatch, e *event.Event) store.AlertInput {
+	r := m.Rule
+	desc := m.Summary
+	if d := strings.TrimSpace(r.Description); d != "" {
+		desc += "\n\n" + d
+	}
+	entity := "correlation"
+	if g := m.GroupLabel(); g != "" {
+		entity += "|" + g
+	}
+	return store.AlertInput{
+		Rule: store.AlertRule{
+			ID: r.ID, Title: r.Title, Description: desc, Level: m.Level,
+			Tags: r.Tags, References: r.References, FalsePositives: r.FalsePositives,
+		},
+		Mitre:       toStoreMitre(detect.MitreFromTags(r.Tags)),
+		Severity:    m.Level,
+		Event:       e,
+		DedupEntity: entity,
 	}
 }
 
