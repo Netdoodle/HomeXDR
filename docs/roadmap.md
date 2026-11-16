@@ -5,36 +5,18 @@ them. When one ships, move it to "Done" with its commit and a link to its docs.
 
 ## Next up
 
-### Two-factor login (TOTP)
-An authenticator-app code on top of the password, since an admin session controls every
-endpoint. QR enrollment, one-time recovery codes, a command-line reset for a locked-out
-admin, and an option to require it for admins (or everyone).
+### Sign-in: passkeys and single sign-on
+Two-factor codes are in. Next: passkeys (Face ID, Touch ID, Windows Hello, security keys),
+which cannot be phished and need the console on HTTPS, and sign-in through an identity
+provider (OIDC: Okta, Microsoft Entra, Authentik, Authelia) for people who run one. An
+option to require two-factor login for admins.
 
-### Windows install turns on the Task Scheduler log
-`Microsoft-Windows-TaskScheduler/Operational` is off by default, so the eventlog sensor
-reports degraded on every Windows host and scheduled-task persistence goes unseen. The
-agent's `install` should enable it (saving the previous state, as it does for process
-auditing) and `uninstall` should restore it.
-
-### Built-in HTTPS for the console
-Serve the console over TLS directly, so a password and session never cross the LAN in the
-clear when the console is opened without the reverse proxy. A certificate from the
-server's own CA (as for agents) with a "download CA certificate" step so browsers trust
-it, or an ACME (Let's Encrypt) certificate for anyone with a domain. HTTP then only
-redirects.
-
-### Threshold and correlation rules
-Rules today match single events. Add counts over a time window ("ten failed SSH logins
-from one address in a minute", "Telnet to 20 addresses"), and Sigma's `count()`,
-`timeframe` and correlation rules (`event_count`, `value_count`, `temporal`), which the
-rule engine currently refuses. Several of the brute-force and scanning rules become far
-more precise with them.
-
-### Decoys
-Traps an intruder touches but nobody legitimate does, each raising a high alert: fake
-credential files (`.aws/credentials`, SSH keys, a `passwords.xlsx`), an unused listening
-port on each agent, and canary tokens. The ransomware bait files (under Later) become
-part of this.
+### Follow-ups to correlation rules and decoys
+- Correlation conditions "fewer than N" (lt/lte), which need windows evaluated as they
+  close, and value_sum/avg; windows survive a server restart.
+- Decoys: report reads on Windows (file auditing on the decoys) and macOS (Endpoint
+  Security open events); an unused listening port on each agent and canary tokens; remove
+  decoys on uninstall.
 
 ### Security reviews
 The agent's sensors and the integrations (host firewall, backup, notifications, DNS
@@ -68,11 +50,9 @@ Reviews still to do:
 Started November 2026 ([away-from-home.md](away-from-home.md)). A second agent listener
 for a port forward requires a valid, unrevoked agent certificate in the TLS handshake and
 serves only enrolled agents' routes; enrollment, installer scripts and the CA certificate
-stay on the local listener. One name with split DNS works at home and away. Still to do:
-- **A console view** of each host's last address and whether it reaches the server from
-  outside, with a one-click revoke from there.
-- **Visibility into refused connections:** count failed handshakes on the internet
-  listener, show them under Data health, and alert on a sudden rise.
+stay on the local listener. One name with split DNS works at home and away. The host page shows each host's last
+address and listener, and Data health counts refused connections with an alert on a sudden
+rise. Still to do:
 - **Penetration testing of the open port** (TLS settings, handshake floods, what an
   attacker with a stolen device's certificate can reach).
 
@@ -174,6 +154,11 @@ agents at the MagicDNS name; the spool covers the gaps.
 
 ## Done
 
+- November 2026: optional two-factor login (authenticator codes with recovery codes and an
+  admin reset), built-in HTTPS for the console (HomeXDR CA or your own certificate files,
+  optional redirect), threshold and correlation rules (Sigma `count()` and correlation
+  rules), decoy files on every agent, the Task Scheduler log turned on by the Windows
+  install, and host addresses plus refused-connection monitoring for agents away from home.
 - Security fixes: getting files from hosts is admin only, quarantine refuses
   operating-system files, AI keys from the environment only go to approved endpoints,
   enrollment tokens expire and are single-use by default, and CI checks Go dependencies
