@@ -24,7 +24,14 @@ func (h *Handler) routesGroups(viewer, admin string) {
 // groupView is a group with its settings after inheritance.
 type groupView struct {
 	*store.HostGroup
-	Effective core.EffectiveAV `json:"effective"`
+	Effective effectiveView `json:"effective"`
+}
+
+// effectiveView adds the settings ResolveAV does not cover.
+type effectiveView struct {
+	core.EffectiveAV
+	// Decoys: whether the group's hosts place decoy files.
+	Decoys core.SettingSource `json:"decoys"`
 }
 
 type groupsView struct {
@@ -41,6 +48,8 @@ type groupsView struct {
 		DefenderHardening string `json:"defender_hardening"`
 		// Firewall: whether host firewall block policies apply (Settings → Firewall).
 		Firewall bool `json:"firewall"`
+		// Decoys: whether agents place decoy files (Settings → Agent config).
+		Decoys bool `json:"decoys"`
 	} `json:"global"`
 	Groups    []groupView `json:"groups"`
 	Ungrouped int         `json:"ungrouped"` // hosts in no group
@@ -57,8 +66,10 @@ func (h *Handler) groupsView(r *http.Request) (*groupsView, error) {
 	v.Global.AppControl = set.AppControl
 	v.Global.DefenderHardening = set.DefenderHardening
 	v.Global.Firewall = h.c.FirewallGlobalEnabled()
+	v.Global.Decoys = h.c.AgentConfig(r.Context()).Decoys.Enabled
 	for _, g := range gs {
-		v.Groups = append(v.Groups, groupView{HostGroup: g, Effective: h.c.ResolveAV(g.ID)})
+		eff := effectiveView{EffectiveAV: h.c.ResolveAV(g.ID), Decoys: h.c.ResolveDecoys(g.ID, v.Global.Decoys)}
+		v.Groups = append(v.Groups, groupView{HostGroup: g, Effective: eff})
 	}
 	hosts, err := h.c.State.ListHosts(r.Context(), store.HostFilter{Kind: store.HostEndpoint, GroupIDs: []string{""}})
 	if err != nil {
@@ -153,6 +164,7 @@ func (h *Handler) patchGroup(w http.ResponseWriter, r *http.Request, u *store.Us
 			}
 			parts = append(parts, "Defender hardening "+dh)
 			parts = append(parts, "host firewall "+onOffInherit(in.Policy.Firewall.Enabled))
+			parts = append(parts, "decoy files "+onOffInherit(in.Policy.Decoys.Enabled))
 		}
 		h.c.Audit(r.Context(), u.Username, "group.update", g.ID, g.Name+": "+strings.Join(parts, ", "))
 	}

@@ -4,13 +4,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Netdoodle/homexdr/shared/api"
 )
 
 // Content kinds: which fake text a decoy gets.
 const (
 	kindSheet  = "sheet" // a password list exported from a spreadsheet (CSV text)
 	kindCodes  = "codes" // account backup / recovery codes
-	kindCSV    = "csv"   // service credentials as CSV
+	kindCSV    = "csv"   // service credentials as CSV (decoys created before kinds came from the name)
 	kindText   = "text"  // a personal password note
 	kindAWS    = "aws"   // an AWS shared credentials file
 	kindSQL    = "sql"   // a database dump with user grants
@@ -26,7 +28,8 @@ type target struct {
 	Base string
 	Dirs []string
 	Name string
-	// MakeDir allows the last folder of Dirs to be created (~/.aws, ProgramData\Backup).
+	// MakeDir allows the last folder of Dirs to be created when its parent exists. It is
+	// never set for a home folder itself.
 	MakeDir bool
 	// Owner of the file (Unix). OwnerFromParent takes the parent folder's owner instead.
 	User            string
@@ -34,6 +37,11 @@ type target struct {
 	HasOwner        bool
 	OwnerFromParent bool
 	Kind            string
+	// Entry is the configured path the target comes from; Home is set when it was
+	// expanded from {home}.
+	Entry  string
+	Home   bool
+	Hidden bool
 }
 
 func (t target) path() string {
@@ -55,8 +63,16 @@ type owner struct {
 	Name     string
 }
 
-// layout enumerates the default decoy locations of one OS below root. root is "" for
-// the real file system; tests point it at a temporary folder.
+// home is one real user's home folder: Dir below Base.
+type home struct {
+	Base, Dir string
+	Owner     owner
+	Chown     bool // chown files to Owner (Unix, not for root)
+}
+
+// layout expands the configured decoy paths for one OS below root. root is "" for the
+// real file system; tests point it at a temporary folder, and absolute paths are then
+// taken relative to it.
 type layout struct {
 	goos string
 	root string
@@ -71,14 +87,90 @@ func (l layout) at(parts ...string) string {
 	return filepath.Join(append([]string{l.root}, parts...)...)
 }
 
-func (l layout) targets() []target {
+// targets expands the entries for this OS. Unusable entries are reported to bad.
+func (l layout) targets(files []api.DecoyFile, dataDir string, bad func(path, msg string)) []target {
+	var out []target
+	var homes []home
+	homesDone := false
+	for _, f := range files {
+		if f.OS != l.goos {
+			continue
+		}
+		p := strings.TrimSpace(f.Path)
+		if msg := api.DecoyPathProblem(f.OS, p); msg != "" {
+			bad(p, msg)
+			continue
+		}
+		sep := api.DecoySeparator(f.OS)
+		hidden := f.Hidden && f.OS != api.DecoyOSLinux // Linux has no hidden attribute
+		if rest, ok := strings.CutPrefix(p, api.DecoyHome+sep); ok {
+			dirs, name := split(rest, sep)
+			if !homesDone {
+				homes, homesDone = l.homes(), true
+			}
+			for _, h := range homes {
+				t := target{
+					Base: h.Base, Dirs: append([]string{h.Dir}, dirs...), Name: name, MakeDir: len(dirs) > 0,
+					User: h.Owner.Name, UID: h.Owner.UID, GID: h.Owner.GID, HasOwner: h.Chown,
+					Kind: kindFor(dirs, name), Entry: p, Home: true, Hidden: hidden,
+				}
+				if l.allowed(t, dataDir, bad) {
+					out = append(out, t)
+				}
+			}
+			continue
+		}
+		vol, rest := l.volume(p)
+		dirs, name := split(rest, sep)
+		t := target{Base: vol, Name: name, OwnerFromParent: true, Kind: kindFor(dirs, name), Entry: p, Hidden: hidden}
+		if n := len(dirs); n > 0 {
+			t.Base = filepath.Join(append([]string{vol}, dirs[:n-1]...)...)
+			t.Dirs, t.MakeDir = []string{dirs[n-1]}, true
+		}
+		if l.allowed(t, dataDir, bad) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func (l layout) allowed(t target, dataDir string, bad func(path, msg string)) bool {
+	if dataDir != "" && under(t.path(), filepath.Clean(dataDir)) {
+		bad(t.path(), "inside the agent's data folder")
+		return false
+	}
+	return true
+}
+
+// split cuts a checked relative path into its folders and file name.
+func split(rest, sep string) ([]string, string) {
+	parts := strings.Split(rest, sep)
+	return parts[:len(parts)-1], parts[len(parts)-1]
+}
+
+// volume returns the root an absolute path starts at and the rest of the path.
+func (l layout) volume(p string) (string, string) {
+	if l.goos == api.DecoyOSWindows {
+		if l.root != "" {
+			return l.root, p[3:]
+		}
+		return p[:3], p[3:] // C:\
+	}
+	if l.root != "" {
+		return l.root, p[1:]
+	}
+	return "/", p[1:]
+}
+
+// homes lists the real users' home folders of this OS.
+func (l layout) homes() []home {
 	switch l.goos {
-	case "windows":
-		return l.windows()
-	case "linux":
-		return l.linux()
-	case "darwin":
-		return l.darwin()
+	case api.DecoyOSWindows:
+		return l.windowsHomes()
+	case api.DecoyOSLinux:
+		return l.linuxHomes()
+	case api.DecoyOSDarwin:
+		return l.darwinHomes()
 	}
 	return nil
 }
@@ -110,22 +202,18 @@ func profiles(dir string) []os.FileInfo {
 
 var windowsSkip = map[string]bool{"public": true, "default": true, "default user": true, "all users": true}
 
-func (l layout) windows() []target {
-	var users, pd string
+// windowsHomes: each profile under C:\Users with a registry hive, except Public and the
+// default profiles. Files inherit the folder's permissions, so there is no owner.
+func (l layout) windowsHomes() []home {
+	users := l.at("Users")
 	if l.root == "" {
 		drive := os.Getenv("SystemDrive")
 		if drive == "" {
 			drive = "C:"
 		}
 		users = drive + `\Users`
-		pd = os.Getenv("ProgramData")
-		if pd == "" {
-			pd = drive + `\ProgramData`
-		}
-	} else {
-		users, pd = l.at("Users"), l.at("ProgramData")
 	}
-	var out []target
+	var out []home
 	for _, fi := range profiles(users) {
 		name := fi.Name()
 		if windowsSkip[strings.ToLower(name)] {
@@ -135,92 +223,48 @@ func (l layout) windows() []target {
 		if hive, err := os.Lstat(filepath.Join(users, name, "NTUSER.DAT")); err != nil || !hive.Mode().IsRegular() {
 			continue
 		}
-		out = append(out,
-			target{Base: users, Dirs: []string{name, "Documents"}, Name: "Passwords.xlsx", User: name, Kind: kindSheet},
-			target{Base: users, Dirs: []string{name, "Desktop"}, Name: "backup-codes.txt", User: name, Kind: kindCodes},
-		)
-	}
-	if fi, err := os.Stat(pd); err == nil && fi.IsDir() {
-		out = append(out, target{Base: pd, Dirs: []string{"Backup"}, Name: "credentials.csv", MakeDir: true, Kind: kindCSV})
+		out = append(out, home{Base: users, Dir: name, Owner: owner{Name: name}})
 	}
 	return out
 }
 
-func (l layout) linux() []target {
-	var out []target
-	home := l.at("/", "home")
-	for _, fi := range profiles(home) {
+// linuxHomes: each folder under /home owned by an existing user other than root, and
+// /root (the agent runs as root, so files there are root's without a chown).
+func (l layout) linuxHomes() []home {
+	var out []home
+	base := l.at("/", "home")
+	for _, fi := range profiles(base) {
 		if fi.Name() == "lost+found" {
 			continue
 		}
-		o, ok := l.lookupOwner(filepath.Join(home, fi.Name()), fi)
+		o, ok := l.lookupOwner(filepath.Join(base, fi.Name()), fi)
 		if !ok || o.UID == 0 {
 			continue
 		}
-		out = append(out, linuxHome(home, fi.Name(), o, true)...)
+		out = append(out, home{Base: base, Dir: fi.Name(), Owner: o, Chown: true})
 	}
-	// /root: the agent runs as root, so these files are root's without a chown.
 	if fi, err := os.Lstat(l.at("/", "root")); err == nil && isRealDir(fi) {
-		out = append(out, linuxHome(l.at("/"), "root", owner{Name: "root"}, false)...)
-	}
-	if fi, err := os.Lstat(l.at("/", "var", "backups")); err == nil && isRealDir(fi) {
-		out = append(out, target{Base: l.at("/", "var"), Dirs: []string{"backups"}, Name: "db-credentials.sql", User: "root", Kind: kindSQL})
+		out = append(out, home{Base: l.at("/"), Dir: "root", Owner: owner{Name: "root"}})
 	}
 	return out
 }
 
-func linuxHome(base, dir string, o owner, chown bool) []target {
-	t := target{Base: base, User: o.Name, UID: o.UID, GID: o.GID, HasOwner: chown}
-	docs, aws := t, t
-	docs.Dirs, docs.Name, docs.Kind = []string{dir, "Documents"}, "passwords.txt", kindText
-	aws.Dirs, aws.Name, aws.Kind, aws.MakeDir = []string{dir, ".aws"}, "credentials.bak", kindAWS, true
-	return []target{docs, aws}
-}
-
-func (l layout) darwin() []target {
-	var out []target
-	users := l.at("/", "Users")
-	for _, fi := range profiles(users) {
+// darwinHomes: each folder under /Users except Shared and hidden folders.
+func (l layout) darwinHomes() []home {
+	var out []home
+	base := l.at("/", "Users")
+	for _, fi := range profiles(base) {
 		name := fi.Name()
 		if name == "Shared" || strings.HasPrefix(name, ".") {
 			continue
 		}
-		o, ok := l.lookupOwner(filepath.Join(users, name), fi)
-		t := target{Base: users, User: name}
-		if ok {
-			t.User, t.UID, t.GID, t.HasOwner = o.Name, o.UID, o.GID, o.UID != 0
+		h := home{Base: base, Dir: name, Owner: owner{Name: name}}
+		if o, ok := l.lookupOwner(filepath.Join(base, name), fi); ok {
+			h.Owner, h.Chown = o, o.UID != 0
 		}
-		docs, desk := t, t
-		docs.Dirs, docs.Name, docs.Kind = []string{name, "Documents"}, "Passwords.txt", kindText
-		desk.Dirs, desk.Name, desk.Kind = []string{name, "Desktop"}, "backup-codes.txt", kindCodes
-		out = append(out, docs, desk)
+		out = append(out, h)
 	}
 	return out
-}
-
-// extraTarget turns an admin-configured path into a target, or returns false when the
-// path is not usable (relative, a folder, inside the agent's data dir).
-func extraTarget(p, dataDir string) (target, bool) {
-	p = strings.TrimSpace(p)
-	if p == "" || !filepath.IsAbs(p) || strings.ContainsAny(p, "*?\x00") {
-		return target{}, false
-	}
-	p = filepath.Clean(p)
-	name := filepath.Base(p)
-	parent := filepath.Dir(p)
-	if name == "." || name == ".." || name == string(filepath.Separator) || parent == p {
-		return target{}, false
-	}
-	if dataDir != "" && under(p, filepath.Clean(dataDir)) {
-		return target{}, false
-	}
-	t := target{Name: name, OwnerFromParent: true, Kind: kindForName(name)}
-	if gp := filepath.Dir(parent); gp != parent {
-		t.Base, t.Dirs = gp, []string{filepath.Base(parent)}
-	} else {
-		t.Base = parent // the parent is the root of the volume
-	}
-	return t, true
 }
 
 func under(p, dir string) bool {
@@ -231,16 +275,17 @@ func under(p, dir string) bool {
 	return strings.HasPrefix(strings.ToLower(p), strings.ToLower(strings.TrimSuffix(dir, sep)+sep))
 }
 
-func kindForName(name string) string {
+// kindFor picks the fake content for a decoy from its name: spreadsheets and CSV files
+// get a password list, .sql a database dump, credentials* in an .aws folder an AWS
+// credentials file, names with "code" in them backup codes, anything else a password note.
+func kindFor(dirs []string, name string) string {
 	n := strings.ToLower(name)
 	switch {
+	case strings.HasSuffix(n, ".xlsx"), strings.HasSuffix(n, ".xls"), strings.HasSuffix(n, ".csv"):
+		return kindSheet
 	case strings.HasSuffix(n, ".sql"):
 		return kindSQL
-	case strings.HasSuffix(n, ".csv"):
-		return kindCSV
-	case strings.HasSuffix(n, ".xlsx"), strings.HasSuffix(n, ".xls"):
-		return kindSheet
-	case strings.Contains(n, "aws") || strings.HasPrefix(n, "credentials"):
+	case strings.HasPrefix(n, "credentials") && len(dirs) > 0 && strings.EqualFold(dirs[len(dirs)-1], ".aws"):
 		return kindAWS
 	case strings.Contains(n, "code"):
 		return kindCodes

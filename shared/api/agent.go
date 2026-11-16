@@ -141,6 +141,10 @@ type HeartbeatResponse struct {
 	// Update is set when the server offers a signed agent release with a different
 	// version (see release.go). Agents act on it only if their local config allows it.
 	Update *AgentUpdate `json:"update,omitempty"`
+	// DecoysEnabled is whether decoy files are on for this host: AgentConfig.Decoys.Enabled
+	// unless the host's group (or its parent group) overrides it. Sent with every
+	// heartbeat; an agent uses Config.Decoys.Enabled when it is missing (older servers).
+	DecoysEnabled *bool `json:"decoys_enabled,omitempty"`
 }
 
 // EventsResponse is the reply to POST /v1/events (body: gzip NDJSON of event.Event,
@@ -216,26 +220,6 @@ type FIMConfig struct {
 	MaxFileSize int64    `json:"max_file_size"` // files larger than this are not hashed
 }
 
-// DecoyConfig configures decoy (honeypot) files: plausible bait files the agent places
-// in user folders and watches. Anything that changes, deletes, renames or (on Linux)
-// opens one raises an event (event.module=decoy). See docs/decoys.md.
-type DecoyConfig struct {
-	Enabled bool `json:"enabled"`
-	// CheckIntervalSec is how often every decoy is checked (minimum 15, default 60).
-	CheckIntervalSec int `json:"check_interval_sec"`
-	// Extra lists additional absolute decoy file paths. Each is created only if its
-	// folder exists and the file does not.
-	Extra []string `json:"extra,omitempty"`
-}
-
-// Decoy check interval limits.
-const (
-	DecoyDefaultIntervalSec = 60
-	DecoyMinIntervalSec     = 15
-	DecoyMaxIntervalSec     = 24 * 3600
-	DecoyMaxExtra           = 32
-)
-
 // LogSource is a log file the agent tails and forwards.
 type LogSource struct {
 	Path    string `json:"path"`              // may contain globs
@@ -256,8 +240,8 @@ func DefaultAgentConfig() AgentConfig {
 	return AgentConfig{
 		// Raise Version whenever these defaults change, so agents running on the
 		// default (no config saved on the server) pick the change up. 2: OpenSSH channel.
-		// 3: decoy files.
-		Version:              3,
+		// 3: decoy files. 4: configurable decoy paths, no Desktop decoys.
+		Version:              4,
 		HeartbeatIntervalSec: 30,
 		InventoryIntervalSec: 6 * 3600,
 		Batch:                BatchConfig{MaxEvents: 500, FlushIntervalMs: 2000},
@@ -288,7 +272,7 @@ func DefaultAgentConfig() AgentConfig {
 			IntervalSec: 3600,
 			MaxFileSize: 64 << 20,
 		},
-		Decoys:        DecoyConfig{Enabled: true, CheckIntervalSec: DecoyDefaultIntervalSec},
+		Decoys:        DecoyConfig{Enabled: true, CheckIntervalSec: DecoyDefaultIntervalSec, Files: DefaultDecoyFiles()},
 		SpoolMaxBytes: 512 << 20,
 	}
 }

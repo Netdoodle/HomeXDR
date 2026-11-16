@@ -32,6 +32,9 @@ type Data struct {
 	ServerIPs     []string  `json:"server_ips,omitempty"`
 	SeenCommands  []string  `json:"seen_commands,omitempty"`
 	LastInventory time.Time `json:"last_inventory,omitzero"`
+	// DecoysEnabled is the server's last per-host decoy switch (host groups can override
+	// Config.Decoys.Enabled); nil when the server does not send one.
+	DecoysEnabled *bool `json:"decoys_enabled,omitempty"`
 }
 
 // Store is the state file with a mutex. Every mutation is written to disk before it
@@ -99,6 +102,34 @@ func (s *Store) SetIsolated(on bool, allow, serverIPs []string) error {
 		s.d.IsolationAllow, s.d.ServerIPs = nil, nil
 	}
 	return s.saveLocked()
+}
+
+// DecoysEnabled returns the server's last per-host decoy switch, nil if none.
+func (s *Store) DecoysEnabled() *bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.DecoysEnabled == nil {
+		return nil
+	}
+	v := *s.d.DecoysEnabled
+	return &v
+}
+
+// SetDecoysEnabled records the per-host decoy switch from a heartbeat. It reports whether
+// the value changed; an unchanged value is not written.
+func (s *Store) SetDecoysEnabled(v *bool) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.d.DecoysEnabled
+	if (old == nil) == (v == nil) && (v == nil || *old == *v) {
+		return false, nil
+	}
+	if v != nil {
+		b := *v
+		v = &b
+	}
+	s.d.DecoysEnabled = v
+	return true, s.saveLocked()
 }
 
 // LastInventory returns when inventory last ran.
@@ -173,8 +204,8 @@ func Sanitize(c api.AgentConfig) api.AgentConfig {
 		c.Decoys.CheckIntervalSec = def.Decoys.CheckIntervalSec
 	}
 	c.Decoys.CheckIntervalSec = clamp(c.Decoys.CheckIntervalSec, api.DecoyMinIntervalSec, api.DecoyMaxIntervalSec)
-	if len(c.Decoys.Extra) > api.DecoyMaxExtra {
-		c.Decoys.Extra = c.Decoys.Extra[:api.DecoyMaxExtra]
+	if len(c.Decoys.Files) > api.DecoyMaxFiles {
+		c.Decoys.Files = c.Decoys.Files[:api.DecoyMaxFiles]
 	}
 	if c.SpoolMaxBytes <= 0 {
 		c.SpoolMaxBytes = def.SpoolMaxBytes

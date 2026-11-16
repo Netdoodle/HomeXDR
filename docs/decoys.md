@@ -1,13 +1,14 @@
 # Decoy files
 
-Every HomeXDR agent places a few decoy files on its host: a password list in Documents,
-backup codes on the Desktop, a spare cloud credentials file. They look like the files people
-forget about, and nothing legitimate has a reason to touch them. Ransomware working through
-user folders and attackers looking for credentials go for exactly such files first, so a
-decoy that is changed, deleted, renamed or (on Linux) opened raises an alert.
+Every HomeXDR agent places a few decoy files on its host: a password list in Documents, a
+spare cloud credentials file, an old database dump. They look like the files people forget
+about, and nothing legitimate has a reason to touch them. Ransomware working through user
+folders and attackers looking for credentials go for exactly such files first, so a decoy
+that is changed, deleted, renamed or (on Linux) opened raises an alert.
 
-Decoys are on by default for every agent. They are switched off or tuned in
-**Settings → Agent config → Decoy files**.
+Decoys are on by default for every agent. Where they go, and the switch for all hosts, are
+in **Settings → Agent config → Decoy files**. A host group can turn them on or off for its
+hosts under **Settings → Groups** ([below](#turning-decoys-off)).
 
 ## The files are fake
 
@@ -20,32 +21,69 @@ site, a log, network traffic), the file came from that host.
 **The files are safe to delete.** Deleting one on a host that is still monitored raises the
 alert below once; the agent then puts it back.
 
-## What is created where
+## Choosing where decoys go
 
-A decoy is written only if its folder already exists and no file is at that path. The agent
-never overwrites, changes or removes a file it did not create, and the only folders it may
-create are `Backup` and `.aws` below.
+The decoy list in Settings → Agent config has one section per platform (Windows, Linux,
+macOS); each agent uses the entries for its own OS. Add a path with **+** under its
+platform, remove one with **×**, and **Restore defaults** puts the list below back. The
+defaults are:
 
-| OS | Per user | Shared |
-|---|---|---|
-| Windows | `C:\Users\<name>\Documents\Passwords.xlsx`, `C:\Users\<name>\Desktop\backup-codes.txt` | `C:\ProgramData\Backup\credentials.csv` (the `Backup` folder is created if missing) |
-| Linux | `~/Documents/passwords.txt`, `~/.aws/credentials.bak` (`.aws` is created with mode 0700 if missing) | `/var/backups/db-credentials.sql` (if `/var/backups` exists) |
-| macOS | `~/Documents/Passwords.txt`, `~/Desktop/backup-codes.txt` | |
+| OS | Path |
+|---|---|
+| Windows | `{home}\Documents\Passwords.xlsx`, `C:\ProgramData\Backup\credentials.csv` |
+| Linux | `{home}/Documents/passwords.txt`, `{home}/.aws/credentials.bak`, `/var/backups/db-credentials.sql` |
+| macOS | `{home}/Documents/Passwords.txt` |
 
-- **Windows users**: each real profile under `C:\Users`, one that has an `NTUSER.DAT`.
+A path is either absolute (`/srv/share/passwords.txt`, `D:\Shares\Finance\logins.csv`)
+or starts with **`{home}`**, which stands for each user's home folder: the agent places one
+decoy per user. The rules, checked by the console and again by the server:
+
+- `{home}` only at the start, followed by the platform's separator; otherwise a drive and
+  `\` (`C:\...`) on Windows, or `/` on Linux and macOS;
+- `\` as the separator on Windows and `/` on Linux and macOS, nothing else;
+- no wildcards (`*`, `?`), no `.` or `..` folders, no empty folder names, and a file name
+  at the end;
+- on Windows no `<`, `>`, `"`, `|`, and no colon after the drive letter (no alternate data
+  streams);
+- at most 260 characters per path, at most 64 paths in all, each listed once per platform.
+
+The content is chosen by the file name: `.xlsx`, `.xls` and `.csv` get a password list,
+`.sql` a database dump with user grants, `credentials...` in an `.aws` folder an AWS
+credentials file, a name with `code` in it backup codes, and anything else a password note.
+
+**Users.** `{home}` is expanded to:
+
+- **Windows**: each real profile under `C:\Users`, one that has an `NTUSER.DAT`.
   `Public`, `Default`, `Default User` and `All Users` are skipped. The files inherit the
   folder's permissions. `Passwords.xlsx` holds comma-separated text; it only has to look
   right in a folder listing.
-- **Linux users**: each folder under `/home` owned by an existing user other than root, and
+- **Linux**: each folder under `/home` owned by an existing user other than root, and
   `/root`. Files are owned by that user, mode 0600.
-- **macOS users**: each folder under `/Users` except `Shared` and hidden folders. Files are
+- **macOS**: each folder under `/Users` except `Shared` and hidden folders. Files are
   owned by that user.
 
-**Extra decoy paths** (absolute file paths, one per line, up to 32) add decoys anywhere else,
-for example on a file share. Each is created only if its folder exists and the file does not,
-and is owned by the folder's owner on Linux and macOS. An agent skips paths that are not
-absolute on its own OS, so one list can hold paths for Windows and Unix hosts. Removing a path
-from the list removes that decoy if nobody changed it.
+A decoy at an absolute path is owned by the owner of its folder on Linux and macOS. A path
+inside the agent's own data folder is refused.
+
+**Folders.** A decoy is written only if no file is at that path, and only if its folder
+exists, or the folder's parent exists: then the agent creates just that last folder (mode
+0700, owned by the user under a home folder, otherwise by the owner of the folder it is
+created in; on Windows it inherits the parent's permissions). It never creates more than
+one folder, and never a user's home folder itself. The agent never overwrites, changes or
+removes a file it did not create.
+
+**Hidden.** Each path has a **Hidden** option:
+
+| OS | What it does |
+|---|---|
+| Windows | Sets the hidden attribute (`FILE_ATTRIBUTE_HIDDEN`), as `attrib +h` does |
+| macOS | Sets the hidden flag (`UF_HIDDEN`), as `chflags hidden` does |
+| Linux | Nothing: Linux has no hidden attribute. Start the file name with a dot instead (`{home}/.passwords.txt`) |
+
+Turning the option on or off later adds or removes the attribute on decoys already in
+place, but only on unchanged ones, and only on the file the agent created (same volume and
+file ID or inode, reached without following links). The attribute is not part of what the
+checks compare, so the agent's own change raises no event.
 
 The agent never follows a symbolic link when it creates, checks or removes a decoy: on Linux
 and macOS it refuses a folder that is a link (a user could otherwise point their Documents
@@ -89,7 +127,7 @@ in a loop does not flood the server.
 Events have `event.module: decoy`, `event.dataset: decoy.event`, `event.category: file`,
 `event.type` `change`, `deletion`, `rename` or `access`, the label `decoy: true`,
 `file.path`, the user whose folder it is in (`user.name`) and a message such as
-"Decoy file was modified: C:\Users\bob\Desktop\backup-codes.txt". A rename carries the new
+"Decoy file was modified: C:\Users\bob\Documents\Passwords.xlsx". A rename carries the new
 name in `data.decoy.renamed_to`.
 
 Two built-in rules turn them into alerts (`rules/homexdr/decoy`):
@@ -107,16 +145,45 @@ hand. Once you have checked what it is, open the alert and choose **Suppress sim
 ## Status
 
 The host page lists the `decoy` sensor with how many decoys are in place, for example
-"3 decoy files". The agent keeps what it created in `decoys.json` in its data folder
+"3 decoy files", and how many decoys taken off the list were left in place because someone
+changed them ("3 decoy files; 1 decoy file no longer in the list was left in place because
+someone changed it"). The agent keeps what it created in `decoys.json` in its data folder
 (mode 0600): each decoy's path, size, modification time and SHA-256 when it was written, and
 the canary marker. After a restart it picks the same decoys up again, and reports anything
 that happened to them while it was stopped.
 
+## Changing the list
+
+When a path is removed from the list (or changed, which removes the old path and adds the
+new one), each agent removes the decoys it created there whose content is unchanged, and
+the folder it created for them if that is empty. A decoy someone changed is left in place,
+is no longer checked or reported, and is counted on the host page as above; delete it by
+hand if you want. If the path is added back, the agent checks that file again. A decoy
+whose folder is unavailable at the time (a home folder that is not mounted) is dealt with
+once the folder is back.
+
+### Desktop decoys
+
+Earlier versions also placed `backup-codes.txt` on each user's Desktop (Windows and macOS).
+The defaults no longer have them, and a saved agent config from before configurable paths
+gets the new defaults (plus its old "extra decoy paths", converted: a path with a drive
+letter becomes a Windows entry, any other a Linux and a macOS entry). So after the update
+every agent removes its Desktop decoys that nobody changed, and leaves changed ones in
+place as described above. Add `{home}\Desktop\backup-codes.txt` (Windows) or
+`{home}/Desktop/backup-codes.txt` (macOS) back to the list to keep them.
+
 ## Turning decoys off
 
-Switch **Decoy files** off in Settings → Agent config and save. Each agent then removes the
-decoys it created whose content is unchanged (and the `Backup` or `.aws` folder it created,
-if that is empty). A decoy someone changed is left in place, and the host page shows it as
-"1 decoy file left in place because someone changed them"; delete it by hand if you want.
+The **Decoy files** switch in Settings → Agent config is the Global value. A host group can
+override it under Settings → Groups (On, Off or Inherit; a child group inherits its parent
+group's choice unless it sets its own), see [groups.md](groups.md). The server works out
+each host's value from its group and sends it with every heartbeat reply
+(`decoys_enabled`), so a change reaches every agent within a heartbeat interval; the agent
+keeps the last value across restarts.
+
+When decoys are off for a host, its agent removes the decoys it created whose content is
+unchanged (and the folders it created for them, if they are empty). A decoy someone changed
+is left in place, and the host page shows it as "1 decoy file left in place because someone
+changed them"; delete it by hand if you want. Switching back on places the decoys again.
 
 Uninstalling the agent does not remove decoys. They are plain files and safe to delete.

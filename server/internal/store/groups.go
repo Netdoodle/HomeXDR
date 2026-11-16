@@ -38,6 +38,14 @@ type GroupPolicy struct {
 	AI AIGroupPolicy `json:"ai"`
 	// Firewall: whether host firewall block policies apply to the group's hosts.
 	Firewall FirewallGroupPolicy `json:"firewall"`
+	// Decoys: whether the group's hosts place decoy files (docs/decoys.md).
+	Decoys DecoysGroupPolicy `json:"decoys"`
+}
+
+// DecoysGroupPolicy switches decoy files for a group. Global is the agent config's
+// Decoys.Enabled.
+type DecoysGroupPolicy struct {
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // FirewallGroupPolicy switches host firewall control for a group (firewall.go).

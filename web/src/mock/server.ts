@@ -40,7 +40,12 @@ import {
   validateQuery,
 } from "../lib/query";
 import { hasRole } from "../lib/roles";
-import { isAbsDecoyPath } from "../lib/agentConfig";
+import {
+  DECOY_MAX_FILES,
+  decoyDefaultFiles,
+  decoyOSLabel,
+  decoyRowProblems,
+} from "../lib/agentConfig";
 import { OPEN_ALERT_STATUSES } from "../lib/severity";
 import { events, eventById, processes, type MockProcess } from "./events";
 import {
@@ -2675,9 +2680,22 @@ route(
         check_interval_sec:
           typeof iv === "number" && iv > 0 ? Math.max(15, iv) : 60,
       };
-      for (const p of b.decoys.extra ?? [])
-        if (!isAbsDecoyPath(p))
-          fail(400, `extra decoy path "${p}" must be an absolute file path`);
+      // The server's rules (api.ValidateDecoyFiles); a missing list is the defaults.
+      const files = (b.decoys.files ?? decoyDefaultFiles()).map((f) => ({
+        ...f,
+        path: f.path.trim(),
+        hidden: !!f.hidden,
+      }));
+      if (files.length > DECOY_MAX_FILES)
+        fail(400, `at most ${DECOY_MAX_FILES} decoy files`);
+      decoyRowProblems(files).forEach((msg, i) => {
+        if (msg)
+          fail(
+            400,
+            `decoy file "${files[i].path}" (${decoyOSLabel(files[i].os)}): ${msg}`,
+          );
+      });
+      b.decoys.files = files;
     } else b.decoys = agentConfig.decoys;
     Object.assign(agentConfig, b, { version: agentConfig.version + 1 });
     logAudit(user, "agent_config.update", "default", {

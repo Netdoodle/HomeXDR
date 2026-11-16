@@ -3,9 +3,12 @@
 // folders; nothing legitimate has a reason to open, change, rename or delete them, while
 // ransomware and attackers looking for credentials go for exactly such files first.
 //
-// Decoys are created only where the folder exists and no file is in the way, and the
-// agent never changes or removes a file it did not create (the state file in the data dir
-// lists what it created, with the SHA-256 of each). Every check interval each decoy is
+// Where decoys go is configured per OS (api.DecoyConfig.Files): absolute paths, and paths
+// starting with {home} that are expanded to every real user's home folder. Decoys are
+// created only where the folder exists (or its parent does: then just the last folder is
+// created) and no file is in the way, and the agent never changes or removes a file it
+// did not create (the state file in the data dir lists what it created, with the SHA-256
+// of each). Every check interval each decoy is
 // stat'ed, and hashed when its size or modification time changed; on Linux inotify also
 // reports opens, reads and changes as they happen. Events use event.module=decoy.
 package decoy
@@ -53,19 +56,35 @@ func IsDecoy(p string) bool {
 
 // record is one decoy the agent created.
 type record struct {
-	Path       string    `json:"path"`
-	Base       string    `json:"base"`
-	Dirs       []string  `json:"dirs,omitempty"`
-	Name       string    `json:"name"`
-	MakeDir    bool      `json:"make_dir,omitempty"`
-	CreatedDir bool      `json:"created_dir,omitempty"` // the agent created the folder too
-	Extra      bool      `json:"extra,omitempty"`       // from DecoyConfig.Extra
-	User       string    `json:"user,omitempty"`
-	UID        int       `json:"uid,omitempty"`
-	GID        int       `json:"gid,omitempty"`
-	HasOwner   bool      `json:"has_owner,omitempty"`
-	Kind       string    `json:"kind"`
-	Created    time.Time `json:"created"`
+	Path       string   `json:"path"`
+	Base       string   `json:"base"`
+	Dirs       []string `json:"dirs,omitempty"`
+	Name       string   `json:"name"`
+	MakeDir    bool     `json:"make_dir,omitempty"`
+	CreatedDir bool     `json:"created_dir,omitempty"` // the agent created the folder too
+	// Extra: the file takes its folder's owner. Set for absolute paths from the config
+	// (the name dates from when those were "extra decoy paths").
+	Extra bool `json:"extra,omitempty"`
+	// Entry is the configured path the decoy comes from ({home}\Documents\Passwords.xlsx),
+	// and Home whether it was expanded from {home}. Both are empty for decoys created
+	// before decoy paths were configurable (see entryKey).
+	Entry string `json:"entry,omitempty"`
+	Home  bool   `json:"home,omitempty"`
+	// Hidden: the agent set the hidden attribute (Windows) or flag (macOS).
+	Hidden bool `json:"hidden,omitempty"`
+	// Retired: no longer configured, and left in place because someone changed it (or its
+	// folder is unavailable, see Unavailable). It is not checked; it is removed if it
+	// turns out unchanged, forgotten once it is gone, and checked again if its entry is
+	// configured again. Kept: when it was left, the file looked like CurSize and CurMTime
+	// and its content was not what the agent wrote.
+	Retired  bool      `json:"retired,omitempty"`
+	Kept     bool      `json:"kept,omitempty"`
+	User     string    `json:"user,omitempty"`
+	UID      int       `json:"uid,omitempty"`
+	GID      int       `json:"gid,omitempty"`
+	HasOwner bool      `json:"has_owner,omitempty"`
+	Kind     string    `json:"kind"`
+	Created  time.Time `json:"created"`
 	// At creation.
 	Size   int64  `json:"size"`
 	MTime  int64  `json:"mtime"`
@@ -85,16 +104,42 @@ type record struct {
 
 	// pendingChange: a real-time event already reported a change the next check will see.
 	pendingChange bool
+	// wantHidden is the entry's Hidden option, set every check.
+	wantHidden bool
 }
 
 func (r *record) target() target {
 	return target{
 		Base: r.Base, Dirs: r.Dirs, Name: r.Name, MakeDir: r.MakeDir, User: r.User,
 		UID: r.UID, GID: r.GID, HasOwner: r.HasOwner, OwnerFromParent: r.Extra, Kind: r.Kind,
+		Entry: r.Entry, Home: r.Home, Hidden: r.wantHidden,
 	}
 }
 
-func (r *record) present() bool { return !r.Missing && !r.Unavailable && r.CurType == "" }
+func (r *record) present() bool {
+	return !r.Retired && !r.Missing && !r.Unavailable && r.CurType == ""
+}
+
+// legacyHome reports whether a decoy created before decoy paths were configurable was in
+// a user's folder: those had a user folder and at least one folder below it, while the
+// shared ones (ProgramData\Backup, /var/backups) and extra paths had one folder.
+func (r *record) legacyHome() bool { return r.Entry == "" && !r.Extra && len(r.Dirs) >= 2 }
+
+func (r *record) isHome() bool { return r.Home || r.legacyHome() }
+
+// entryKey is the configured {home} path a home decoy comes from.
+func (r *record) entryKey(goos string) string {
+	if r.Entry != "" || !r.legacyHome() {
+		return r.Entry
+	}
+	sep := api.DecoySeparator(goos)
+	return api.DecoyHome + sep + strings.Join(append(slices.Clone(r.Dirs[1:]), r.Name), sep)
+}
+
+// unchanged reports whether the decoy is as the agent wrote it, by the last check.
+func (r *record) unchanged() bool {
+	return r.present() && r.CurSHA256 == r.SHA256 && r.CurSize == r.Size && r.CurMTime == r.MTime
+}
 
 type stateFile struct {
 	// Canary is this host's marker, written into every decoy.
@@ -168,13 +213,22 @@ func (s *Sensor) Status() api.SensorStatus {
 		}
 		return st
 	}
-	n := 0
+	n, kept := 0, 0
 	for _, r := range s.st.Decoys {
-		if r.present() {
+		switch {
+		case r.present():
 			n++
+		case r.Retired && !r.Unavailable:
+			kept++
 		}
 	}
 	st.Message = plural(n)
+	switch {
+	case kept == 1:
+		st.Message += "; 1 decoy file no longer in the list was left in place because someone changed it"
+	case kept > 1:
+		st.Message += fmt.Sprintf("; %d decoy files no longer in the list were left in place because someone changed them", kept)
+	}
 	if s.watchErr != "" {
 		st.State, st.Error = api.SensorDegraded, s.watchErr
 	}
@@ -266,7 +320,8 @@ func (s *Sensor) save() {
 	s.dirty = false
 }
 
-// checkOnce checks every known decoy, then places decoys where they are missing.
+// checkOnce checks every known decoy, retires the ones no longer configured, then places
+// decoys where they are missing.
 func (s *Sensor) checkOnce() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -276,42 +331,137 @@ func (s *Sensor) checkOnce() {
 			delete(s.lastEmit, k)
 		}
 	}
-	extras := map[string]target{}
-	for _, x := range s.cfg.Extra {
-		if t, ok := extraTarget(x, s.dataDir); ok {
-			extras[t.path()] = t
-		} else {
-			s.note(x, "not an absolute file path outside the agent's data folder")
+	goos := s.layout.goos
+	targets := s.layout.targets(s.cfg.Files, s.dataDir, s.note)
+	byPath := make(map[string]target, len(targets))
+	for _, t := range targets {
+		if _, dup := byPath[t.path()]; !dup {
+			byPath[t.path()] = t
+		}
+	}
+	// The {home} entries for this OS, with their Hidden option: a home decoy stays wanted
+	// while its entry is configured, even when its user is not listed right now (profile
+	// removed, home folder not mounted).
+	homeEntries := map[string]bool{}
+	for _, f := range s.cfg.Files {
+		if p := strings.TrimSpace(f.Path); f.OS == goos && strings.HasPrefix(p, api.DecoyHome) {
+			homeEntries[p] = f.Hidden && goos != api.DecoyOSLinux
 		}
 	}
 	keep := s.st.Decoys[:0]
 	for _, r := range s.st.Decoys {
-		if _, ok := extras[r.Path]; r.Extra && !ok {
-			s.retire(r) // no longer configured
+		t, ok := byPath[r.Path]
+		if !ok && r.isHome() {
+			if hidden, configured := homeEntries[r.entryKey(goos)]; configured {
+				t, ok = target{Entry: r.entryKey(goos), Home: true, Hidden: hidden}, true
+			}
+		}
+		if !ok {
+			if !s.retire(r) {
+				keep = append(keep, r)
+			}
 			continue
 		}
+		if r.Retired {
+			r.Retired, r.Kept, r.Unavailable = false, false, false
+			tracked.Store(r.Path, true)
+			s.log.Info("decoy is configured again", "path", r.Path)
+		}
+		if r.Entry != t.Entry || r.Home != t.Home {
+			r.Entry, r.Home = t.Entry, t.Home
+			s.dirty = true
+		}
+		r.wantHidden = t.Hidden
 		s.checkRecord(r)
+		s.syncHidden(r)
 		keep = append(keep, r)
 	}
 	s.st.Decoys = keep
-	targets := s.layout.targets()
-	for _, t := range extras {
-		targets = append(targets, t)
-	}
 	s.place(targets)
 }
 
-// retire stops tracking a decoy, removing it when nobody changed it (s.mu held).
-func (s *Sensor) retire(r *record) {
+// retire handles a decoy that is no longer configured (s.mu held): it removes the file
+// when nobody changed it; otherwise the file stays where it is and the record is kept,
+// marked Retired, so the status can say so. It reports whether the record can go.
+func (s *Sensor) retire(r *record) bool {
+	if !r.Retired {
+		s.unwatch(r)
+		tracked.Delete(r.Path)
+		r.Retired, r.Kept, r.pendingChange = true, false, false
+		s.dirty = true
+	}
+	t := r.target()
+	fs, err := statPath(r.Path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		if folderOK(t, t.need()) != nil {
+			if !r.Unavailable {
+				r.Unavailable = true // decided once the folder is back
+				s.dirty = true
+			}
+			return false
+		}
+		s.forget(r)
+		return true
+	case err != nil:
+		return false
+	case fs.Type != "file":
+		s.forget(r) // something else is there now: not the agent's file
+		return true
+	}
+	if r.Unavailable {
+		r.Unavailable = false
+		s.dirty = true
+	}
+	if r.Kept && fs.Size == r.CurSize && fs.MTime == r.CurMTime {
+		return false // changed, and not touched since it was left
+	}
+	if fs.Size == r.Size {
+		removed, sum, rerr := removeFile(t, r.SHA256, r.CreatedDir)
+		switch {
+		case removed:
+			s.log.Info("decoy no longer configured: removed", "path", r.Path)
+			s.forget(r)
+			return true
+		case rerr != nil || sum == "":
+			if rerr != nil {
+				s.note(r.Path, "remove: "+rerr.Error())
+			}
+			return false // try again at the next check
+		}
+	}
+	r.CurType, r.CurSize, r.CurMTime, r.Kept = "", fs.Size, fs.MTime, true
+	s.dirty = true
+	s.log.Info("decoy no longer configured: left in place because it was changed", "path", r.Path)
+	return false
+}
+
+// forget drops a decoy from the state (s.mu held); the caller removes it from the list.
+func (s *Sensor) forget(r *record) {
 	s.unwatch(r)
 	delete(s.byPath, r.Path)
+	delete(s.noted, r.Path)
 	tracked.Delete(r.Path)
 	s.dirty = true
-	if removed, _ := removeFile(r.target(), r.SHA256, r.CreatedDir); removed {
-		s.log.Info("decoy removed", "path", r.Path)
-	} else if _, err := statPath(r.Path); err == nil {
-		s.log.Info("decoy no longer configured; left in place because it was changed", "path", r.Path)
+}
+
+// syncHidden applies the entry's Hidden option to a decoy nobody changed (s.mu held); a
+// decoy someone changed is left exactly as it is. The attribute is not part of what the
+// checks compare (size, modification time, content), so setting it raises no event.
+func (s *Sensor) syncHidden(r *record) {
+	if !hiddenSupported || r.Hidden == r.wantHidden || !r.unchanged() {
+		return
 	}
+	s.unwatch(r)
+	err := setHidden(r.target(), r.Dev, r.Inode, r.wantHidden)
+	s.watch(r)
+	if err != nil {
+		s.note(r.Path, "set the hidden attribute: "+err.Error())
+		return
+	}
+	r.Hidden = r.wantHidden
+	s.dirty = true
+	s.log.Info("decoy hidden attribute changed", "path", r.Path, "hidden", r.Hidden)
 }
 
 func (s *Sensor) note(path, msg string) {
@@ -347,7 +497,8 @@ func (s *Sensor) place(targets []target) {
 			continue
 		}
 		r := &record{Path: p, Base: t.Base, Dirs: slices.Clone(t.Dirs), Name: t.Name, MakeDir: t.MakeDir,
-			Extra: t.OwnerFromParent, User: t.User, UID: t.UID, GID: t.GID, HasOwner: t.HasOwner, Kind: t.Kind}
+			Extra: t.OwnerFromParent, Entry: t.Entry, Home: t.Home, User: t.User, UID: t.UID, GID: t.GID,
+			HasOwner: t.HasOwner, Kind: t.Kind, wantHidden: t.Hidden}
 		s.adopt(r, c, data)
 		s.st.Decoys = append(s.st.Decoys, r)
 		s.byPath[p] = r
@@ -366,6 +517,7 @@ func (s *Sensor) adopt(r *record, c created, data []byte) {
 	r.CurType, r.CurSize, r.CurMTime, r.CurSHA256 = "", int64(len(data)), c.st.MTime, sum
 	r.Dev, r.Inode = c.st.Dev, c.st.Inode
 	r.CreatedDir = r.CreatedDir || c.createdDir
+	r.Hidden, r.Kept = c.hidden, false
 	if c.hasOwner {
 		r.UID, r.GID, r.HasOwner = c.uid, c.gid, true
 		if r.User == "" {
@@ -633,7 +785,7 @@ func (s *Sensor) cleanup() {
 			continue
 		}
 		if err == nil && fs.Type == "file" {
-			removed, rerr := removeFile(t, r.SHA256, r.CreatedDir)
+			removed, sum, rerr := removeFile(t, r.SHA256, r.CreatedDir)
 			if removed {
 				tracked.Delete(r.Path)
 				s.log.Info("decoys off: decoy removed", "path", r.Path)
@@ -646,9 +798,7 @@ func (s *Sensor) cleanup() {
 			}
 			// Changed by someone else: note what it is now, so turning decoys back on
 			// does not report the same change again.
-			if sum, _, herr := hashPath(r.Path); herr == nil {
-				r.CurType, r.CurSize, r.CurMTime, r.CurSHA256 = "", fs.Size, fs.MTime, sum
-			}
+			r.CurType, r.CurSize, r.CurMTime, r.CurSHA256 = "", fs.Size, fs.MTime, sum
 		}
 		s.log.Info("decoys off: decoy left in place because it was changed", "path", r.Path)
 		keep = append(keep, r)

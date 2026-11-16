@@ -8,9 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+// hiddenSupported: Windows has FILE_ATTRIBUTE_HIDDEN.
+const hiddenSupported = true
 
 // checkChain checks that base is a folder and that each of the first n of t.Dirs is a
 // real folder, not a symbolic link or junction (which a user can create in their own
@@ -80,6 +84,10 @@ func createFile(t target, data []byte, mtime time.Time) (created, error) {
 	}
 	ft := windows.NsecToFiletime(mtime.UnixNano())
 	_ = windows.SetFileTime(windows.Handle(f.Fd()), nil, &ft, &ft)
+	if t.Hidden {
+		// Best effort: the next check tries again.
+		c.hidden = setHiddenHandle(windows.Handle(f.Fd()), true) == nil
+	}
 	if err := f.Close(); err != nil {
 		os.Remove(p)
 		return c, err
@@ -135,21 +143,86 @@ func hashPath(p string) (string, int64, error) {
 	return hashOpen(f)
 }
 
-func removeFile(t target, want string, createdDir bool) (bool, error) {
+// removeFile deletes a decoy if its content still hashes to want, and returns the hash
+// it found. It also removes a folder the agent created for it, when that folder is empty.
+func removeFile(t target, want string, createdDir bool) (bool, string, error) {
 	dir, _, err := checkChain(t, len(t.Dirs), false)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	p := filepath.Join(dir, t.Name)
 	sum, _, err := hashPath(p)
 	if err != nil || sum != want {
-		return false, err
+		return false, sum, err
 	}
 	if err := os.Remove(p); err != nil {
-		return false, err
+		return false, sum, err
 	}
 	if createdDir {
 		_ = os.Remove(dir) // fails if not empty
 	}
-	return true, nil
+	return true, sum, nil
+}
+
+// fileBasicInfo is FILE_BASIC_INFO. Zero times leave the file's times as they are.
+type fileBasicInfo struct {
+	CreationTime, LastAccessTime, LastWriteTime, ChangeTime int64
+	FileAttributes                                          uint32
+	_                                                       uint32
+}
+
+// setHiddenHandle sets or clears FILE_ATTRIBUTE_HIDDEN on an open file. Attributes are
+// not content: the size and last write time the checks compare stay as they are.
+func setHiddenHandle(h windows.Handle, hidden bool) error {
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
+		return err
+	}
+	attrs := info.FileAttributes &^ windows.FILE_ATTRIBUTE_HIDDEN
+	if hidden {
+		attrs |= windows.FILE_ATTRIBUTE_HIDDEN
+	}
+	if attrs == info.FileAttributes {
+		return nil
+	}
+	if attrs == 0 {
+		attrs = windows.FILE_ATTRIBUTE_NORMAL // 0 would mean "leave unchanged"
+	}
+	bi := fileBasicInfo{FileAttributes: attrs}
+	return windows.SetFileInformationByHandle(h, windows.FileBasicInfo, (*byte)(unsafe.Pointer(&bi)), uint32(unsafe.Sizeof(bi)))
+}
+
+// setHidden sets or clears the hidden attribute of a decoy, but only on the file the
+// agent created: the one with the recorded volume and file ID, opened without following
+// a link or junction at its path.
+func setHidden(t target, dev, ino uint64, hidden bool) error {
+	dir, _, err := checkChain(t, len(t.Dirs), false)
+	if err != nil {
+		return err
+	}
+	h, err := openNoFollow(filepath.Join(dir, t.Name), windows.FILE_READ_ATTRIBUTES|windows.FILE_WRITE_ATTRIBUTES)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(h)
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
+		return err
+	}
+	id := uint64(info.FileIndexHigh)<<32 | uint64(info.FileIndexLow)
+	if info.FileAttributes&(windows.FILE_ATTRIBUTE_DIRECTORY|windows.FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
+		uint64(info.VolumeSerialNumber) != dev || id != ino {
+		return errNotOurs
+	}
+	return setHiddenHandle(h, hidden)
+}
+
+// isHidden reports whether the file at p has the hidden attribute (tests).
+func isHidden(p string) (bool, error) {
+	name, err := windows.UTF16PtrFromString(p)
+	if err != nil {
+		return false, err
+	}
+	a, err := windows.GetFileAttributes(name)
+	return a&windows.FILE_ATTRIBUTE_HIDDEN != 0, err
 }
