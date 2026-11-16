@@ -1,0 +1,63 @@
+title: Failed Login From An Address
+id: 5833cd30-67cd-4c3a-a84a-e70f11aa53ac
+name: homexdr_login_failed_from_address
+status: experimental
+description: |
+  A failed SSH login (from the agent's auth log or from syslog) or a failed Windows logon
+  that names the address it came from. On its own this is everyday noise, so it raises no
+  alert: it feeds the correlation rule below, which counts failures per address.
+author: HomeXDR
+date: 2026-11-16
+references:
+  - https://attack.mitre.org/techniques/T1110/
+tags:
+  - attack.credential-access
+  - attack.t1110
+logsource:
+  category: authentication
+detection:
+  selection:
+    event.action:
+      - 'ssh_login'
+      - 'ssh_invalid_user'
+      - 'ssh-login-failed'
+      - 'logon_failed'
+    event.outcome: 'failure'
+  source:
+    source.ip|exists: true
+  condition: selection and source
+falsepositives:
+  - Mistyped passwords
+level: low
+---
+title: Many Failed Logins From One Address
+id: 120a93f9-201d-4db8-bdbe-e1a408d61beb
+status: experimental
+description: |
+  One address failed to log in at least 20 times within 5 minutes, over SSH or to Windows:
+  someone guessing passwords or account names. From a device at home it can mean an infected
+  machine spreading, or a script or backup job with a stale password. Each attempt for a
+  user that does not exist is logged twice by sshd, so 20 failures can be about 10 tries.
+author: HomeXDR
+date: 2026-11-16
+references:
+  - https://attack.mitre.org/techniques/T1110/
+  - https://attack.mitre.org/techniques/T1110/003/
+tags:
+  - attack.credential-access
+  - attack.t1110
+  - attack.t1110.001
+  - attack.t1110.003
+correlation:
+  type: event_count
+  rules:
+    - homexdr_login_failed_from_address
+  group-by:
+    - source.ip
+  timespan: 5m
+  condition:
+    gte: 20
+falsepositives:
+  - A script, mount or backup job retrying with an old password
+  - SSH open to the internet, where password guessing never stops
+level: medium

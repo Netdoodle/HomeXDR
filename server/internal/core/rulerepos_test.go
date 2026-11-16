@@ -359,7 +359,7 @@ func TestRuleRepoCatalogSkipsAndBulkEnable(t *testing.T) {
 	for _, s := range skipped {
 		reasons[s.Error] = true
 	}
-	if len(skipped) != 3 || !reasons["Many logons: correlation rules are not supported"] || !reasons["same id as a rule in the rules folder"] {
+	if len(skipped) != 3 || !reasons["Many logons: correlation: timespan is missing"] || !reasons["same id as a rule in the rules folder"] {
 		t.Fatalf("skipped = %+v", skipped)
 	}
 

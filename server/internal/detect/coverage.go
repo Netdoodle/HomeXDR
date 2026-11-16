@@ -62,6 +62,9 @@ func (c *Coverage) union(r *Rule) *Doc {
 
 // Check reports whether the sampled events could make a rule fire.
 func (c *Coverage) Check(r *Rule) RuleCoverage {
+	if r.cond == nil {
+		return RuleCoverage{} // a correlation rule: its base rules are checked on their own
+	}
 	u := c.union(r)
 	if u.Event == nil {
 		return RuleCoverage{}

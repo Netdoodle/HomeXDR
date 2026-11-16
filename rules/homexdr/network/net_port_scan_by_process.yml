@@ -1,0 +1,55 @@
+title: Outbound Connection By A Process
+id: bba4c407-37c0-4197-8ad0-fd4c7c10fab8
+name: homexdr_outbound_connection_by_process
+status: experimental
+description: |
+  An agent saw a process open (or try to open) an outbound connection. On its own this is
+  normal and raises no alert: it feeds the port-scan correlation rule below. Firewall logs
+  are left out because they name no process.
+author: HomeXDR
+date: 2026-11-16
+tags:
+  - attack.discovery
+logsource:
+  category: network_connection
+detection:
+  selection:
+    Initiated: 'true'
+  process:
+    process.executable|exists: true
+  condition: selection and process
+falsepositives:
+  - Every outbound connection; this rule only feeds a correlation
+level: low
+---
+title: Process Connected To Many Ports On One Address
+id: 3a32324f-8693-41de-991d-d3fce4c5ff43
+status: experimental
+description: |
+  One process tried at least 25 different ports on the same address within a minute: a
+  port scan (nmap, masscan, a scanning script, or malware looking for services to spread
+  to). Grouping by destination keeps browsers and peer-to-peer clients, which talk to many
+  addresses on a few ports each, from setting it off.
+author: HomeXDR
+date: 2026-11-16
+references:
+  - https://attack.mitre.org/techniques/T1046/
+tags:
+  - attack.discovery
+  - attack.t1046
+correlation:
+  type: value_count
+  rules:
+    - homexdr_outbound_connection_by_process
+  group-by:
+    - host.id
+    - process.executable
+    - destination.ip
+  timespan: 1m
+  condition:
+    gte: 25
+    field: destination.port
+falsepositives:
+  - Network inventory or monitoring tools run on purpose
+  - A local development tool probing a range of ports
+level: medium

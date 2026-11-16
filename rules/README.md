@@ -14,7 +14,8 @@ HomeXDR loads [Sigma](https://sigmahq.io/) rules from three places:
 Unraid hosts, SSH, DNS lookups from a resolver's query log, OPNsense (audit and firewall logs), macOS security events,
 and attempts to switch HomeXDR's own monitoring off. They load with the server and are tested
 in `server/internal/detect/homexdr_rules_test.go`, `homexdr_rules2_test.go`, `homexdr_rules3_test.go`,
-`homexdr_rules_macos_test.go` and `homexdr_rules_defender_test.go`.
+`homexdr_rules_macos_test.go`, `homexdr_rules_defender_test.go` and (the correlation rules)
+`correlation_test.go`.
 They are also published at [Netdoodle/HomeXDR-SIGMA-rules](https://github.com/Netdoodle/HomeXDR-SIGMA-rules).
 
 The OPNsense rules need its audit log: **System → Settings → Logging → Remote**, add `audit`
@@ -64,6 +65,12 @@ to the destination's Applications.
 | Gatekeeper Overridden On macOS | medium | the user opening a file Gatekeeper blocked (macOS 15+) |
 | User Added To The Admin Group On macOS | high | an account added to `admin` (macOS 14+) |
 | HomeXDR Agent Stopped Or Removed On macOS | high | `launchctl bootout`/`unload`/`disable`, `pkill` or `uninstall` of the agent |
+| Many Failed Logins From One Address | medium | correlation: 20 or more failed SSH logins or Windows logons from one address within 5 minutes |
+| Process Connected To Many Ports On One Address | medium | correlation: one process trying 25 or more ports on one address within a minute (a port scan) |
+
+The two correlation rules count events of a base rule in the same file: **Failed Login From
+An Address** and **Outbound Connection By A Process**. Those base rules raise no alerts of
+their own (see [Threshold and correlation rules](#threshold-and-correlation-rules)).
 
 The Docker rules match what Unraid's Docker manager runs when it updates a privileged
 container; those commands carry `labels.maintenance: docker-update`, which Settings ->
@@ -115,8 +122,9 @@ hand, the choice is kept through updates, and rules that appear later still star
 the repository.
 
 Every enabled rule runs on every event, so load the platforms you collect rather than the
-whole repository. Rules that use features the engine does not support yet (aggregations,
-correlations, `|expand`) are skipped and listed on the **Rules** page with the
+whole repository. Rules that use features the engine does not support yet (`|expand`,
+aggregations other than `count()`, "fewer than" thresholds; see
+[below](#threshold-and-correlation-rules)) are skipped and listed on the **Rules** page with the
 reason. In a file that holds several rules, each is loaded or skipped on its own. SigmaHQ rules are published under the Detection Rule License (DRL) 1.1, which
 requires attribution; HomeXDR shows each rule's author and links to its file upstream.
 
@@ -147,3 +155,129 @@ not in the mapping table fall back to Windows EventData names (`data.<Name>`) an
 HomeXDR's own dotted field paths (`process.parent.name`, `destination.port`, ...).
 
 Test a rule against stored events before saving it with **Rules → New rule → Test**.
+
+## Threshold and correlation rules
+
+Some things only show as a pattern: ten failed logins in a minute, one process touching fifty
+ports. HomeXDR runs two kinds of rules for these. Both keep counting windows in the server's
+memory and raise one alert when the condition is met.
+
+### Sigma correlation rules
+
+A [Sigma correlation rule](https://github.com/SigmaHQ/sigma-specification) has a
+`correlation` block instead of `detection`, and refers to ordinary rules (its base rules) by
+`id` or by `name`:
+
+```yaml
+title: Failed SSH login
+id: 5e0f5a3c-0000-4000-8000-000000000001
+name: ssh_failed_login
+logsource: {category: authentication}
+detection:
+  selection:
+    event.action: ssh_login
+    event.outcome: failure
+  condition: selection
+level: low
+---
+title: SSH brute force from one address
+id: 5e0f5a3c-0000-4000-8000-000000000002
+correlation:
+  type: event_count
+  rules:
+    - ssh_failed_login
+  group-by:
+    - source.ip
+  timespan: 1m
+  condition:
+    gte: 10
+level: high
+```
+
+| Key | |
+|---|---|
+| `type` | `event_count` (how many events matched), `value_count` (how many distinct values of `condition.field` they had), `temporal` (all the rules matched, in any order), `temporal_ordered` (all matched, in the order listed). |
+| `rules` | Base rules by `id` or `name`. A rule in the same file wins over one elsewhere with the same name; otherwise any loaded rule counts: the rules folder, custom rules and rule repositories. |
+| `group-by` | Event fields to count separately by, such as `source.ip` or `host.id`. A missing field counts as empty. `aliases` maps a group-by name to a different field per base rule. |
+| `timespan` | The window: a whole number of seconds, minutes, hours or days (`30s`, `5m`, `1h`, `1d`), up to 90 days. |
+| `condition` | `gt`, `gte` or `eq` and a number, plus `field` for `value_count`. Optional for `temporal` (default: every rule); not allowed for `temporal_ordered`. |
+| `generate` | `true` lets the base rules raise their own alerts as well. |
+
+A scan detector with `value_count`:
+
+```yaml
+correlation:
+  type: value_count
+  rules: [outbound_connection]
+  group-by: [host.id, process.executable, destination.ip]
+  timespan: 1m
+  condition:
+    gte: 25
+    field: destination.port
+```
+
+And a sequence with `temporal_ordered` (a failed login, then a successful one, from one
+address within 10 minutes):
+
+```yaml
+correlation:
+  type: temporal_ordered
+  rules: [ssh_failed_login, ssh_successful_login]
+  group-by: [source.ip]
+  timespan: 10m
+```
+
+### The `count()` aggregation
+
+Older Sigma rules put a count in the condition, with `timeframe`. The rule is then its own
+base rule: the part before `|` selects events, and only the threshold raises an alert.
+
+```yaml
+detection:
+  selection:
+    event.action: ssh_login
+    event.outcome: failure
+  timeframe: 1m
+  condition: selection | count() by SourceIp > 10
+```
+
+`count()` counts events; `count(User)` counts distinct values of a field (like
+`value_count`). `by` takes one field or a comma-separated list, and the operator is `>`, `>=`
+or `=`.
+
+### How they behave
+
+- **Base rules stay quiet.** A rule that a loaded correlation rule refers to raises no alert of
+  its own unless that correlation sets `generate: true`, as Sigma specifies. A correlation
+  rule runs whether or not its base rules are enabled; disable the correlation rule to stop it.
+- **Event time.** Windows follow the events' own timestamps, not the server's clock, so events
+  that arrive a little out of order (a batch from an agent that was offline) still count
+  together as long as they fall inside one window.
+- **One alert per window.** When a group (for example one source address) meets the
+  condition, it raises one alert, and stays quiet while the condition keeps holding until a
+  whole timespan has passed since that alert. After that the next burst alerts again, and
+  like any repeat it folds into the open alert for that group.
+- **What the alert holds.** The correlation rule's title, id, tags and level; with no level,
+  the highest level among its base rules. The description starts with what happened, for
+  example `20 events matching "Failed Login From An Address" within 5m (threshold >= 20) for
+  source.ip=192.168.1.66.`, and the alert's event is the one that met the condition. Each
+  group value gets its own alert.
+- **Limits.** Each correlation rule keeps at most 10,000 groups (the least recently updated
+  is dropped when a new one arrives) and each group at most 1,000 timestamps or values, so
+  thresholds go up to 1,000. Windows live in memory: a server restart starts them empty. A
+  rule reload that leaves a correlation rule unchanged keeps its windows.
+- **Errors.** A correlation rule whose base rule is not loaded (wrong name, filtered out of a
+  repository, a duplicate id) is listed on the **Rules** page with the reason, like any rule
+  that fails to load. Custom correlation rules are checked when they are saved.
+- **Testing.** **Test** in the rule editor shows the events the selection matches for a
+  `count()` rule. It does not run windows, and finds nothing for a correlation rule.
+
+Not supported (the rule is listed with the reason and not loaded):
+
+- "fewer than" thresholds: `lt`/`lte` and `<`/`<=` (for example "fewer than 3 heartbeats an
+  hour"). They need the window to close with no event to trigger the check;
+- the `value_sum`, `value_avg`, `value_percentile` and `value_median` correlation types;
+- correlations of correlation or `count()` rules;
+- `min()`, `max()`, `avg()`, `sum()` and `near` aggregations, and `timeframe` without an
+  aggregation;
+- time spans in months or years.
