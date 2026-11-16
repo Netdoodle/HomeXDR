@@ -2,6 +2,7 @@ package console
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -125,9 +126,21 @@ func (h *Handler) getAgentConfig(w http.ResponseWriter, r *http.Request, _ *stor
 }
 
 func (h *Handler) putAgentConfig(w http.ResponseWriter, r *http.Request, u *store.User) {
-	var cfg api.AgentConfig
-	if !decode(w, r, &cfg) {
+	var raw json.RawMessage
+	if !decode(w, r, &raw) {
 		return
+	}
+	var cfg api.AgentConfig
+	var probe struct {
+		Decoys json.RawMessage `json:"decoys"`
+	}
+	if json.Unmarshal(raw, &cfg) != nil || json.Unmarshal(raw, &probe) != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if len(probe.Decoys) == 0 {
+		// A client that predates decoy files keeps the current decoy settings.
+		cfg.Decoys = h.c.AgentConfig(r.Context()).Decoys
 	}
 	saved, err := h.c.SetAgentConfig(r.Context(), cfg)
 	if err != nil {

@@ -91,6 +91,7 @@ const (
 	ModuleLsof       = "lsof"       // macOS socket table polling
 	ModuleUnifiedLog = "unifiedlog" // macOS unified log (`log stream`) fallback
 	ModuleFIM        = "fim"        // file integrity monitoring
+	ModuleDecoy      = "decoy"      // decoy (honeypot) files placed and watched by the agent
 	ModuleInventory  = "inventory"  // host inventory snapshots
 	ModuleLogfile    = "logfile"    // generic log file tailing
 	ModuleArtifact   = "artifact"   // artifact collection rows
