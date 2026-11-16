@@ -40,6 +40,8 @@ type User struct {
 	Role      string     `json:"role"`
 	CreatedAt time.Time  `json:"created_at"`
 	LastLogin *time.Time `json:"last_login,omitempty"`
+	// TOTPEnabled is the only part of the two-factor state the API shows.
+	TOTPEnabled bool `json:"totp_enabled"`
 }
 
 // MinPasswordLen is the minimum console password length.
@@ -121,7 +123,8 @@ func scanUser(row interface{ Scan(...any) error }) (*User, string, error) {
 	var u User
 	var hash, created string
 	var last sql.NullString
-	if err := row.Scan(&u.ID, &u.Username, &hash, &u.Role, &created, &last); err != nil {
+	var totpOn int
+	if err := row.Scan(&u.ID, &u.Username, &hash, &u.Role, &created, &last, &totpOn); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, "", ErrNotFound
 		}
@@ -129,10 +132,11 @@ func scanUser(row interface{ Scan(...any) error }) (*User, string, error) {
 	}
 	u.CreatedAt = parseTS(created)
 	u.LastLogin = parseNullTS(last)
+	u.TOTPEnabled = totpOn != 0
 	return &u, hash, nil
 }
 
-const userCols = `id, username, password_hash, role, created_at, last_login`
+const userCols = `id, username, password_hash, role, created_at, last_login, totp_enabled`
 
 // Authenticate checks a username and password. It returns ErrNotFound for any failure,
 // and does a dummy bcrypt comparison for unknown users to keep timing similar.
@@ -275,7 +279,7 @@ func (s *Store) SessionUser(ctx context.Context, tok string) (*User, error) {
 		return nil, ErrNotFound
 	}
 	u, _, err := scanUser(s.db.QueryRowContext(ctx,
-		`SELECT u.id, u.username, u.password_hash, u.role, u.created_at, u.last_login
+		`SELECT u.id, u.username, u.password_hash, u.role, u.created_at, u.last_login, u.totp_enabled
 		 FROM sessions s JOIN users u ON u.id = s.user_id
 		 WHERE s.token_hash = ? AND s.expires_at > ?`, hashToken(tok), ts(time.Now())))
 	return u, err

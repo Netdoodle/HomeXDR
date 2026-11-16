@@ -21,15 +21,36 @@ Conventions:
 |---|---|---|---|
 | GET | `/api/setup/status` | | `{"needs_setup": bool, "version": string}` |
 | POST | `/api/setup` | `{"username","password"}` | `{"user": User}` (only when no users exist, and only from a private, loopback or link-local address, also behind a reverse proxy; logs in) |
-| POST | `/api/auth/login` | `{"username","password"}` | `{"user": User}` + cookie |
+| POST | `/api/auth/login` | `{"username","password"}` | `{"user": User}` + cookie, or `{"mfa_required": true, "mfa_token": string}` and no cookie when the user has two-factor login on (see below) |
+| POST | `/api/auth/mfa` | `{"mfa_token","code"}` | `{"user": User}` + cookie |
 | POST | `/api/auth/logout` | | `204` |
 | GET | `/api/auth/me` | | `{"user": User}` |
 
 ```ts
-type User = { id: string; username: string; role: "admin" | "analyst" | "viewer"; created_at: string; last_login?: string }
+type User = { id: string; username: string; role: "admin" | "analyst" | "viewer"; created_at: string; last_login?: string; totp_enabled: boolean }
 ```
 
 Passwords must be at least 10 characters. Login is rate limited per username and IP.
+
+### Two-factor login
+
+Optional, per user: authenticator-app codes (TOTP: RFC 6238, SHA-1, 6 digits, 30 second steps). The secret and recovery code hashes are never returned by any route except the one-time `setup` response below.
+
+- When the password is right and the user has two-factor on, `POST /api/auth/login` returns `200 {"mfa_required": true, "mfa_token": "<64 hex characters>"}` and sets no cookie. The token is held in server memory, bound to the user and the client address, valid for 5 minutes, usable once, and allows 5 code attempts.
+- `POST /api/auth/mfa` takes the token and either the current 6-digit code (spaces are ignored; the previous and next 30 second steps are also accepted, and a code that was already used is refused) or a recovery code in the form `xxxx-xxxx-xxxx` (each works once). On success it answers like a normal login, with the session cookie. Every failure is `401 {"error": "invalid or expired code"}` and is audited as `auth.mfa_failed`; repeated failures share the login rate limit (`429`). Successes are audited as `auth.mfa`.
+
+Routes for the signed-in user (any role), acting on their own account only:
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/api/account/totp` | | `{"enabled": bool, "recovery_left": number}` |
+| POST | `/api/account/totp/setup` | `{"password"}` | `{"secret": string, "uri": string}`: a new pending secret (base32) and its `otpauth://` URI for a QR code; does not turn it on. `409` if it is already on |
+| POST | `/api/account/totp/enable` | `{"code"}` | `{"recovery_codes": string[10]}`: checks the code against the pending secret, turns it on, and returns the recovery codes this one time |
+| POST | `/api/account/totp/disable` | `{"password","code"}` | `{"enabled": false}`; `code` may be a recovery code; clears the secret and recovery codes |
+| POST | `/api/account/totp/recovery` | `{"password","code"}` | `{"recovery_codes": string[10]}`: a new set; the old codes stop working |
+| POST | `/api/users/{id}/totp/reset` | | `{"enabled": false}` (admin): turns two-factor off for another user who is locked out |
+
+A wrong password or code on these routes is `403` and counts toward the login rate limit. All of them are audited (`account.totp.*`, `user.totp.reset`). The command `homexdr-server users reset-2fa <username>` does the same reset from the command line.
 
 ## Overview
 

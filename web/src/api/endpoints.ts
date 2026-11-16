@@ -47,11 +47,15 @@ import type {
   RuleRepoSkip,
   RuleTestResponse,
   RuleValidateResponse,
+  LoginResult,
+  RecoveryCodes,
   SearchRequest,
   SearchResponse,
   ServerSettings,
   SetupStatus,
   TimelineFilter,
+  TotpSetup,
+  TotpStatus,
   User,
 } from './types'
 
@@ -63,7 +67,9 @@ export const setupStatus = () => http.get<SetupStatus>('/api/setup/status')
 export const setup = (username: string, password: string) =>
   http.post<{ user: User }>('/api/setup', { username, password })
 export const login = (username: string, password: string) =>
-  http.post<{ user: User }>('/api/auth/login', { username, password })
+  http.post<LoginResult>('/api/auth/login', { username, password })
+export const loginMfa = (mfa_token: string, code: string) =>
+  http.post<{ user: User }>('/api/auth/mfa', { mfa_token, code })
 export const logout = () => http.post<void>('/api/auth/logout')
 export const me = () => http.get<{ user: User }>('/api/auth/me')
 
@@ -224,6 +230,17 @@ export const listUsers = () => http.get<{ users: User[] }>('/api/users')
 export const createUser = (u: { username: string; password: string; role: Role }) => http.post<User>('/api/users', u)
 export const patchUser = (id: string, p: { role?: Role; password?: string; current_password?: string }) => http.patch<User>(`/api/users/${enc(id)}`, p)
 export const deleteUser = (id: string) => http.del(`/api/users/${enc(id)}`)
+export const resetUserTotp = (id: string) => http.post<{ enabled: boolean }>(`/api/users/${enc(id)}/totp/reset`)
+
+// Two-factor login (own account) ----------------------------------------------------------
+
+export const totpStatus = () => http.get<TotpStatus>('/api/account/totp')
+export const totpSetup = (password: string) => http.post<TotpSetup>('/api/account/totp/setup', { password })
+export const totpEnable = (code: string) => http.post<RecoveryCodes>('/api/account/totp/enable', { code })
+export const totpDisable = (password: string, code: string) =>
+  http.post<{ enabled: boolean }>('/api/account/totp/disable', { password, code })
+export const totpNewRecovery = (password: string, code: string) =>
+  http.post<RecoveryCodes>('/api/account/totp/recovery', { password, code })
 export const audit = (limit = 100, offset = 0) =>
   http.get<{ entries: AuditEntry[]; total: number }>('/api/audit', { limit, offset })
 export const integrations = () => http.get<Integrations>('/api/integrations')

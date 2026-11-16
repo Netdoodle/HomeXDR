@@ -43,7 +43,7 @@ export function setUnauthorizedHandler(fn: UnauthorizedHandler) {
 }
 
 // Paths whose 401 is an expected answer (bad credentials), not an expired session.
-const NO_REDIRECT_401 = ['/api/auth/login', '/api/setup']
+const NO_REDIRECT_401 = ['/api/auth/login', '/api/auth/mfa', '/api/setup']
 
 export type Query = Record<string, string | number | boolean | undefined | null>
 

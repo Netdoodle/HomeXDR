@@ -251,6 +251,11 @@ var columnMigrations = []struct{ table, column, def string }{
 	// Authenticode hashes of malicious files, for App Control.
 	{"av_verdicts", "auth_sha256", `TEXT NOT NULL DEFAULT ''`},
 	{"av_verdicts", "auth_sha1", `TEXT NOT NULL DEFAULT ''`},
+	// Optional two-factor login (TOTP) for console users.
+	{"users", "totp_secret", `TEXT NOT NULL DEFAULT ''`},
+	{"users", "totp_enabled", `INTEGER NOT NULL DEFAULT 0`},
+	{"users", "totp_last_step", `INTEGER NOT NULL DEFAULT 0`},
+	{"users", "totp_recovery", `TEXT NOT NULL DEFAULT ''`},
 }
 
 // postMigrate runs after the column migrations (indexes on added columns).

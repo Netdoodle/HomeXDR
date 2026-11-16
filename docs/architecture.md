@@ -116,6 +116,12 @@ directive, so modules build independently without a `go.work` file.
 - **Console auth.** Local users with bcrypt passwords and `HttpOnly`, `SameSite=Strict`
   session cookies. Mutating requests need the `X-HomeXDR-CSRF: 1` header. Every response
   action and rule change is written to the audit log.
+- **Two-factor login (optional).** Each user can turn on authenticator-app codes (TOTP)
+  under Settings, My account; it is never forced. Once on, a correct password only starts
+  a short-lived login step and the session begins after a valid code or a one-time
+  recovery code. Codes cannot be reused, and wrong codes are rate limited. A locked-out
+  user is reset by an admin (Settings, Users, Reset 2FA) or, for a locked-out admin, with
+  `homexdr-server users reset-2fa <username>` run inside the container.
 
 ## Process identity
 

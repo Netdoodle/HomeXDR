@@ -75,6 +75,11 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.limiter.reset(key)
+	if u.TOTPEnabled {
+		// The password is only the first step: no session until a code is given.
+		writeJSON(w, http.StatusOK, map[string]any{"mfa_required": true, "mfa_token": h.mfa.create(u.ID, h.clientIP(r))})
+		return
+	}
 	h.startSession(w, r, u)
 }
 

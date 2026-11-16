@@ -331,6 +331,7 @@ route(
       role: "admin",
       created_at: new Date().toISOString(),
       last_login: new Date().toISOString(),
+      totp_enabled: false,
     });
     state.needsSetup = false;
     state.loggedIn = true;
@@ -352,6 +353,11 @@ route(
     const u = users.find((x) => x.username === String(b.username ?? ""));
     if (!u || String(b.password ?? "").length < 10)
       fail(401, "invalid username or password");
+    if (u!.totp_enabled) {
+      const mfa_token = mockToken(64);
+      pendingMfa.set(mfa_token, u!.username);
+      return { mfa_required: true, mfa_token };
+    }
     state.loggedIn = true;
     state.username = u!.username;
     ssSet(SS_SESSION, "1");
@@ -361,6 +367,133 @@ route(
     return { user: currentUser() };
   },
   { auth: false },
+);
+
+// Two-factor login. The mock cannot run HMAC synchronously, so it accepts MOCK_TOTP_CODE
+// as the authenticator code; recovery codes work once, as on the real server.
+const MOCK_TOTP_CODE = "123456";
+const pendingMfa = new Map<string, string>();
+const mockTotp = new Map<string, { secret: string; recovery: string[] }>();
+
+function mockToken(n: number): string {
+  let out = "";
+  while (out.length < n) out += Math.floor(Math.random() * 16).toString(16);
+  return out;
+}
+function mockRecoveryCodes(): string[] {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  const pick = () => alphabet[Math.floor(Math.random() * alphabet.length)];
+  return Array.from({ length: 10 }, () =>
+    [0, 1, 2].map(() => [0, 1, 2, 3].map(pick).join("")).join("-"),
+  );
+}
+/** True if code is the mock authenticator code or an unused recovery code (consumed). */
+function mockCodeOk(userId: string, code: string): boolean {
+  const c = code.replace(/\s+/g, "").toLowerCase();
+  if (c === MOCK_TOTP_CODE) return true;
+  const t = mockTotp.get(userId);
+  const i = t ? t.recovery.indexOf(c) : -1;
+  if (t && i >= 0) {
+    t.recovery.splice(i, 1);
+    return true;
+  }
+  return false;
+}
+function mockPassword(user: User | undefined, body: unknown) {
+  if (String(obj(body).password ?? "").length < 10)
+    fail(403, "the password is not right");
+  return user!;
+}
+
+route(
+  "POST",
+  "/api/auth/mfa",
+  ({ body }) => {
+    const b = obj(body);
+    const name = pendingMfa.get(String(b.mfa_token ?? ""));
+    const u = users.find((x) => x.username === name);
+    if (!u || !u.totp_enabled) fail(401, "invalid or expired code");
+    if (!mockCodeOk(u!.id, String(b.code ?? "")))
+      fail(401, "invalid or expired code");
+    pendingMfa.delete(String(b.mfa_token));
+    state.loggedIn = true;
+    state.username = u!.username;
+    ssSet(SS_SESSION, "1");
+    ssSet(SS_SESSION + ".user", u!.username);
+    u!.last_login = new Date().toISOString();
+    logAudit(u, "auth.mfa", u!.username, { ip: "127.0.0.1" });
+    return { user: currentUser() };
+  },
+  { auth: false },
+);
+
+route("GET", "/api/account/totp", ({ user }) => ({
+  enabled: !!users.find((x) => x.id === user!.id)?.totp_enabled,
+  recovery_left: mockTotp.get(user!.id)?.recovery.length ?? 0,
+}));
+
+route("POST", "/api/account/totp/setup", ({ body, user }) => {
+  const u = mockPassword(user, body);
+  const self = users.find((x) => x.id === u.id)!;
+  if (self.totp_enabled) fail(409, "two-factor login is already on");
+  const secret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+  mockTotp.set(u.id, { secret, recovery: [] });
+  logAudit(user, "account.totp.setup", u.id, null);
+  return {
+    secret,
+    uri: `otpauth://totp/HomeXDR:${encodeURIComponent(u.username)}?secret=${secret}&issuer=HomeXDR&algorithm=SHA1&period=30`,
+  };
+});
+
+route("POST", "/api/account/totp/enable", ({ body, user }) => {
+  const self = users.find((x) => x.id === user!.id)!;
+  const t = mockTotp.get(self.id);
+  if (self.totp_enabled) fail(409, "two-factor login is already on");
+  if (!t) fail(400, "start the setup first");
+  if (String(obj(body).code ?? "").replace(/\s+/g, "") !== MOCK_TOTP_CODE)
+    fail(403, "that code is not right");
+  t!.recovery = mockRecoveryCodes();
+  self.totp_enabled = true;
+  logAudit(user, "account.totp.enable", self.id, null);
+  return { recovery_codes: [...t!.recovery] };
+});
+
+route("POST", "/api/account/totp/disable", ({ body, user }) => {
+  mockPassword(user, body);
+  const self = users.find((x) => x.id === user!.id)!;
+  if (!self.totp_enabled) fail(409, "two-factor login is not on");
+  if (!mockCodeOk(self.id, String(obj(body).code ?? "")))
+    fail(403, "that code is not right");
+  self.totp_enabled = false;
+  mockTotp.delete(self.id);
+  logAudit(user, "account.totp.disable", self.id, null);
+  return { enabled: false };
+});
+
+route("POST", "/api/account/totp/recovery", ({ body, user }) => {
+  mockPassword(user, body);
+  const self = users.find((x) => x.id === user!.id)!;
+  if (!self.totp_enabled) fail(409, "two-factor login is not on");
+  if (!mockCodeOk(self.id, String(obj(body).code ?? "")))
+    fail(403, "that code is not right");
+  const t = mockTotp.get(self.id)!;
+  t.recovery = mockRecoveryCodes();
+  logAudit(user, "account.totp.recovery", self.id, null);
+  return { recovery_codes: [...t.recovery] };
+});
+
+route(
+  "POST",
+  "/api/users/:id/totp/reset",
+  ({ params, user }) => {
+    const u =
+      users.find((x) => x.id === params.id) ?? fail(404, "user not found");
+    u.totp_enabled = false;
+    mockTotp.delete(u.id);
+    logAudit(user, "user.totp.reset", u.username, null);
+    return { enabled: false };
+  },
+  { role: "admin" },
 );
 
 route(
@@ -2566,6 +2699,7 @@ route(
       username,
       role,
       created_at: new Date().toISOString(),
+      totp_enabled: false,
     };
     users.push(u);
     logAudit(user, "user.create", username, { role });
