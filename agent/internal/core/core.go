@@ -119,6 +119,9 @@ type Agent struct {
 	lastRenew time.Time              // last certificate renewal attempt
 	confirmed bool                   // a pending update was checked after the first heartbeat
 	stop      context.CancelCauseFunc
+
+	// decoySensor replaces decoy.New in tests.
+	decoySensor func(api.DecoyConfig) platform.Sensor
 }
 
 // Load reads the config file, identity and state.
@@ -404,8 +407,10 @@ func (a *Agent) applySensors(ctx context.Context, cfg api.AgentConfig) {
 		disabled = append(disabled, api.SensorStatus{Name: "fim", Impl: event.ModuleFIM, State: api.SensorDisabled})
 	}
 	// The decoy sensor also runs when decoys are off: it then removes the decoy files it
-	// created that nobody changed, and reports the rest as left in place.
-	specs = append(specs, supervisor.Spec{Sensor: decoy.New(cfg.Decoys, a.dataDir, a.log), Key: fingerprint(cfg.Decoys)})
+	// created that nobody changed, and reports the rest as left in place. The on/off
+	// switch is the host's (from its group) when the server sent one.
+	dc := decoyConfig(cfg.Decoys, a.st.DecoysEnabled())
+	specs = append(specs, supervisor.Spec{Sensor: a.newDecoy(dc), Key: fingerprint(dc)})
 	if len(cfg.Logs) > 0 {
 		specs = append(specs, supervisor.Spec{Sensor: logtail.New(cfg.Logs, a.dataDir, a.log), Key: fingerprint(cfg.Logs)})
 	}
@@ -422,6 +427,39 @@ func (a *Agent) applySensors(ctx context.Context, cfg api.AgentConfig) {
 		})
 	}
 	a.sup.Apply(ctx, specs, disabled)
+}
+
+// decoyConfig is the decoy config with the per-host switch from the server applied.
+func decoyConfig(c api.DecoyConfig, hostEnabled *bool) api.DecoyConfig {
+	if hostEnabled != nil {
+		c.Enabled = *hostEnabled
+	}
+	return c
+}
+
+func (a *Agent) newDecoy(c api.DecoyConfig) platform.Sensor {
+	if a.decoySensor != nil {
+		return a.decoySensor(c)
+	}
+	return decoy.New(c, a.dataDir, a.log)
+}
+
+// applyDecoysEnabled takes the per-host decoy switch from a heartbeat. A change restarts
+// the decoy sensor (on: it places decoys; off: it removes the unchanged ones). A server
+// that sends none (older servers) leaves Config.Decoys.Enabled in charge.
+func (a *Agent) applyDecoysEnabled(ctx context.Context, v *bool) {
+	a.cfgMu.Lock()
+	defer a.cfgMu.Unlock()
+	changed, err := a.st.SetDecoysEnabled(v)
+	if err != nil {
+		a.log.Warn("cannot persist the decoy switch", "err", err)
+	}
+	if !changed {
+		return
+	}
+	cfg := a.st.Config()
+	a.applySensors(ctx, cfg)
+	a.log.Info("decoy files switched for this host", "enabled", decoyConfig(cfg.Decoys, v).Enabled)
 }
 
 // applyConfig stores and applies a new central config. Local policy is not affected.
@@ -663,6 +701,7 @@ func (a *Agent) heartbeatLoop(ctx context.Context) {
 		if resp.Config != nil && resp.Config.Version != a.st.Config().Version {
 			a.applyConfig(ctx, *resp.Config)
 		}
+		a.applyDecoysEnabled(ctx, resp.DecoysEnabled)
 		a.afterHeartbeat(ctx, resp.Update)
 		if resp.CommandsPending {
 			select {

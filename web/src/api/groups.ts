@@ -16,6 +16,8 @@ export interface GroupPolicy {
   ai?: { auto?: boolean }
   /** host firewall control (Settings → Firewall) */
   firewall?: { enabled?: boolean }
+  /** decoy files (Settings → Agent config) */
+  decoys?: { enabled?: boolean }
 }
 
 /** An effective setting and where it comes from (no group: Global). */
@@ -33,6 +35,7 @@ export interface Effective {
   ai_auto: SettingSource
   defender_hardening: SettingSource<string>
   firewall: SettingSource
+  decoys: SettingSource
 }
 
 export interface HostGroup {
@@ -47,12 +50,12 @@ export interface HostGroup {
 
 export interface GroupsView {
   org: { name: string }
-  global: { clamav: boolean; yara: boolean; action: string; app_control: string; ai_auto: boolean; defender_hardening: string; firewall: boolean }
+  global: { clamav: boolean; yara: boolean; action: string; app_control: string; ai_auto: boolean; defender_hardening: string; firewall: boolean; decoys: boolean }
   groups: HostGroup[]
   ungrouped: number
 }
 
-export type SettingKey = 'clamav' | 'yara' | 'action' | 'app_control' | 'ai_auto' | 'defender_hardening' | 'firewall'
+export type SettingKey = 'clamav' | 'yara' | 'action' | 'app_control' | 'ai_auto' | 'defender_hardening' | 'firewall' | 'decoys'
 
 /** One overridable setting: its choices, from strongest protection to weakest. */
 export interface SettingDef {
@@ -150,6 +153,17 @@ export const SETTINGS: SettingDef[] = [
     get: (p) => onOff(p.firewall?.enabled),
     set: (p, v) => ({ ...p, firewall: { ...p.firewall, enabled: bool(v) } }),
     weaker: () => 'will have the addresses blocked under Settings → Firewall removed from their own firewalls, so they can reach those addresses again',
+  },
+  {
+    key: 'decoys',
+    label: 'Decoy files',
+    choices: [
+      { value: 'on', label: 'On' },
+      { value: 'off', label: 'Off' },
+    ],
+    get: (p) => onOff(p.decoys?.enabled),
+    set: (p, v) => ({ ...p, decoys: { ...p.decoys, enabled: bool(v) } }),
+    weaker: () => 'will have their decoy files removed (unchanged ones) and no longer raise decoy alerts',
   },
 ]
 

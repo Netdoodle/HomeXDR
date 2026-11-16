@@ -6,8 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"slices"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -127,21 +125,30 @@ func (c *Core) AgentConfig(ctx context.Context) api.AgentConfig {
 }
 
 // ParseAgentConfig decodes a stored default agent config. A config saved before decoy
-// files existed has no "decoys" section: it gets the default (on) and a version one
-// higher than the stored one, so agents already running that config pick decoys up on
-// their next heartbeat. Saving the config stores the section, and the version keeps
-// rising from there.
+// files existed has no "decoys" section: it gets the default (on). One saved before decoy
+// paths were configurable has no "decoys.files": it gets the default paths plus its old
+// "extra" paths (see api.DecoyConfig.UnmarshalJSON), which also drops the Desktop decoys.
+// Either way it is served with a version one higher than the stored one, so agents
+// already running that config pick the change up on their next heartbeat. Saving the
+// config stores the new fields, and the version keeps rising from there.
 func ParseAgentConfig(raw []byte) api.AgentConfig {
 	var cfg api.AgentConfig
 	if err := json.Unmarshal(raw, &cfg); err != nil || cfg.Version == 0 {
 		return api.DefaultAgentConfig()
 	}
 	var probe struct {
-		Decoys json.RawMessage `json:"decoys"`
+		Decoys *struct {
+			Files json.RawMessage `json:"files"`
+		} `json:"decoys"`
 	}
-	if json.Unmarshal(raw, &probe) == nil && len(probe.Decoys) == 0 {
-		cfg.Decoys = api.DefaultAgentConfig().Decoys
-		cfg.Version++
+	if json.Unmarshal(raw, &probe) == nil {
+		switch {
+		case probe.Decoys == nil:
+			cfg.Decoys = api.DefaultAgentConfig().Decoys
+			cfg.Version++
+		case len(probe.Decoys.Files) == 0 || string(probe.Decoys.Files) == "null":
+			cfg.Version++ // UnmarshalJSON filled in the default paths
+		}
 	}
 	return cfg
 }
@@ -166,34 +173,12 @@ func (c *Core) SetAgentConfig(ctx context.Context, cfg api.AgentConfig) (api.Age
 		cfg.Decoys.CheckIntervalSec = api.DecoyDefaultIntervalSec
 	}
 	cfg.Decoys.CheckIntervalSec = max(api.DecoyMinIntervalSec, min(cfg.Decoys.CheckIntervalSec, api.DecoyMaxIntervalSec))
-	var extra []string
-	for _, p := range cfg.Decoys.Extra {
-		p = strings.TrimSpace(p)
-		if p == "" || slices.Contains(extra, p) {
-			continue
-		}
-		if !absDecoyPath(p) {
-			return cfg, invalid(`extra decoy path %q must be an absolute file path (/home/me/notes.txt or C:\Users\me\notes.txt) without wildcards`, p)
-		}
-		extra = append(extra, p)
+	files, err := api.ValidateDecoyFiles(cfg.Decoys.Files)
+	if err != nil {
+		return cfg, invalid("%s", err.Error())
 	}
-	if len(extra) > api.DecoyMaxExtra {
-		return cfg, invalid("at most %d extra decoy paths", api.DecoyMaxExtra)
-	}
-	cfg.Decoys.Extra = extra
+	cfg.Decoys.Files = files
 	return cfg, c.State.SetKV(ctx, agentConfigKey, cfg)
-}
-
-// absDecoyPath accepts absolute Unix and Windows file paths: the server does not know
-// which OS each agent runs, and each agent skips paths that are not absolute on its own.
-func absDecoyPath(p string) bool {
-	if len(p) > 1024 || strings.ContainsAny(p, "*?\x00") || strings.HasSuffix(p, "/") || strings.HasSuffix(p, `\`) {
-		return false
-	}
-	if strings.HasPrefix(p, "/") {
-		return len(p) > 1
-	}
-	return len(p) > 3 && (p[0]|0x20) >= 'a' && (p[0]|0x20) <= 'z' && p[1] == ':' && p[2] == '\\'
 }
 
 // Audit writes an audit record, logging failures.

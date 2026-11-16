@@ -282,9 +282,14 @@ func (h *Handler) heartbeat(w http.ResponseWriter, r *http.Request, host *store.
 		h.c.Log.Warn("heartbeat: record address", "err", err)
 	}
 	resp := api.HeartbeatResponse{ServerTime: time.Now().UTC()}
-	if cfg := h.c.AgentConfig(r.Context()); cfg.Version > hb.Status.ConfigVersion {
+	cfg := h.c.AgentConfig(r.Context())
+	if cfg.Version > hb.Status.ConfigVersion {
 		resp.Config = &cfg
 	}
+	// Decoy files can be switched per host group; the agent takes this value over the
+	// config's. It is one bool, sent every time, so it needs no version.
+	decoys := h.c.ResolveDecoys(host.GroupID, cfg.Decoys.Enabled).Value
+	resp.DecoysEnabled = &decoys
 	resp.CommandsPending, _ = h.c.State.HasPendingCommands(r.Context(), host.ID)
 	resp.Update = h.c.UpdateOffer(r.Context(), updated)
 	writeJSON(w, http.StatusOK, resp)

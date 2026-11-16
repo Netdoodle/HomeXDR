@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -88,7 +89,20 @@ func exists(p string) bool {
 	return err == nil
 }
 
-func on() api.DecoyConfig { return api.DecoyConfig{Enabled: true, CheckIntervalSec: 60} }
+// on is the default decoy config.
+func on() api.DecoyConfig {
+	return api.DecoyConfig{Enabled: true, CheckIntervalSec: 60, Files: api.DefaultDecoyFiles()}
+}
+
+// desktopCodes is a Windows entry the defaults no longer have.
+var desktopCodes = api.DecoyFile{OS: api.DecoyOSWindows, Path: `{home}\Desktop\backup-codes.txt`}
+
+// withDesktop is the default config plus backup codes on each Windows Desktop.
+func withDesktop() api.DecoyConfig {
+	c := on()
+	c.Files = append(c.Files, desktopCodes)
+	return c
+}
 
 // windowsRoot builds a Windows-like tree: bob (Documents with a file of his own where a
 // decoy would go, Desktop), carol (Documents only), dave (no registry hive), Public.
@@ -103,7 +117,7 @@ func windowsRoot(t *testing.T) string {
 	return root
 }
 
-func TestPlacementWindowsLayout(t *testing.T) {
+func TestPlacementWindowsDefaults(t *testing.T) {
 	root := windowsRoot(t)
 	s, c, _ := testSensor(t, "windows", root, t.TempDir(), on())
 	s.checkOnce()
@@ -112,7 +126,6 @@ func TestPlacementWindowsLayout(t *testing.T) {
 	}
 	u := func(p ...string) string { return filepath.Join(append([]string{root, "Users"}, p...)...) }
 	want := []string{
-		u("bob", "Desktop", "backup-codes.txt"),
 		u("carol", "Documents", "Passwords.xlsx"),
 		filepath.Join(root, "ProgramData", "Backup", "credentials.csv"),
 	}
@@ -126,7 +139,7 @@ func TestPlacementWindowsLayout(t *testing.T) {
 		}
 	}
 	for _, p := range []string{
-		u("carol", "Desktop", "backup-codes.txt"),  // no Desktop folder: not created
+		u("bob", "Desktop", "backup-codes.txt"),    // no Desktop decoys by default
 		u("dave", "Documents", "Passwords.xlsx"),   // no NTUSER.DAT
 		u("Public", "Documents", "Passwords.xlsx"), // skipped profile
 	} {
@@ -134,65 +147,192 @@ func TestPlacementWindowsLayout(t *testing.T) {
 			t.Errorf("%s should not exist", p)
 		}
 	}
-	if exists(u("carol", "Desktop")) {
-		t.Error("created a missing user folder")
-	}
 	if b, _ := os.ReadFile(u("bob", "Documents", "Passwords.xlsx")); string(b) != "bob's own file" {
 		t.Errorf("overwrote a user's file: %q", b)
 	}
 	if len(s.st.Decoys) != len(want) {
 		t.Fatalf("tracking %d decoys, want %d", len(s.st.Decoys), len(want))
 	}
-	if r := s.byPath[want[2]]; r == nil || !r.CreatedDir || r.User != "" {
+	if r := s.byPath[want[1]]; r == nil || !r.CreatedDir || !r.Extra || r.Kind != kindSheet || r.Home || r.Entry != `C:\ProgramData\Backup\credentials.csv` {
 		t.Errorf("ProgramData decoy record: %+v", r)
 	}
-	if r := s.byPath[want[0]]; r == nil || r.User != "bob" || r.SHA256 == "" || r.Size == 0 {
-		t.Errorf("bob's decoy record: %+v", r)
+	if r := s.byPath[want[0]]; r == nil || r.User != "carol" || r.SHA256 == "" || r.Size == 0 || !r.Home || r.Entry != `{home}\Documents\Passwords.xlsx` {
+		t.Errorf("carol's decoy record: %+v", r)
 	}
-	if st := s.Status(); st.Message != "3 decoy files" || st.State != api.SensorRunning {
+	if st := s.Status(); st.Message != "2 decoy files" || st.State != api.SensorRunning {
 		t.Errorf("status %+v", st)
 	}
 	// A second pass changes nothing and reports nothing.
 	s.checkOnce()
-	if evs := c.take(); len(evs) != 0 || len(s.st.Decoys) != 3 {
+	if evs := c.take(); len(evs) != 0 || len(s.st.Decoys) != 2 {
 		t.Fatalf("second pass: %d events, %d decoys", len(evs), len(s.st.Decoys))
 	}
 }
 
-func TestPlacementLinuxAndMacLayouts(t *testing.T) {
+func TestPlacementLinuxAndMacDefaults(t *testing.T) {
 	root := t.TempDir()
 	mkdirs(t, root, "home/alice/Documents", "home/bob", "root", "var/backups")
 	s, _, _ := testSensor(t, "linux", root, t.TempDir(), on())
 	s.checkOnce()
 	for _, p := range []string{"home/alice/Documents/passwords.txt", "home/alice/.aws/credentials.bak",
-		"home/bob/.aws/credentials.bak", "root/.aws/credentials.bak", "var/backups/db-credentials.sql"} {
+		"home/bob/Documents/passwords.txt", "home/bob/.aws/credentials.bak", "root/.aws/credentials.bak",
+		"root/Documents/passwords.txt", "var/backups/db-credentials.sql"} {
 		if !exists(filepath.Join(root, filepath.FromSlash(p))) {
 			t.Errorf("%s not created", p)
 		}
 	}
-	for _, p := range []string{"home/bob/Documents", "root/Documents"} {
-		if exists(filepath.Join(root, filepath.FromSlash(p))) {
-			t.Errorf("%s should not have been created", p)
-		}
+	aws := s.byPath[filepath.Join(root, "home", "alice", ".aws", "credentials.bak")]
+	if aws == nil || !aws.CreatedDir || aws.User != "alice" || aws.Kind != kindAWS || aws.UID != 4242 || !aws.HasOwner {
+		t.Errorf("alice's aws decoy: %+v", aws)
 	}
-	if r := s.byPath[filepath.Join(root, "home", "alice", ".aws", "credentials.bak")]; r == nil || !r.CreatedDir || r.User != "alice" {
-		t.Errorf("alice's aws decoy: %+v", r)
+	if r := s.byPath[filepath.Join(root, "root", ".aws", "credentials.bak")]; r == nil || r.User != "root" || r.HasOwner || r.Entry != "{home}/.aws/credentials.bak" {
+		t.Errorf("root's aws decoy: %+v", r)
+	}
+	if r := s.byPath[filepath.Join(root, "var", "backups", "db-credentials.sql")]; r == nil || r.Kind != kindSQL || r.CreatedDir || !r.Extra {
+		t.Errorf("/var/backups decoy: %+v", r)
 	}
 
 	mroot := t.TempDir()
 	mkdirs(t, mroot, "Users/eve/Documents", "Users/eve/Desktop", "Users/Shared/Documents", "Users/.hidden/Documents")
 	m, _, _ := testSensor(t, "darwin", mroot, t.TempDir(), on())
 	m.checkOnce()
-	if len(m.st.Decoys) != 2 || !exists(filepath.Join(mroot, "Users", "eve", "Documents", "Passwords.txt")) ||
-		!exists(filepath.Join(mroot, "Users", "eve", "Desktop", "backup-codes.txt")) {
+	if len(m.st.Decoys) != 1 || !exists(filepath.Join(mroot, "Users", "eve", "Documents", "Passwords.txt")) ||
+		exists(filepath.Join(mroot, "Users", "eve", "Desktop", "backup-codes.txt")) {
 		t.Errorf("macOS decoys: %d", len(m.st.Decoys))
+	}
+}
+
+// {home} is expanded to each real user's home folder, by each OS's rules.
+func TestHomeExpansion(t *testing.T) {
+	files := []api.DecoyFile{
+		{OS: api.DecoyOSWindows, Path: `{home}\AppData\keys.txt`, Hidden: true},
+		{OS: api.DecoyOSLinux, Path: "{home}/.ssh/old_id.txt", Hidden: true},
+		{OS: api.DecoyOSDarwin, Path: "{home}/notes.txt"},
+	}
+	noBad := func(p, msg string) { t.Errorf("%s: %s", p, msg) }
+	paths := func(ts []target) []string {
+		var out []string
+		for _, t := range ts {
+			out = append(out, t.path())
+		}
+		slices.Sort(out)
+		return out
+	}
+	owner4242 := func(_ string, fi os.FileInfo) (owner, bool) {
+		if fi.Name() == "svc" {
+			return owner{UID: 0, Name: "root"}, true // owned by root: not a user's home
+		}
+		if fi.Name() == "ghost" {
+			return owner{}, false // no such user
+		}
+		return owner{UID: 4242, GID: 4243, Name: fi.Name()}, true
+	}
+
+	w := windowsRoot(t)
+	wl := layout{goos: "windows", root: w, lookupOwner: owner4242}
+	got := wl.targets(files, "", noBad)
+	want := []string{filepath.Join(w, "Users", "bob", "AppData", "keys.txt"), filepath.Join(w, "Users", "carol", "AppData", "keys.txt")}
+	if !slices.Equal(paths(got), want) {
+		t.Errorf("windows: %v, want %v", paths(got), want)
+	}
+	for _, x := range got {
+		if !x.Hidden || !x.Home || !x.MakeDir || x.Base != filepath.Join(w, "Users") || len(x.Dirs) != 2 || x.HasOwner || x.Kind != kindText {
+			t.Errorf("windows target %+v", x)
+		}
+	}
+
+	l := t.TempDir()
+	mkdirs(t, l, "home/alice", "home/svc", "home/ghost", "home/lost+found", "root")
+	ll := layout{goos: "linux", root: l, lookupOwner: owner4242}
+	got = ll.targets(files, "", noBad)
+	want = []string{filepath.Join(l, "home", "alice", ".ssh", "old_id.txt"), filepath.Join(l, "root", ".ssh", "old_id.txt")}
+	if !slices.Equal(paths(got), want) {
+		t.Errorf("linux: %v, want %v", paths(got), want)
+	}
+	for _, x := range got {
+		if x.Hidden {
+			t.Errorf("Linux target hidden: %+v", x)
+		}
+		if x.Dirs[0] == "alice" && (!x.HasOwner || x.UID != 4242 || x.GID != 4243 || x.User != "alice") {
+			t.Errorf("alice's target %+v", x)
+		}
+		if x.Dirs[0] == "root" && (x.HasOwner || x.User != "root" || x.Base != l) {
+			t.Errorf("root's target %+v", x)
+		}
+	}
+
+	m := t.TempDir()
+	mkdirs(t, m, "Users/eve", "Users/Shared", "Users/.localized")
+	ml := layout{goos: "darwin", root: m, lookupOwner: owner4242}
+	got = ml.targets(files, "", noBad)
+	if len(got) != 1 || got[0].path() != filepath.Join(m, "Users", "eve", "notes.txt") || got[0].MakeDir || got[0].need() != 1 {
+		t.Errorf("darwin: %+v", got)
+	}
+}
+
+// A decoy is created when its folder exists, or when the folder's parent exists: then
+// just that last folder is created. A home folder itself is never created.
+func TestFolderRule(t *testing.T) {
+	root := windowsRoot(t)
+	mkdirs(t, root, "srv")
+	cfg := on()
+	cfg.Files = []api.DecoyFile{
+		desktopCodes, // carol has no Desktop: created
+		{OS: api.DecoyOSWindows, Path: `{home}\a\b\deep.txt`},  // a is missing: nothing
+		{OS: api.DecoyOSWindows, Path: `C:\srv\new\x.txt`},     // srv exists: new is created
+		{OS: api.DecoyOSWindows, Path: `C:\nope\deeper\y.txt`}, // nope is missing: nothing
+	}
+	s, c, _ := testSensor(t, "windows", root, t.TempDir(), cfg)
+	s.checkOnce()
+	u := func(p ...string) string { return filepath.Join(append([]string{root, "Users"}, p...)...) }
+	for _, p := range []string{u("carol", "Desktop", "backup-codes.txt"), u("bob", "Desktop", "backup-codes.txt"), filepath.Join(root, "srv", "new", "x.txt")} {
+		if !exists(p) {
+			t.Errorf("%s not created", p)
+		}
+	}
+	for _, p := range []string{u("bob", "a"), u("carol", "a"), filepath.Join(root, "nope")} {
+		if exists(p) {
+			t.Errorf("%s created", p)
+		}
+	}
+	if r := s.byPath[u("carol", "Desktop", "backup-codes.txt")]; r == nil || !r.CreatedDir || r.Kind != kindCodes {
+		t.Errorf("carol's Desktop decoy %+v", r)
+	}
+	if r := s.byPath[u("bob", "Desktop", "backup-codes.txt")]; r == nil || r.CreatedDir {
+		t.Errorf("bob's Desktop decoy %+v", r)
+	}
+	if len(s.st.Decoys) != 3 || len(c.take()) != 0 {
+		t.Fatalf("%d decoys", len(s.st.Decoys))
+	}
+	// A deleted folder the agent created is not reported while its parent is there: the
+	// deletion of the decoy is, and both come back.
+	os.RemoveAll(filepath.Join(root, "srv", "new"))
+	s.checkOnce()
+	if evs := c.take(); len(evs) != 1 || evs[0].Event.Type[0] != event.TypeDeletion || !exists(filepath.Join(root, "srv", "new", "x.txt")) {
+		t.Fatalf("deleted folder: %d events", len(evs))
+	}
+
+	// Removing the entries removes the decoys and the folders the agent created for them,
+	// but not folders that were there before.
+	s.cfg.Files = nil
+	s.checkOnce()
+	if len(s.st.Decoys) != 0 || len(c.take()) != 0 {
+		t.Fatalf("after removing the entries: %d decoys", len(s.st.Decoys))
+	}
+	for _, p := range []string{u("carol", "Desktop"), filepath.Join(root, "srv", "new")} {
+		if exists(p) {
+			t.Errorf("%s not removed", p)
+		}
+	}
+	if !exists(u("bob", "Desktop")) || !exists(u("carol")) {
+		t.Error("removed a folder the agent did not create")
 	}
 }
 
 func TestStateRoundTrip(t *testing.T) {
 	root := windowsRoot(t)
 	data := t.TempDir()
-	s, _, _ := testSensor(t, "windows", root, data, on())
+	s, _, _ := testSensor(t, "windows", root, data, withDesktop())
 	s.checkOnce()
 	s.save()
 	fi, err := os.Stat(filepath.Join(data, StateFile))
@@ -202,13 +342,14 @@ func TestStateRoundTrip(t *testing.T) {
 	if fi.Mode().Perm()&0o077 != 0 && os.PathSeparator == '/' {
 		t.Errorf("state file mode %v", fi.Mode().Perm())
 	}
-	s2, c2, _ := testSensor(t, "windows", root, data, on())
+	s2, c2, _ := testSensor(t, "windows", root, data, withDesktop())
 	if s2.st.Canary != s.st.Canary || len(s2.st.Decoys) != len(s.st.Decoys) {
 		t.Fatalf("reloaded canary %q decoys %d, want %q %d", s2.st.Canary, len(s2.st.Decoys), s.st.Canary, len(s.st.Decoys))
 	}
 	for _, r := range s.st.Decoys {
 		r2 := s2.byPath[r.Path]
-		if r2 == nil || r2.SHA256 != r.SHA256 || r2.Size != r.Size || r2.MTime != r.MTime || r2.User != r.User || r2.CreatedDir != r.CreatedDir {
+		if r2 == nil || r2.SHA256 != r.SHA256 || r2.Size != r.Size || r2.MTime != r.MTime || r2.User != r.User ||
+			r2.CreatedDir != r.CreatedDir || r2.Entry != r.Entry || r2.Home != r.Home || r2.Hidden != r.Hidden {
 			t.Errorf("record %s did not round-trip: %+v vs %+v", r.Path, r2, r)
 		}
 	}
@@ -218,7 +359,7 @@ func TestStateRoundTrip(t *testing.T) {
 	}
 	// A corrupt state file starts over without touching the existing decoys.
 	write(t, filepath.Join(data, StateFile), "{not json")
-	s3, _, _ := testSensor(t, "windows", root, data, on())
+	s3, _, _ := testSensor(t, "windows", root, data, withDesktop())
 	if len(s3.st.Decoys) != 0 || s3.st.Canary == "" {
 		t.Fatalf("corrupt state: %d decoys", len(s3.st.Decoys))
 	}
@@ -230,7 +371,7 @@ func TestStateRoundTrip(t *testing.T) {
 
 func TestDetectChangeDeleteRename(t *testing.T) {
 	root := windowsRoot(t)
-	s, c, ck := testSensor(t, "windows", root, t.TempDir(), on())
+	s, c, ck := testSensor(t, "windows", root, t.TempDir(), withDesktop())
 	s.checkOnce()
 	c.take()
 	codes := filepath.Join(root, "Users", "bob", "Desktop", "backup-codes.txt")
@@ -290,16 +431,18 @@ func TestDetectChangeDeleteRename(t *testing.T) {
 		t.Fatal("renamed decoy not recreated")
 	}
 
-	// A folder that disappears is not reported (profile removed, home not mounted).
+	// A folder that disappears is not reported (profile removed, home not mounted), and
+	// the decoy stays configured while its user is not listed.
 	os.RemoveAll(filepath.Join(root, "Users", "carol"))
 	ck.add(2 * time.Minute)
 	s.checkOnce()
 	if evs := c.take(); len(evs) != 0 {
 		t.Fatalf("removed profile: %d events", len(evs))
 	}
-	if r := s.byPath[sheet]; r == nil || !r.Unavailable || exists(sheet) {
+	if r := s.byPath[sheet]; r == nil || !r.Unavailable || r.Retired || exists(sheet) {
 		t.Fatalf("removed profile record: %+v", r)
 	}
+	// carol had two decoys: in Documents, and on the Desktop the agent created.
 	if st := s.Status(); st.Message != "2 decoy files" {
 		t.Errorf("status %q", st.Message)
 	}
@@ -307,7 +450,7 @@ func TestDetectChangeDeleteRename(t *testing.T) {
 
 func TestRateLimit(t *testing.T) {
 	root := windowsRoot(t)
-	s, c, ck := testSensor(t, "windows", root, t.TempDir(), on())
+	s, c, ck := testSensor(t, "windows", root, t.TempDir(), withDesktop())
 	s.checkOnce()
 	c.take()
 	p := filepath.Join(root, "Users", "bob", "Desktop", "backup-codes.txt")
@@ -335,7 +478,7 @@ func TestRateLimit(t *testing.T) {
 func TestDisableRemovesOnlyUnchanged(t *testing.T) {
 	root := windowsRoot(t)
 	data := t.TempDir()
-	s, _, _ := testSensor(t, "windows", root, data, on())
+	s, _, _ := testSensor(t, "windows", root, data, withDesktop())
 	s.checkOnce()
 	s.save()
 	codes := filepath.Join(root, "Users", "bob", "Desktop", "backup-codes.txt")
@@ -343,7 +486,9 @@ func TestDisableRemovesOnlyUnchanged(t *testing.T) {
 	csv := filepath.Join(root, "ProgramData", "Backup", "credentials.csv")
 	write(t, codes, "someone edited this")
 
-	off, c, _ := testSensor(t, "windows", root, data, api.DecoyConfig{Enabled: false})
+	cfg := withDesktop()
+	cfg.Enabled = false
+	off, c, _ := testSensor(t, "windows", root, data, cfg)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- off.Run(ctx, c) }()
@@ -375,49 +520,207 @@ func TestDisableRemovesOnlyUnchanged(t *testing.T) {
 		t.Error("cleanup emitted events")
 	}
 	// The kept decoy stays in the state file.
-	again, _, _ := testSensor(t, "windows", root, data, on())
+	again, _, _ := testSensor(t, "windows", root, data, withDesktop())
 	if len(again.st.Decoys) != 1 || again.st.Decoys[0].Path != codes {
 		t.Fatalf("state after cleanup: %d decoys", len(again.st.Decoys))
 	}
 }
 
-func TestExtraDecoys(t *testing.T) {
-	root := t.TempDir()
-	data := filepath.Join(root, "agentdata")
-	mkdirs(t, root, "srv/share", "agentdata")
-	extra := filepath.Join(root, "srv", "share", "payroll.csv")
-	cfg := on()
-	cfg.Extra = []string{extra, "relative/file.txt", filepath.Join(data, "x.txt"), filepath.Join(root, "nofolder", "a.txt")}
-	s, c, _ := testSensor(t, "none", root, data, cfg)
+// Entries removed from the list: unchanged decoys are removed, changed ones are left in
+// place and the status says so, without events.
+func TestRemovedEntries(t *testing.T) {
+	root := windowsRoot(t)
+	s, c, ck := testSensor(t, "windows", root, t.TempDir(), withDesktop())
 	s.checkOnce()
-	if len(s.st.Decoys) != 1 || s.st.Decoys[0].Path != extra || !s.st.Decoys[0].Extra || s.st.Decoys[0].Kind != kindCSV {
-		t.Fatalf("extra decoys: %+v", s.st.Decoys)
+	bob := filepath.Join(root, "Users", "bob", "Desktop", "backup-codes.txt")
+	carol := filepath.Join(root, "Users", "carol", "Desktop", "backup-codes.txt")
+	if !exists(bob) || !exists(carol) {
+		t.Fatal("Desktop decoys not created")
 	}
-	if exists(filepath.Join(data, "x.txt")) || exists(filepath.Join(root, "nofolder")) {
-		t.Error("wrote where it should not")
-	}
-	if !IsDecoy(extra) {
-		t.Error("decoy not registered for other sensors to skip")
-	}
-	// Removing it from the config removes the (unchanged) file.
-	s.cfg.Extra = nil
+	write(t, bob, "bob wrote his own codes here")
+	ck.add(2 * time.Minute)
 	s.checkOnce()
-	if len(s.st.Decoys) != 0 || exists(extra) || len(c.take()) != 0 || IsDecoy(extra) {
-		t.Errorf("unconfigured extra decoy: %d tracked, exists %v", len(s.st.Decoys), exists(extra))
+	if evs := c.take(); len(evs) != 1 {
+		t.Fatalf("change: %d events", len(evs))
+	}
+
+	s.cfg = on() // the defaults: no Desktop decoys
+	ck.add(2 * time.Minute)
+	s.checkOnce()
+	if exists(carol) || exists(filepath.Dir(carol)) {
+		t.Error("unchanged Desktop decoy (or the folder the agent made) not removed")
+	}
+	if b, _ := os.ReadFile(bob); string(b) != "bob wrote his own codes here" {
+		t.Error("changed Desktop decoy removed or modified")
+	}
+	if IsDecoy(bob) || IsDecoy(carol) {
+		t.Error("retired decoys still registered as decoys")
+	}
+	want := "2 decoy files; 1 decoy file no longer in the list was left in place because someone changed it"
+	if st := s.Status(); st.Message != want {
+		t.Errorf("status %q", st.Message)
+	}
+	// Nothing about a retired decoy is reported, and it is not hashed again while it
+	// stays as it is.
+	write(t, bob, "and changed again")
+	s.onWatch(bob, watchModify)
+	ck.add(2 * time.Minute)
+	s.checkOnce()
+	s.checkOnce()
+	if evs := c.take(); len(evs) != 0 {
+		t.Fatalf("retired decoy: %d events", len(evs))
+	}
+	// Once it is gone, it is forgotten.
+	os.Remove(bob)
+	s.checkOnce()
+	if s.byPath[bob] != nil || len(s.st.Decoys) != 2 || len(c.take()) != 0 {
+		t.Fatalf("deleted retired decoy still tracked: %d", len(s.st.Decoys))
+	}
+	if st := s.Status(); st.Message != "2 decoy files" {
+		t.Errorf("status %q", st.Message)
 	}
 }
 
-func TestExtraTargetValidation(t *testing.T) {
-	abs := filepath.Join(t.TempDir(), "a", "b.txt")
-	if _, ok := extraTarget(abs, ""); !ok {
-		t.Error("absolute path rejected")
+// A retired decoy whose entry comes back is checked again.
+func TestRetiredDecoyConfiguredAgain(t *testing.T) {
+	root := windowsRoot(t)
+	s, c, ck := testSensor(t, "windows", root, t.TempDir(), withDesktop())
+	s.checkOnce()
+	bob := filepath.Join(root, "Users", "bob", "Desktop", "backup-codes.txt")
+	write(t, bob, "changed")
+	ck.add(2 * time.Minute)
+	s.checkOnce()
+	c.take()
+	s.cfg = on()
+	s.checkOnce()
+	if r := s.byPath[bob]; r == nil || !r.Retired {
+		t.Fatalf("not retired: %+v", r)
 	}
-	for _, p := range []string{"", "b.txt", "../b.txt", filepath.Join(t.TempDir(), "*.txt")} {
-		if _, ok := extraTarget(p, ""); ok {
-			t.Errorf("%q accepted", p)
+	s.cfg = withDesktop()
+	s.checkOnce()
+	if r := s.byPath[bob]; r == nil || r.Retired || !r.present() || !IsDecoy(bob) {
+		t.Fatalf("not checked again: %+v", r)
+	}
+	if evs := c.take(); len(evs) != 0 {
+		t.Fatalf("re-adding: %d events", len(evs))
+	}
+	os.Remove(bob)
+	ck.add(2 * time.Minute)
+	s.checkOnce()
+	if evs := c.take(); len(evs) != 1 || evs[0].Event.Type[0] != event.TypeDeletion {
+		t.Fatalf("deletion after re-adding: %d events", len(evs))
+	}
+}
+
+// Decoys created before decoy paths were configurable have no entry in the state file.
+// After the upgrade the Desktop ones are removed (if unchanged) and the others are kept.
+func TestUpgradeFromFixedPlacements(t *testing.T) {
+	root := t.TempDir()
+	mkdirs(t, root, "Users/bob/Documents", "Users/bob/Desktop", "ProgramData")
+	write(t, filepath.Join(root, "Users", "bob", "NTUSER.DAT"), "hive")
+	data := t.TempDir()
+	s, _, _ := testSensor(t, "windows", root, data, withDesktop())
+	s.checkOnce()
+	if len(s.st.Decoys) != 3 {
+		t.Fatalf("%d decoys", len(s.st.Decoys))
+	}
+	for _, r := range s.st.Decoys { // as the previous version wrote them
+		r.Entry, r.Home, r.Extra = "", false, false
+		if r.Name == "credentials.csv" {
+			r.Kind = kindCSV
 		}
 	}
-	if k := kindForName("db.SQL"); k != kindSQL {
-		t.Errorf("kind %s", k)
+	s.dirty = true
+	s.save()
+
+	n, c, _ := testSensor(t, "windows", root, data, on())
+	n.checkOnce()
+	codes := filepath.Join(root, "Users", "bob", "Desktop", "backup-codes.txt")
+	if exists(codes) || !exists(filepath.Dir(codes)) {
+		t.Error("old Desktop decoy not removed, or the user's Desktop removed")
+	}
+	if len(n.st.Decoys) != 2 || len(c.take()) != 0 {
+		t.Fatalf("after the upgrade: %d decoys", len(n.st.Decoys))
+	}
+	if r := n.byPath[filepath.Join(root, "Users", "bob", "Documents", "Passwords.xlsx")]; r == nil || r.Entry != `{home}\Documents\Passwords.xlsx` || !r.Home {
+		t.Errorf("Documents decoy %+v", r)
+	}
+	if r := n.byPath[filepath.Join(root, "ProgramData", "Backup", "credentials.csv")]; r == nil || r.Entry != `C:\ProgramData\Backup\credentials.csv` || r.Home {
+		t.Errorf("ProgramData decoy %+v", r)
+	}
+	// An old home decoy whose profile is not listed right now stays while its entry is
+	// configured.
+	os.Remove(filepath.Join(root, "Users", "bob", "NTUSER.DAT"))
+	r := n.byPath[filepath.Join(root, "Users", "bob", "Documents", "Passwords.xlsx")]
+	r.Entry, r.Home = "", false
+	n.checkOnce()
+	if r.Retired || !exists(r.Path) {
+		t.Errorf("home decoy of an unlisted user retired: %+v", r)
+	}
+}
+
+func TestAbsoluteEntries(t *testing.T) {
+	root := t.TempDir()
+	data := filepath.Join(root, "agentdata")
+	mkdirs(t, root, "srv/share", "agentdata")
+	payroll := filepath.Join(root, "srv", "share", "payroll.csv")
+	cfg := on()
+	cfg.Files = []api.DecoyFile{
+		{OS: api.DecoyOSLinux, Path: "/srv/share/payroll.csv"},
+		{OS: api.DecoyOSLinux, Path: "/agentdata/x.txt"},          // the agent's data folder
+		{OS: api.DecoyOSLinux, Path: "relative/file.txt"},         // invalid
+		{OS: api.DecoyOSDarwin, Path: "/srv/share/mac.txt"},       // another OS
+		{OS: api.DecoyOSWindows, Path: `C:\srv\share\win.txt`},    // another OS
+		{OS: api.DecoyOSLinux, Path: "/srv/share/payroll.csv"},    // twice
+		{OS: api.DecoyOSLinux, Path: "/nofolder/sub/a.txt"},       // no parent folder
+		{OS: api.DecoyOSLinux, Path: "/srv/share/.hidden-db.sql"}, // dot file
+	}
+	s, c, _ := testSensor(t, "linux", root, data, cfg)
+	s.checkOnce()
+	if len(s.st.Decoys) != 2 {
+		t.Fatalf("decoys: %d", len(s.st.Decoys))
+	}
+	if r := s.byPath[payroll]; r == nil || !r.Extra || r.Kind != kindSheet || r.Home {
+		t.Fatalf("payroll decoy: %+v", r)
+	}
+	if r := s.byPath[filepath.Join(root, "srv", "share", ".hidden-db.sql")]; r == nil || r.Kind != kindSQL {
+		t.Fatalf("dot-file decoy: %+v", r)
+	}
+	for _, p := range []string{filepath.Join(data, "x.txt"), filepath.Join(root, "nofolder"), filepath.Join(root, "srv", "share", "mac.txt"), filepath.Join(root, "srv", "share", "win.txt")} {
+		if exists(p) {
+			t.Errorf("wrote %s", p)
+		}
+	}
+	if !IsDecoy(payroll) {
+		t.Error("decoy not registered for other sensors to skip")
+	}
+	if s.noted["relative/file.txt"] == "" {
+		t.Errorf("invalid entry not noted: %v", s.noted)
+	}
+	// Removing it from the config removes the (unchanged) file.
+	s.cfg.Files = nil
+	s.checkOnce()
+	if len(s.st.Decoys) != 0 || exists(payroll) || len(c.take()) != 0 || IsDecoy(payroll) {
+		t.Errorf("unconfigured decoy: %d tracked, exists %v", len(s.st.Decoys), exists(payroll))
+	}
+}
+
+func TestKindFor(t *testing.T) {
+	for _, c := range []struct {
+		dirs []string
+		name string
+		want string
+	}{
+		{nil, "Passwords.xlsx", kindSheet},
+		{nil, "creds.CSV", kindSheet},
+		{nil, "db.SQL", kindSQL},
+		{[]string{".aws"}, "credentials.bak", kindAWS},
+		{[]string{"backup"}, "credentials.bak", kindText},
+		{nil, "backup-codes.txt", kindCodes},
+		{nil, "notes.txt", kindText},
+	} {
+		if got := kindFor(c.dirs, c.name); got != c.want {
+			t.Errorf("%v %s: %s, want %s", c.dirs, c.name, got, c.want)
+		}
 	}
 }

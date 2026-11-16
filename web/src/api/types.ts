@@ -1180,13 +1180,25 @@ export interface AgentConfig {
   };
   /** decoy (honeypot) files placed and watched by the agents (docs/decoys.md) */
   decoys: {
+    /** the Global switch; host groups can override it (Settings → Groups) */
     enabled: boolean;
     check_interval_sec: number;
-    extra?: string[];
+    /** where decoys go, per platform; each agent uses the entries for its own OS */
+    files?: DecoyFile[];
   };
   logs?: { path: string; format?: string; dataset?: string }[];
   filters?: { category?: string; field: string; op: string; value: string }[];
   spool_max_bytes: number;
+}
+
+export type DecoyOS = "windows" | "linux" | "darwin";
+
+/** One decoy location: an absolute path, or one starting with {home} (each user's home folder). */
+export interface DecoyFile {
+  os: DecoyOS;
+  path: string;
+  /** hidden attribute (Windows) or flag (macOS); Linux has none */
+  hidden: boolean;
 }
 
 // ---------------------------------------------------------------------------------------

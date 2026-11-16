@@ -16,6 +16,7 @@ import type {
   Severity,
   User,
 } from '../api/types'
+import { decoyDefaultFiles } from '../lib/agentConfig'
 import { SEVERITY_RISK } from '../lib/severity'
 import {
   defenderEvent,
@@ -459,7 +460,11 @@ export const agentConfig: AgentConfig = {
     },
   },
   fim: { enabled: true, paths: ['/etc', '/usr/local/bin', 'C:\\Windows\\System32\\drivers\\etc'], interval_sec: 3600, max_file_size: 64 << 20 },
-  decoys: { enabled: true, check_interval_sec: 60 },
+  decoys: {
+    enabled: true,
+    check_interval_sec: 60,
+    files: [...decoyDefaultFiles(), { os: 'windows', path: 'D:\\Shares\\Finance\\logins.csv', hidden: true }],
+  },
   logs: [{ path: '/var/log/nginx/access.log', format: 'raw', dataset: 'nginx.access' }],
   filters: [{ category: 'network', field: 'process.executable', op: 'suffix', value: '\\steam.exe' }],
   spool_max_bytes: 512 << 20,

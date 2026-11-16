@@ -1,14 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
+import { Link } from 'react-router'
 import { api, errorMessage, queryKeys, type AgentConfig } from '../api'
 import { useCan } from '../components/Auth'
+import { DecoyFileList } from '../components/DecoyFiles'
 import { Icon } from '../components/Icon'
 import { ButtonTabs, Toggle } from '../components/Misc'
 import { ConfirmDialog } from '../components/Modal'
 import { ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
 import { formatBytes, prettyJSON } from '../lib/format'
-import { DECOY_DEFAULTS, DECOY_MIN_INTERVAL, validateAgentConfig } from '../lib/agentConfig'
+import { DECOY_DEFAULTS, DECOY_MIN_INTERVAL, decoyDefaultFiles, validateAgentConfig } from '../lib/agentConfig'
 
 const MiB = 1024 * 1024
 const lines = (xs?: string[]) => (xs ?? []).join('\n')
@@ -95,6 +97,7 @@ export function AgentConfigEditor() {
   const dirty = JSON.stringify(c) !== JSON.stringify(q.data)
   const problems = validateAgentConfig(c)
   const dc = c.decoys ?? DECOY_DEFAULTS
+  const decoyFiles = dc.files ?? decoyDefaultFiles()
   const set = (fn: (d: AgentConfig) => void) => {
     const n = structuredClone(c)
     fn(n)
@@ -237,7 +240,8 @@ export function AgentConfigEditor() {
             <Section title="Decoy files" hint="fake credential files that raise an alert when touched">
               <SensorToggle label="Decoy files" checked={dc.enabled} disabled={ro} onChange={(v) => set((d) => (d.decoys = { ...dc, enabled: v }))} />
               <span className="xsmall muted">
-                Agents place a few fake password and credential files in user folders (Documents, Desktop, ~/.aws) and raise a critical alert when one is changed, deleted or renamed; Linux agents also report reads. Turning this off removes the files nobody changed. See docs/decoys.md.
+                This is the Global switch: host groups can override it under <Link to="/settings/groups">Settings → Groups</Link>. Agents place fake password and credential files at the paths below and raise a critical alert when
+                one is changed, deleted or renamed; Linux agents also report reads. Turning decoys off (or removing a path) removes the files nobody changed. See docs/decoys.md.
               </span>
               <div className="form-grid">
                 <NumberField
@@ -245,25 +249,15 @@ export function AgentConfigEditor() {
                   label="Check interval (s)"
                   value={dc.check_interval_sec}
                   min={DECOY_MIN_INTERVAL}
-                  disabled={ro || !dc.enabled}
+                  disabled={ro}
                   onChange={(n) => set((d) => (d.decoys = { ...dc, check_interval_sec: n }))}
                   help="Every decoy is checked this often (Linux also in real time)."
                 />
               </div>
-              <div className="field">
-                <label htmlFor="decoyextra">Extra decoy paths (one per line)</label>
-                <textarea
-                  id="decoyextra"
-                  className="textarea code"
-                  rows={3}
-                  value={lines(dc.extra)}
-                  readOnly={ro}
-                  disabled={!dc.enabled}
-                  placeholder={'/srv/share/passwords.txt\nC:\\Shares\\Finance\\logins.csv'}
-                  onChange={(e) => set((d) => (d.decoys = { ...dc, extra: unlines(e.target.value) }))}
-                />
-                <span className="help">Absolute file paths. Each is created only if its folder exists and no file is there yet.</span>
-              </div>
+              <span className="xsmall muted">
+                Each decoy is created only if its folder exists, or the folder's parent does (then just that folder is created), and no file is there yet.
+              </span>
+              <DecoyFileList files={decoyFiles} readOnly={ro} onChange={(files) => set((d) => (d.decoys = { ...dc, files }))} />
             </Section>
             <Section title="Log files" hint="tailed and forwarded as events">
               {(c.logs ?? []).length === 0 ? <span className="muted small">No log files configured.</span> : null}

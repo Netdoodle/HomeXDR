@@ -150,6 +150,18 @@ func (c *Core) ResolveAV(groupID string) EffectiveAV {
 	return eff
 }
 
+// ResolveDecoys works out whether hosts in a group ("" for hosts in no group) place decoy
+// files. global is the agent config's Decoys.Enabled; it is passed in because ResolveAV
+// runs on the ingest path and the agent config lives in the state store.
+func (c *Core) ResolveDecoys(groupID string, global bool) SettingSource {
+	for _, g := range c.groupChain(groupID) {
+		if p := g.Policy.Decoys.Enabled; p != nil {
+			return SettingSource{Value: *p, GroupID: g.ID, GroupName: g.Name}
+		}
+	}
+	return SettingSource{Value: global}
+}
+
 // avScanners is the antivirus' view of ResolveAV.
 func (c *Core) avScanners(groupID string) av.Scanners {
 	e := c.ResolveAV(groupID)

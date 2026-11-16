@@ -17,6 +17,7 @@ var (
 	errExists   = errors.New("a file already exists there")
 	errNoFolder = errors.New("folder does not exist")
 	errUnsafe   = errors.New("folder is a symbolic link, junction or not a folder")
+	errNotOurs  = errors.New("another file is at the path now")
 )
 
 // maxDecoySize bounds what the agent reads when hashing a decoy. Decoys are a few hundred
@@ -50,6 +51,7 @@ type created struct {
 	uid, gid   int
 	hasOwner   bool
 	createdDir bool
+	hidden     bool // the hidden attribute or flag was set
 }
 
 // hashOpen hashes an open regular file of at most maxDecoySize bytes.

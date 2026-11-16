@@ -35,8 +35,11 @@ The agent runs three loops, each with jittered exponential backoff (1s → 5min)
 
 1. **Heartbeat** — `POST /v1/heartbeat` with `Heartbeat` every
    `heartbeat_interval_sec`. The reply may carry a newer `AgentConfig`, which the agent
-   applies (restarting affected sensors) and reports as `status.config_version`, and an
-   `update` offer (see [Agent updates](#agent-updates)).
+   applies (restarting affected sensors) and reports as `status.config_version`, an
+   `update` offer (see [Agent updates](#agent-updates)), and `decoys_enabled`: whether
+   decoy files are on for this host, after its host group's override
+   ([decoys.md](decoys.md)). The server sends it with every reply; the agent keeps the
+   last value and uses `decoys.enabled` from the config when a server sends none.
 2. **Events** — `POST /v1/events`, body gzip NDJSON of `event.Event`, at most
    `MaxEventBatchBytes` uncompressed, sent when `batch.max_events` is reached or every
    `batch.flush_interval_ms`. `202` with `EventsResponse` means the batch is durable and the

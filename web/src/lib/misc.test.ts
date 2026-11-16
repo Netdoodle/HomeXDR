@@ -219,11 +219,30 @@ describe('agent config validation', () => {
       fim: { enabled: true, interval_sec: 3600, max_file_size: 1 },
       spool_max_bytes: 512 << 20,
     }
-    const ok = { enabled: true, check_interval_sec: 60, extra: ['/srv/a.txt', 'C:\\Shares\\b.csv'] }
+    const ok = {
+      enabled: true,
+      check_interval_sec: 60,
+      files: [
+        { os: 'linux' as const, path: '/srv/a.txt', hidden: false },
+        { os: 'windows' as const, path: 'C:\\Shares\\b.csv', hidden: true },
+        { os: 'darwin' as const, path: '{home}/Documents/x.txt', hidden: true },
+      ],
+    }
     expect(validateAgentConfig({ ...base, decoys: ok })).toEqual([])
     expect(validateAgentConfig({ ...base, decoys: { enabled: true, check_interval_sec: 5 } })).toHaveLength(1)
-    const bad = { enabled: true, check_interval_sec: 60, extra: ['notes.txt', '/srv/*.txt', '/srv/dir/', 'C:rel'] }
-    expect(validateAgentConfig({ ...base, decoys: bad })).toHaveLength(4)
+    const bad = {
+      enabled: true,
+      check_interval_sec: 60,
+      files: [
+        { os: 'linux' as const, path: 'notes.txt', hidden: false },
+        { os: 'linux' as const, path: '/srv/*.txt', hidden: false },
+        { os: 'linux' as const, path: '/srv/dir/', hidden: false },
+        { os: 'windows' as const, path: 'C:rel', hidden: false },
+      ],
+    }
+    const problems = validateAgentConfig({ ...base, decoys: bad })
+    expect(problems).toHaveLength(4)
+    expect(problems[0]).toBe('Decoy file "notes.txt" (Linux): must start with {home}/ or /.')
   })
 })
 

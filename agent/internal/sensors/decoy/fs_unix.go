@@ -12,9 +12,10 @@ import (
 
 // openChain opens base (following links: an administrator controls it), then each of
 // dirs below it with O_NOFOLLOW, so a user who swaps a folder in their home for a link
-// cannot redirect the agent. With mkLast the last folder is created (0700, owned by
-// uid/gid when chown is set) if it is missing. It returns the last folder's descriptor.
-func openChain(base string, dirs []string, mkLast bool, uid, gid int, chown bool) (fd int, made bool, err error) {
+// cannot redirect the agent. With mkLast the last folder is created (0700) if it is
+// missing, owned by uid/gid when chown is set, or by the owner of the folder it is
+// created in when inherit is set. It returns the last folder's descriptor.
+func openChain(base string, dirs []string, mkLast bool, uid, gid int, chown, inherit bool) (fd int, made bool, err error) {
 	fd, err = unix.Open(base, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		if errors.Is(err, unix.ENOENT) {
@@ -34,8 +35,12 @@ func openChain(base string, dirs []string, mkLast bool, uid, gid int, chown bool
 				nfd, err = unix.Openat(fd, d, flags, 0)
 				if err == nil && made {
 					_ = unix.Fchmod(nfd, 0o700)
-					if chown {
+					var pst unix.Stat_t
+					switch {
+					case chown:
 						_ = unix.Fchown(nfd, uid, gid)
+					case inherit && unix.Fstat(fd, &pst) == nil:
+						_ = unix.Fchown(nfd, int(pst.Uid), int(pst.Gid))
 					}
 				}
 			}
@@ -56,7 +61,7 @@ func openChain(base string, dirs []string, mkLast bool, uid, gid int, chown bool
 }
 
 func folderOK(t target, n int) error {
-	fd, _, err := openChain(t.Base, t.Dirs[:n], false, 0, 0, false)
+	fd, _, err := openChain(t.Base, t.Dirs[:n], false, 0, 0, false, false)
 	if err == nil {
 		unix.Close(fd)
 	}
@@ -81,7 +86,7 @@ func stateFromStat(st *unix.Stat_t) fileState {
 func createFile(t target, data []byte, mtime time.Time) (created, error) {
 	var c created
 	uid, gid, chown := t.UID, t.GID, t.HasOwner
-	dfd, made, err := openChain(t.Base, t.Dirs, t.MakeDir, uid, gid, chown)
+	dfd, made, err := openChain(t.Base, t.Dirs, t.MakeDir, uid, gid, chown, t.OwnerFromParent)
 	if err != nil {
 		return c, err
 	}
@@ -116,6 +121,10 @@ func createFile(t target, data []byte, mtime time.Time) (created, error) {
 			c.uid, c.gid, c.hasOwner = uid, gid, true
 		}
 	}
+	if t.Hidden && hiddenSupported {
+		// Best effort too: the next check tries again.
+		c.hidden = setHiddenFd(ffd, true) == nil
+	}
 	tv := unix.NsecToTimeval(mtime.UnixNano())
 	_ = unix.Futimes(ffd, []unix.Timeval{tv, tv})
 	var st unix.Stat_t
@@ -149,32 +158,60 @@ func hashPath(p string) (string, int64, error) {
 	return hashOpen(f)
 }
 
-// removeFile deletes a decoy if its content still hashes to want. It also removes a
-// folder the agent created for it, when that folder is empty.
-func removeFile(t target, want string, createdDir bool) (bool, error) {
-	dfd, _, err := openChain(t.Base, t.Dirs, false, 0, 0, false)
+// removeFile deletes a decoy if its content still hashes to want, and returns the hash
+// it found. It also removes a folder the agent created for it, when that folder is empty.
+func removeFile(t target, want string, createdDir bool) (bool, string, error) {
+	dfd, _, err := openChain(t.Base, t.Dirs, false, 0, 0, false, false)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	defer unix.Close(dfd)
 	ffd, err := unix.Openat(dfd, t.Name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	f := os.NewFile(uintptr(ffd), t.path())
 	sum, _, err := hashOpen(f)
 	f.Close()
 	if err != nil || sum != want {
-		return false, err
+		return false, sum, err
 	}
 	if err := unix.Unlinkat(dfd, t.Name, 0); err != nil {
-		return false, err
+		return false, sum, err
 	}
 	if createdDir && len(t.Dirs) > 0 {
-		if pfd, _, err := openChain(t.Base, t.Dirs[:len(t.Dirs)-1], false, 0, 0, false); err == nil {
+		if pfd, _, err := openChain(t.Base, t.Dirs[:len(t.Dirs)-1], false, 0, 0, false, false); err == nil {
 			_ = unix.Unlinkat(pfd, t.Dirs[len(t.Dirs)-1], unix.AT_REMOVEDIR) // fails if not empty
 			unix.Close(pfd)
 		}
 	}
-	return true, nil
+	return true, sum, nil
+}
+
+// setHidden sets or clears the hidden flag of a decoy (macOS), but only on the file the
+// agent created: the one with the recorded device and inode, reached without following
+// links. The flag does not change the size, modification time or content, so the
+// checks do not see it.
+func setHidden(t target, dev, ino uint64, hidden bool) error {
+	if !hiddenSupported {
+		return nil
+	}
+	dfd, _, err := openChain(t.Base, t.Dirs, false, 0, 0, false, false)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(dfd)
+	ffd, err := unix.Openat(dfd, t.Name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(ffd)
+	var st unix.Stat_t
+	if err := unix.Fstat(ffd, &st); err != nil {
+		return err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG || uint64(st.Dev) != dev || uint64(st.Ino) != ino {
+		return errNotOurs
+	}
+	return setHiddenFd(ffd, hidden)
 }
