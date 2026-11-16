@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router'
 import { errorMessage } from '../api/client'
-import { getFeeds, healthKeys, patchFeed, type FeedPatch, type FeedReport, type FeedView } from '../api/health'
+import { getFeeds, getRefused, healthKeys, patchFeed, type FeedPatch, type FeedReport, type FeedView } from '../api/health'
 import { useCan } from '../components/Auth'
 import { PageHeader } from '../components/Layout'
 import { LinkTabs, RelTime, Toggle, type TabDef } from '../components/Misc'
@@ -48,7 +48,57 @@ function SourcesTab() {
       <section className="panel">
         <QueryView query={q}>{(d) => <SourcesTable report={d} />}</QueryView>
       </section>
+      <RefusedSection />
     </div>
+  )
+}
+
+/** Shown only when the internet-facing agent listener is on. */
+function RefusedSection() {
+  const q = useQuery({ queryKey: healthKeys.external, queryFn: getRefused, refetchInterval: 60_000 })
+  const r = q.data
+  if (!r?.enabled) return null
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <h2>Internet agent listener</h2>
+        <span className="hint">connections refused at the TLS handshake</span>
+      </div>
+      <div className="panel-body stack">
+        <p className="small muted" style={{ margin: 0 }}>
+          Anything on the internet can connect to this listener, and everything without a valid agent certificate is refused. That is normal noise and is only counted. An alert is raised when the last full hour had at
+          least 50 refused connections and at least three times the average of the 23 hours before.
+        </p>
+        <dl className="kv">
+          <dt>This hour</dt>
+          <dd>{r.this_hour}</dd>
+          <dt>Last full hour</dt>
+          <dd>{r.previous_hour}</dd>
+          <dt>Last 24 hours</dt>
+          <dd>{r.last_24h}</dd>
+        </dl>
+        {r.top_sources.length === 0 ? (
+          <span className="muted small">No refused connections in the last 24 hours.</span>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Top sources, 24 hours</th>
+                <th className="right">Refused</th>
+              </tr>
+            </thead>
+            <tbody>
+              {r.top_sources.map((s) => (
+                <tr key={s.ip}>
+                  <td className="mono">{s.ip}</td>
+                  <td className="num right">{s.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </section>
   )
 }
 

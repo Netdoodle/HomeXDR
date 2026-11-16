@@ -391,6 +391,9 @@ func cmdRun(p platform.Platform, args []string) error {
 	} else if restore {
 		return selfupdate.Exec(exe)
 	}
+	if ss, ok := p.(platform.StartupSetup); ok {
+		ss.StartupSetup(log)
+	}
 	a, err := core.Load(p, *cfg, log)
 	if err != nil {
 		return err

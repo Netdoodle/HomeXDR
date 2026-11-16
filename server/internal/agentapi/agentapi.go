@@ -34,6 +34,8 @@ type ctxKey struct{}
 type Handler struct {
 	c   *core.Core
 	mux *http.ServeMux
+	// external is set on the internet-facing listener's handler (NewExternal).
+	external bool
 }
 
 // New returns the agent API handler.
@@ -53,7 +55,7 @@ func New(c *core.Core) *Handler {
 // scripts and the CA certificate stay on the local listener. The listener's TLS config
 // (pki.StrictTLSConfig) already refuses connections without a valid agent certificate.
 func NewExternal(c *core.Core) *Handler {
-	h := &Handler{c: c, mux: http.NewServeMux()}
+	h := &Handler{c: c, mux: http.NewServeMux(), external: true}
 	h.agentRoutes()
 	return h
 }
@@ -275,6 +277,9 @@ func (h *Handler) heartbeat(w http.ResponseWriter, r *http.Request, host *store.
 	}
 	if hb.Status.Isolated != host.Isolated {
 		_ = h.c.State.SetIsolated(r.Context(), host.ID, hb.Status.Isolated)
+	}
+	if err := h.c.State.RecordAddress(r.Context(), host, clientIP(r), h.external); err != nil {
+		h.c.Log.Warn("heartbeat: record address", "err", err)
 	}
 	resp := api.HeartbeatResponse{ServerTime: time.Now().UTC()}
 	if cfg := h.c.AgentConfig(r.Context()); cfg.Version > hb.Status.ConfigVersion {

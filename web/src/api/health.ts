@@ -39,9 +39,24 @@ export interface FeedPatch {
   expected?: boolean
 }
 
+/** Refused connections on the internet-facing agent listener. */
+export interface RefusedReport {
+  /** false when the internet listener is off */
+  enabled: boolean
+  /** since the start of the current clock hour */
+  this_hour: number
+  /** the last full hour */
+  previous_hour: number
+  last_24h: number
+  top_sources: { ip: string; count: number }[]
+}
+
 export const healthKeys = {
   feeds: ['health', 'feeds'] as const,
+  external: ['health', 'external'] as const,
 }
+
+export const getRefused = () => http.get<RefusedReport>('/api/health/external')
 
 export const getFeeds = () => http.get<FeedReport>('/api/health/feeds')
 export const patchFeed = (p: FeedPatch) => http.patch<FeedReport>('/api/health/feeds', p)
