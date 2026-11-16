@@ -19,6 +19,7 @@ export interface User {
   role: Role;
   created_at: string;
   last_login?: string;
+  totp_enabled: boolean;
 }
 
 export interface SetupStatus {
@@ -1331,4 +1332,21 @@ export interface AISettingsUpdate {
   /** sets the selected provider's key when not empty */
   api_key?: string;
   clear_api_key?: boolean;
+}
+
+/** Result of the password step of a sign-in: a session, or a request for a second factor. */
+export type LoginResult = { user: User; mfa_required?: false } | { mfa_required: true; mfa_token: string };
+
+export interface TotpStatus {
+  enabled: boolean;
+  recovery_left: number;
+}
+
+export interface TotpSetup {
+  secret: string;
+  uri: string;
+}
+
+export interface RecoveryCodes {
+  recovery_codes: string[];
 }
