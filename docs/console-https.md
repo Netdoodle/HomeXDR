@@ -83,3 +83,10 @@ The plain HTTP listener then answers every request with a `308` redirect to the 
 the HTTPS port, except `/healthz`. The container health check calls `/healthz` over plain
 HTTP, so it keeps working. Only turn this on once HTTPS works for your browsers; the CA
 download link on the login page is also redirected, so install the CA first.
+
+The redirect points at the published HTTPS port (`HOMEXDR_CONSOLE_HTTPS_PORT` in the
+compose files, passed to the server as `HOMEXDR_CONSOLE_HTTPS_PUBLIC_PORT`), so it works
+when the container's ports are mapped to different numbers on the host.
+
+Leave the redirect off when a reverse proxy reaches the console over plain HTTP: the proxy's
+requests would be redirected too.
