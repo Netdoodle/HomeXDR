@@ -9,48 +9,207 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
 // Engine evaluates events against the enabled rule set. SetRules swaps the set
-// atomically, so evaluation never blocks on rule changes.
+// atomically, so evaluation never blocks on rule changes. Correlation and threshold rules
+// keep their windows in memory (correlation_state.go); a reload that leaves such a rule
+// unchanged keeps its windows.
 type Engine struct {
-	rules atomic.Pointer[[]*Rule]
+	plan  atomic.Pointer[plan]
+	calls atomic.Uint64
+
+	mu     sync.Mutex // serializes SetRuleSet
+	states map[string]*corrState
 }
+
+// plan is what Evaluate runs.
+type plan struct {
+	enabled []*Rule
+	eval    []evalRule
+	states  []*corrState
+}
+
+// evalRule is a rule evaluated on every event: whether a match alerts on its own, and
+// which correlations it feeds.
+type evalRule struct {
+	rule  *Rule
+	alert bool
+	feeds []corrFeed
+}
+
+type corrFeed struct {
+	st   *corrState
+	base int // index in the correlation's rules
+}
+
+// corrSweepCalls is how many evaluations pass between checks for expired correlation
+// groups, so idle correlation rules release memory too.
+const corrSweepCalls = 4096
 
 // NewEngine returns an engine with no rules.
 func NewEngine() *Engine {
-	e := &Engine{}
-	empty := []*Rule{}
-	e.rules.Store(&empty)
+	e := &Engine{states: map[string]*corrState{}}
+	e.plan.Store(&plan{enabled: []*Rule{}})
 	return e
 }
 
-// SetRules replaces the enabled rules.
-func (e *Engine) SetRules(rules []*Rule) {
-	cp := append([]*Rule(nil), rules...)
-	e.rules.Store(&cp)
+// SetRules replaces the enabled rules. Correlation rules find their base rules among them.
+func (e *Engine) SetRules(rules []*Rule) { e.SetRuleSet(rules, rules) }
+
+// SetRuleSet replaces the enabled rules. all holds every loaded rule, enabled or not:
+// correlation rules find their base rules there, so a correlation runs whether or not its
+// base rules are enabled. A base rule referenced by any loaded correlation rule only
+// feeds it, and raises no alert of its own, unless one of those correlations sets
+// generate. Correlation rules whose base rules cannot be found are skipped
+// (ResolveCorrelations reports them).
+func (e *Engine) SetRuleSet(enabled, all []*Rule) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	rv := newResolver(all, enabled)
+	referenced := map[*Rule]bool{}
+	generates := map[*Rule]bool{}
+	for _, r := range rv.rules {
+		c := corrOf(r)
+		if c == nil {
+			continue
+		}
+		bases, err := rv.bases(r)
+		if err != nil {
+			continue
+		}
+		for _, b := range bases {
+			referenced[b] = true
+			if c.Generate {
+				generates[b] = true
+			}
+		}
+	}
+
+	p := &plan{enabled: append([]*Rule{}, enabled...)}
+	at := map[*Rule]int{}
+	add := func(r *Rule, alert bool) int {
+		i, ok := at[r]
+		if !ok {
+			i = len(p.eval)
+			at[r] = i
+			p.eval = append(p.eval, evalRule{rule: r})
+		}
+		p.eval[i].alert = p.eval[i].alert || alert
+		return i
+	}
+	states := map[string]*corrState{}
+	state := func(r *Rule, bases []*Rule) *corrState {
+		key := corrKey(r, bases)
+		st := states[key]
+		if st == nil {
+			st = e.states[key]
+		}
+		if st == nil {
+			st = newCorrState(newCorrDef(r, bases))
+		}
+		if states[key] == nil {
+			states[key] = st
+			p.states = append(p.states, st)
+		}
+		return st
+	}
+	for _, r := range p.enabled {
+		if r.Correlation == nil {
+			add(r, !referenced[r] || generates[r])
+			continue
+		}
+		bases, err := rv.bases(r)
+		if err != nil {
+			continue
+		}
+		st := state(r, bases)
+		for i, b := range bases {
+			j := add(b, false)
+			p.eval[j].feeds = append(p.eval[j].feeds, corrFeed{st: st, base: i})
+		}
+	}
+	e.states = states
+	e.plan.Store(p)
 }
 
 // Rules returns the enabled rules.
-func (e *Engine) Rules() []*Rule { return *e.rules.Load() }
+func (e *Engine) Rules() []*Rule { return e.plan.Load().enabled }
 
-// Evaluate returns the rules that match ev.
-func (e *Engine) Evaluate(ev *event.Event) []*Rule {
-	rules := *e.rules.Load()
-	if len(rules) == 0 {
-		return nil
+// Result is what an event set off.
+type Result struct {
+	// Rules are the rules that matched and raise their own alert.
+	Rules []*Rule
+	// Correlations are the correlation and threshold rules whose condition the event met.
+	Correlations []CorrelationMatch
+}
+
+// Evaluate returns the rules that match ev and raise their own alert. It also feeds
+// correlation rules, but drops their matches; ingest uses Detect.
+func (e *Engine) Evaluate(ev *event.Event) []*Rule { return e.Detect(ev).Rules }
+
+// Detect evaluates ev: the rules it matches and the correlations it completes. Correlation
+// windows use the event's timestamp (now when it has none).
+func (e *Engine) Detect(ev *event.Event) Result {
+	p := e.plan.Load()
+	var res Result
+	if len(p.eval) == 0 {
+		return res
 	}
 	d := NewDoc(ev)
-	var hits []*Rule
-	for _, r := range rules {
-		if r.Match(d) {
-			hits = append(hits, r)
+	var fed []*corrState
+	var ts time.Time
+	for i := range p.eval {
+		er := &p.eval[i]
+		if !er.rule.Match(d) {
+			continue
+		}
+		if er.alert {
+			res.Rules = append(res.Rules, er.rule)
+		}
+		for _, f := range er.feeds {
+			// An event that matches several base rules of a count correlation counts once.
+			if f.st.def.c.Type != CorrTemporal {
+				if containsState(fed, f.st) {
+					continue
+				}
+				fed = append(fed, f.st)
+			}
+			if ts.IsZero() {
+				ts = eventTime(ev)
+			}
+			if m := f.st.feed(f.base, d, ts); m != nil {
+				res.Correlations = append(res.Correlations, *m)
+			}
 		}
 	}
-	return hits
+	if len(p.states) > 0 && e.calls.Add(1)%corrSweepCalls == 0 {
+		for _, st := range p.states {
+			st.sweep(eventTime(ev))
+		}
+	}
+	return res
+}
+
+func eventTime(ev *event.Event) time.Time {
+	if ev.Timestamp.IsZero() {
+		return time.Now().UTC()
+	}
+	return ev.Timestamp
+}
+
+func containsState(list []*corrState, s *corrState) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // LoadError records a rule file that failed to load.
