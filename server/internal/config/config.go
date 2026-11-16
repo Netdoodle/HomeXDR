@@ -22,6 +22,9 @@ type Config struct {
 	ConsoleTLSKey    string // HOMEXDR_CONSOLE_TLS_KEY: PEM private key file
 	// ConsoleHTTPRedirect makes the plain HTTP listener redirect to HTTPS (except /healthz).
 	ConsoleHTTPRedirect bool // HOMEXDR_CONSOLE_HTTP_REDIRECT
+	// ConsoleHTTPSPublicPort is the port browsers reach HTTPS on, when it differs from the
+	// listening port (a published container port); used by the redirect.
+	ConsoleHTTPSPublicPort string // HOMEXDR_CONSOLE_HTTPS_PUBLIC_PORT
 	// AgentExternalAddr is a second agent API listener for the internet (off when empty).
 	// It refuses any connection without a valid, unrevoked agent certificate and serves only
 	// what enrolled agents need.
@@ -88,6 +91,12 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("HOMEXDR_CONSOLE_TLS_CERT needs HOMEXDR_CONSOLE_HTTPS_ADDR (for example :8448)")
 	}
 	c.ConsoleHTTPRedirect, _ = strconv.ParseBool(env("HOMEXDR_CONSOLE_HTTP_REDIRECT", "false"))
+	c.ConsoleHTTPSPublicPort = strings.TrimSpace(os.Getenv("HOMEXDR_CONSOLE_HTTPS_PUBLIC_PORT"))
+	if p := c.ConsoleHTTPSPublicPort; p != "" {
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			return c, fmt.Errorf("HOMEXDR_CONSOLE_HTTPS_PUBLIC_PORT must be a port number, got %q", p)
+		}
+	}
 	if c.ConsoleHTTPRedirect && c.ConsoleHTTPSAddr == "" {
 		return c, fmt.Errorf("HOMEXDR_CONSOLE_HTTP_REDIRECT needs HOMEXDR_CONSOLE_HTTPS_ADDR")
 	}

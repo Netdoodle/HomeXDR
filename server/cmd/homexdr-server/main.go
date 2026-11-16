@@ -184,7 +184,11 @@ func serve() error {
 			ErrorLog:    slog.NewLogLogger(log.Handler(), slog.LevelDebug), // TLS handshake noise
 		}
 		if cfg.ConsoleHTTPRedirect {
-			httpSrv.Handler = consoletls.Redirect(cfg.ConsoleHTTPSAddr, httpMux)
+			redirectTo := cfg.ConsoleHTTPSAddr
+			if cfg.ConsoleHTTPSPublicPort != "" {
+				redirectTo = ":" + cfg.ConsoleHTTPSPublicPort // the published port, not the container's
+			}
+			httpSrv.Handler = consoletls.Redirect(redirectTo, httpMux)
 		}
 		log.Info("console HTTPS enabled", "addr", cfg.ConsoleHTTPSAddr, "certificate", source, "http_redirect", cfg.ConsoleHTTPRedirect)
 	}
