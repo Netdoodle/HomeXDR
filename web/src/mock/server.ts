@@ -40,6 +40,7 @@ import {
   validateQuery,
 } from "../lib/query";
 import { hasRole } from "../lib/roles";
+import { isAbsDecoyPath } from "../lib/agentConfig";
 import { OPEN_ALERT_STATUSES } from "../lib/severity";
 import { events, eventById, processes, type MockProcess } from "./events";
 import {
@@ -2667,6 +2668,17 @@ route(
       fail(400, "heartbeat_interval_sec must be a number >= 5");
     if (!b.sensors || !b.batch || !b.fim)
       fail(400, "sensors, batch and fim are required");
+    if (b.decoys) {
+      const iv = b.decoys.check_interval_sec;
+      b.decoys = {
+        ...b.decoys,
+        check_interval_sec:
+          typeof iv === "number" && iv > 0 ? Math.max(15, iv) : 60,
+      };
+      for (const p of b.decoys.extra ?? [])
+        if (!isAbsDecoyPath(p))
+          fail(400, `extra decoy path "${p}" must be an absolute file path`);
+    } else b.decoys = agentConfig.decoys;
     Object.assign(agentConfig, b, { version: agentConfig.version + 1 });
     logAudit(user, "agent_config.update", "default", {
       version: agentConfig.version,

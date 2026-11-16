@@ -64,6 +64,8 @@ export interface HostSensor {
   impl: string;
   state: SensorState;
   error?: string;
+  /** informational note from a healthy sensor, e.g. "3 decoy files" */
+  message?: string;
   events: number;
 }
 
@@ -1175,6 +1177,12 @@ export interface AgentConfig {
     exclude?: string[];
     interval_sec: number;
     max_file_size: number;
+  };
+  /** decoy (honeypot) files placed and watched by the agents (docs/decoys.md) */
+  decoys: {
+    enabled: boolean;
+    check_interval_sec: number;
+    extra?: string[];
   };
   logs?: { path: string; format?: string; dataset?: string }[];
   filters?: { category?: string; field: string; op: string; value: string }[];

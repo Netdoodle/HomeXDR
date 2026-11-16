@@ -123,11 +123,13 @@ const (
 
 // SensorStatus reports one sensor.
 type SensorStatus struct {
-	Name   string `json:"name"`  // "process", "network", "file", ...
-	Impl   string `json:"impl"`  // event.Module* value of the active implementation
-	State  string `json:"state"` // Sensor* constant
-	Error  string `json:"error,omitempty"`
-	Events uint64 `json:"events"`
+	Name  string `json:"name"`  // "process", "network", "file", ...
+	Impl  string `json:"impl"`  // event.Module* value of the active implementation
+	State string `json:"state"` // Sensor* constant
+	Error string `json:"error,omitempty"`
+	// Message is a short, informational note about a healthy sensor ("3 decoy files").
+	Message string `json:"message,omitempty"`
+	Events  uint64 `json:"events"`
 }
 
 // HeartbeatResponse is the server's reply to a heartbeat.
@@ -157,6 +159,7 @@ type AgentConfig struct {
 	Batch                BatchConfig   `json:"batch"`
 	Sensors              SensorsConfig `json:"sensors"`
 	FIM                  FIMConfig     `json:"fim"`
+	Decoys               DecoyConfig   `json:"decoys"`
 	Logs                 []LogSource   `json:"logs,omitempty"`
 	Filters              []EventFilter `json:"filters,omitempty"`
 	SpoolMaxBytes        int64         `json:"spool_max_bytes"`
@@ -213,6 +216,26 @@ type FIMConfig struct {
 	MaxFileSize int64    `json:"max_file_size"` // files larger than this are not hashed
 }
 
+// DecoyConfig configures decoy (honeypot) files: plausible bait files the agent places
+// in user folders and watches. Anything that changes, deletes, renames or (on Linux)
+// opens one raises an event (event.module=decoy). See docs/decoys.md.
+type DecoyConfig struct {
+	Enabled bool `json:"enabled"`
+	// CheckIntervalSec is how often every decoy is checked (minimum 15, default 60).
+	CheckIntervalSec int `json:"check_interval_sec"`
+	// Extra lists additional absolute decoy file paths. Each is created only if its
+	// folder exists and the file does not.
+	Extra []string `json:"extra,omitempty"`
+}
+
+// Decoy check interval limits.
+const (
+	DecoyDefaultIntervalSec = 60
+	DecoyMinIntervalSec     = 15
+	DecoyMaxIntervalSec     = 24 * 3600
+	DecoyMaxExtra           = 32
+)
+
 // LogSource is a log file the agent tails and forwards.
 type LogSource struct {
 	Path    string `json:"path"`              // may contain globs
@@ -233,7 +256,8 @@ func DefaultAgentConfig() AgentConfig {
 	return AgentConfig{
 		// Raise Version whenever these defaults change, so agents running on the
 		// default (no config saved on the server) pick the change up. 2: OpenSSH channel.
-		Version:              2,
+		// 3: decoy files.
+		Version:              3,
 		HeartbeatIntervalSec: 30,
 		InventoryIntervalSec: 6 * 3600,
 		Batch:                BatchConfig{MaxEvents: 500, FlushIntervalMs: 2000},
@@ -264,6 +288,7 @@ func DefaultAgentConfig() AgentConfig {
 			IntervalSec: 3600,
 			MaxFileSize: 64 << 20,
 		},
+		Decoys:        DecoyConfig{Enabled: true, CheckIntervalSec: DecoyDefaultIntervalSec},
 		SpoolMaxBytes: 512 << 20,
 	}
 }

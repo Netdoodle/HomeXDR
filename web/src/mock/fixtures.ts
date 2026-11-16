@@ -459,6 +459,7 @@ export const agentConfig: AgentConfig = {
     },
   },
   fim: { enabled: true, paths: ['/etc', '/usr/local/bin', 'C:\\Windows\\System32\\drivers\\etc'], interval_sec: 3600, max_file_size: 64 << 20 },
+  decoys: { enabled: true, check_interval_sec: 60 },
   logs: [{ path: '/var/log/nginx/access.log', format: 'raw', dataset: 'nginx.access' }],
   filters: [{ category: 'network', field: 'process.executable', op: 'suffix', value: '\\steam.exe' }],
   spool_max_bytes: 512 << 20,

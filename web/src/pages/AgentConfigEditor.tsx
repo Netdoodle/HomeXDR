@@ -8,7 +8,7 @@ import { ConfirmDialog } from '../components/Modal'
 import { ErrorState, Loading, Spinner } from '../components/States'
 import { useToast } from '../components/Toast'
 import { formatBytes, prettyJSON } from '../lib/format'
-import { validateAgentConfig } from '../lib/agentConfig'
+import { DECOY_DEFAULTS, DECOY_MIN_INTERVAL, validateAgentConfig } from '../lib/agentConfig'
 
 const MiB = 1024 * 1024
 const lines = (xs?: string[]) => (xs ?? []).join('\n')
@@ -94,6 +94,7 @@ export function AgentConfigEditor() {
   const ro = !isAdmin
   const dirty = JSON.stringify(c) !== JSON.stringify(q.data)
   const problems = validateAgentConfig(c)
+  const dc = c.decoys ?? DECOY_DEFAULTS
   const set = (fn: (d: AgentConfig) => void) => {
     const n = structuredClone(c)
     fn(n)
@@ -231,6 +232,37 @@ export function AgentConfigEditor() {
                   <label htmlFor="fimexcl">Exclude</label>
                   <textarea id="fimexcl" className="textarea code" rows={4} value={lines(c.fim.exclude)} readOnly={ro} onChange={(e) => set((d) => (d.fim.exclude = unlines(e.target.value)))} />
                 </div>
+              </div>
+            </Section>
+            <Section title="Decoy files" hint="fake credential files that raise an alert when touched">
+              <SensorToggle label="Decoy files" checked={dc.enabled} disabled={ro} onChange={(v) => set((d) => (d.decoys = { ...dc, enabled: v }))} />
+              <span className="xsmall muted">
+                Agents place a few fake password and credential files in user folders (Documents, Desktop, ~/.aws) and raise a critical alert when one is changed, deleted or renamed; Linux agents also report reads. Turning this off removes the files nobody changed. See docs/decoys.md.
+              </span>
+              <div className="form-grid">
+                <NumberField
+                  id="decoyint"
+                  label="Check interval (s)"
+                  value={dc.check_interval_sec}
+                  min={DECOY_MIN_INTERVAL}
+                  disabled={ro || !dc.enabled}
+                  onChange={(n) => set((d) => (d.decoys = { ...dc, check_interval_sec: n }))}
+                  help="Every decoy is checked this often (Linux also in real time)."
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="decoyextra">Extra decoy paths (one per line)</label>
+                <textarea
+                  id="decoyextra"
+                  className="textarea code"
+                  rows={3}
+                  value={lines(dc.extra)}
+                  readOnly={ro}
+                  disabled={!dc.enabled}
+                  placeholder={'/srv/share/passwords.txt\nC:\\Shares\\Finance\\logins.csv'}
+                  onChange={(e) => set((d) => (d.decoys = { ...dc, extra: unlines(e.target.value) }))}
+                />
+                <span className="help">Absolute file paths. Each is created only if its folder exists and no file is there yet.</span>
               </div>
             </Section>
             <Section title="Log files" hint="tailed and forwarded as events">

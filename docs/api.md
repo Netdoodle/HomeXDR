@@ -104,7 +104,7 @@ type Host = {
   update_error?: string;           // "<version>: <error>" from the agent's last failed install
   update?: HostUpdate;             // endpoint agents only (below)
   labels: string[];
-  sensors?: { name: string; impl: string; state: "running" | "degraded" | "failed" | "disabled"; error?: string; events: number }[];
+  sensors?: { name: string; impl: string; state: "running" | "degraded" | "failed" | "disabled"; error?: string; message?: string; events: number }[];
   queue_events?: number;
   allowed_actions?: string[];
   open_alerts: number;

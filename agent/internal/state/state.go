@@ -169,6 +169,13 @@ func Sanitize(c api.AgentConfig) api.AgentConfig {
 	if c.FIM.MaxFileSize <= 0 {
 		c.FIM.MaxFileSize = def.FIM.MaxFileSize
 	}
+	if c.Decoys.CheckIntervalSec <= 0 {
+		c.Decoys.CheckIntervalSec = def.Decoys.CheckIntervalSec
+	}
+	c.Decoys.CheckIntervalSec = clamp(c.Decoys.CheckIntervalSec, api.DecoyMinIntervalSec, api.DecoyMaxIntervalSec)
+	if len(c.Decoys.Extra) > api.DecoyMaxExtra {
+		c.Decoys.Extra = c.Decoys.Extra[:api.DecoyMaxExtra]
+	}
 	if c.SpoolMaxBytes <= 0 {
 		c.SpoolMaxBytes = def.SpoolMaxBytes
 	}
