@@ -45,7 +45,7 @@ func (c *Core) initHealth(ctx context.Context) {
 func (c *Core) runHealth(ctx context.Context) {
 	c.Health.serving.Store(true)
 	var wg sync.WaitGroup
-	for _, run := range []func(context.Context){c.Health.Feeds.Run, c.Health.Lists.Run, c.Health.Vuln.Run} {
+	for _, run := range []func(context.Context){c.Health.Feeds.Run, c.Health.Lists.Run, c.Health.Vuln.Run, c.runRefused} {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

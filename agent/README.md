@@ -159,6 +159,14 @@ policy is turned on; its status message says what is missing. The running agent 
 changes the policy; only `install` and `uninstall` do (`hostsetup.go`, through the
 setters in `audit.go`).
 
+`install` also turns on the Task Scheduler operational log
+(`Microsoft-Windows-TaskScheduler/Operational`), which is off by default and which the
+event log sensor reads; `uninstall` turns it off again if it was off before the first
+install (recorded in the same backup file as `TaskSchedulerLogWasEnabled`). For an
+install made before this existed, the service records the log's current state in the
+backup file and turns the log on once, the next time it starts as SYSTEM; a failure is
+only logged.
+
 `process.user` carries the SID (`user.id`), name and domain. In 4688 the account is the
 target account when the process was started for another user (`runas`, services), else
 the creator's. LocalSystem, LOCAL SERVICE and NETWORK SERVICE get their canonical names

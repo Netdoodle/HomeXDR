@@ -103,6 +103,9 @@ export interface Host {
   update_offered?: string;
   update_offered_at?: string;
   update_error?: string;
+  /** address the agent last connected from, and whether through the internet listener */
+  last_ip?: string;
+  last_external?: boolean;
   /** endpoint agents: what the update policy wants for this agent */
   update?: HostUpdate;
 }

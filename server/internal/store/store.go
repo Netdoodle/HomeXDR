@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -24,6 +25,10 @@ var ErrConflict = errors.New("conflict")
 // Store is the state database.
 type Store struct {
 	db *sql.DB
+
+	// addrs caches the last address recorded per host (RecordAddress).
+	addrMu sync.Mutex
+	addrs  map[string]hostAddr
 }
 
 // Open opens (creating if needed) the database at path and applies migrations.
@@ -238,6 +243,9 @@ var columnMigrations = []struct{ table, column, def string }{
 	{"alerts", "linked", `TEXT NOT NULL DEFAULT '[]'`},
 	// Host groups.
 	{"hosts", "group_id", `TEXT NOT NULL DEFAULT ''`},
+	// Where an agent last connected from.
+	{"hosts", "last_ip", `TEXT NOT NULL DEFAULT ''`},
+	{"hosts", "last_external", `INTEGER NOT NULL DEFAULT 0`},
 	{"enrollment_tokens", "group_id", `TEXT NOT NULL DEFAULT ''`},
 	{"enrollment_tokens", "allow_agent_labels", `INTEGER NOT NULL DEFAULT 0`},
 	// Authenticode hashes of malicious files, for App Control.

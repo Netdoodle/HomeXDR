@@ -147,6 +147,22 @@ function Overview({ host: h }: { host: Host }) {
                 ['Booted', h.boot_time ? `${formatDateTime(h.boot_time)} (up ${formatDurationSec(uptime!)})` : undefined],
                 ['Enrolled', formatDateTime(h.enrolled_at)],
                 ['Last seen', <RelTime key="ls" iso={h.last_seen} />],
+                [
+                  'Last address',
+                  h.last_ip ? (
+                    <span key="la" className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                      <span>
+                        <span className="mono">{h.last_ip}</span> ({h.last_external ? 'internet listener' : 'local network'})
+                      </span>
+                      {isAdmin && h.kind === 'endpoint' && h.status !== 'revoked' ? (
+                        <button type="button" className="btn danger sm" onClick={() => setRevokeOpen(true)}>
+                          Revoke
+                        </button>
+                      ) : null}
+                    </span>
+                  ) : undefined,
+                  h.last_ip ? `${h.last_ip} (${h.last_external ? 'internet listener' : 'local network'})` : undefined,
+                ],
                 ['Spooled events', h.queue_events !== undefined ? formatNumber(h.queue_events) : undefined],
                 ['Open alerts', <AlertCount key="a" n={h.open_alerts} />],
               ]}
