@@ -4,7 +4,10 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -116,9 +119,29 @@ const agentConfigKey = "agent_config"
 
 // AgentConfig returns the current default agent config.
 func (c *Core) AgentConfig(ctx context.Context) api.AgentConfig {
-	var cfg api.AgentConfig
-	if err := c.State.GetKV(ctx, agentConfigKey, &cfg); err != nil || cfg.Version == 0 {
+	var raw json.RawMessage
+	if err := c.State.GetKV(ctx, agentConfigKey, &raw); err != nil {
 		return api.DefaultAgentConfig()
+	}
+	return ParseAgentConfig(raw)
+}
+
+// ParseAgentConfig decodes a stored default agent config. A config saved before decoy
+// files existed has no "decoys" section: it gets the default (on) and a version one
+// higher than the stored one, so agents already running that config pick decoys up on
+// their next heartbeat. Saving the config stores the section, and the version keeps
+// rising from there.
+func ParseAgentConfig(raw []byte) api.AgentConfig {
+	var cfg api.AgentConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil || cfg.Version == 0 {
+		return api.DefaultAgentConfig()
+	}
+	var probe struct {
+		Decoys json.RawMessage `json:"decoys"`
+	}
+	if json.Unmarshal(raw, &probe) == nil && len(probe.Decoys) == 0 {
+		cfg.Decoys = api.DefaultAgentConfig().Decoys
+		cfg.Version++
 	}
 	return cfg
 }
@@ -139,7 +162,38 @@ func (c *Core) SetAgentConfig(ctx context.Context, cfg api.AgentConfig) (api.Age
 	if cfg.SpoolMaxBytes <= 0 {
 		cfg.SpoolMaxBytes = 512 << 20
 	}
+	if cfg.Decoys.CheckIntervalSec <= 0 {
+		cfg.Decoys.CheckIntervalSec = api.DecoyDefaultIntervalSec
+	}
+	cfg.Decoys.CheckIntervalSec = max(api.DecoyMinIntervalSec, min(cfg.Decoys.CheckIntervalSec, api.DecoyMaxIntervalSec))
+	var extra []string
+	for _, p := range cfg.Decoys.Extra {
+		p = strings.TrimSpace(p)
+		if p == "" || slices.Contains(extra, p) {
+			continue
+		}
+		if !absDecoyPath(p) {
+			return cfg, invalid(`extra decoy path %q must be an absolute file path (/home/me/notes.txt or C:\Users\me\notes.txt) without wildcards`, p)
+		}
+		extra = append(extra, p)
+	}
+	if len(extra) > api.DecoyMaxExtra {
+		return cfg, invalid("at most %d extra decoy paths", api.DecoyMaxExtra)
+	}
+	cfg.Decoys.Extra = extra
 	return cfg, c.State.SetKV(ctx, agentConfigKey, cfg)
+}
+
+// absDecoyPath accepts absolute Unix and Windows file paths: the server does not know
+// which OS each agent runs, and each agent skips paths that are not absolute on its own.
+func absDecoyPath(p string) bool {
+	if len(p) > 1024 || strings.ContainsAny(p, "*?\x00") || strings.HasSuffix(p, "/") || strings.HasSuffix(p, `\`) {
+		return false
+	}
+	if strings.HasPrefix(p, "/") {
+		return len(p) > 1
+	}
+	return len(p) > 3 && (p[0]|0x20) >= 'a' && (p[0]|0x20) <= 'z' && p[1] == ':' && p[2] == '\\'
 }
 
 // Audit writes an audit record, logging failures.

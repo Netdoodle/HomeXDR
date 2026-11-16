@@ -217,6 +217,7 @@ function Overview({ host: h }: { host: Host }) {
                     <span className="small" style={{ minWidth: 0 }}>
                       <span className={s.state === 'failed' ? 'danger-text' : s.state === 'running' ? '' : 'muted'}>{s.state}</span>
                       {s.error ? <div className="muted xsmall" style={{ overflowWrap: 'anywhere' }}>{s.error}</div> : null}
+                      {s.message ? <div className="muted xsmall" style={{ overflowWrap: 'anywhere' }}>{s.message}</div> : null}
                     </span>
                     <span className="num small muted right">{formatNumber(s.events)} ev</span>
                   </div>

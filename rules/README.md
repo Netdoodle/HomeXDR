@@ -12,10 +12,10 @@ HomeXDR loads [Sigma](https://sigmahq.io/) rules from three places:
 
 `rules/homexdr/` holds rules for what community rule sets leave out on a homelab: Docker and
 Unraid hosts, SSH, DNS lookups from a resolver's query log, OPNsense (audit and firewall logs), macOS security events,
-and attempts to switch HomeXDR's own monitoring off. They load with the server and are tested
+the agents' decoy files, and attempts to switch HomeXDR's own monitoring off. They load with the server and are tested
 in `server/internal/detect/homexdr_rules_test.go`, `homexdr_rules2_test.go`, `homexdr_rules3_test.go`,
-`homexdr_rules_macos_test.go`, `homexdr_rules_defender_test.go` and (the correlation rules)
-`correlation_test.go`.
+`homexdr_rules_macos_test.go`, `homexdr_rules_defender_test.go`, `homexdr_rules_decoy_test.go`
+and (the correlation rules) `correlation_test.go`.
 They are also published at [Netdoodle/HomeXDR-SIGMA-rules](https://github.com/Netdoodle/HomeXDR-SIGMA-rules).
 
 The OPNsense rules need its audit log: **System → Settings → Logging → Remote**, add `audit`
@@ -67,6 +67,8 @@ to the destination's Applications.
 | HomeXDR Agent Stopped Or Removed On macOS | high | `launchctl bootout`/`unload`/`disable`, `pkill` or `uninstall` of the agent |
 | Many Failed Logins From One Address | medium | correlation: 20 or more failed SSH logins or Windows logons from one address within 5 minutes |
 | Process Connected To Many Ports On One Address | medium | correlation: one process trying 25 or more ports on one address within a minute (a port scan) |
+| Decoy File Modified, Deleted Or Renamed | critical | a change, deletion, rename or replacement of a decoy file the agent placed ([decoys.md](../docs/decoys.md)) |
+| Decoy File Opened | high | a decoy file opened or read (Linux agents only) |
 
 The two correlation rules count events of a base rule in the same file: **Failed Login From
 An Address** and **Outbound Connection By A Process**. Those base rules raise no alerts of

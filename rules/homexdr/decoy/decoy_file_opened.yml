@@ -1,0 +1,32 @@
+title: Decoy File Opened
+id: 0df3d291-4293-43f3-b85b-053232c048e6
+status: experimental
+description: |
+  A decoy file the HomeXDR agent placed on the host (a fake password list or credentials
+  file) was opened or read. Nothing legitimate needs these files, so a read is someone or
+  something looking for credentials. Only Linux agents report reads (through inotify);
+  Windows and macOS agents report changes, deletions and renames only.
+author: HomeXDR
+date: 2026-11-16
+references:
+  - https://attack.mitre.org/techniques/T1552/001/
+  - https://attack.mitre.org/techniques/T1083/
+tags:
+  - attack.credential-access
+  - attack.t1552.001
+  - attack.discovery
+  - attack.t1083
+logsource:
+  product: linux
+  category: file
+detection:
+  selection:
+    event.module: 'decoy'
+    event.dataset: 'decoy.event'
+    event.type: 'access'
+  condition: selection
+falsepositives:
+  - Backup software that reads whole home folders (restic, borg, rsync)
+  - Desktop search indexers that read documents (GNOME Tracker, KDE Baloo)
+  - Someone at the host opening a decoy file by hand
+level: high

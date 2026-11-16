@@ -89,6 +89,7 @@ For Unraid hosts, see [deploy/unraid](deploy/unraid/README.md).
 - [Data health, doctor and self-check](docs/health.md)
 - [Offline lists](docs/lists.md)
 - [Known-exploited software](docs/vulnerabilities.md)
+- [Decoy files](docs/decoys.md)
 
 ## Building from source
 
