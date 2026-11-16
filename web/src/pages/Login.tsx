@@ -51,7 +51,14 @@ export function LoginPage() {
         ) : (
           <LoginForm onDone={() => setSignedInTo(next)} />
         )}
-        {status.data ? <p className="faint xsmall" style={{ marginTop: 16, marginBottom: 0 }}>Version {status.data.version}</p> : null}
+        {status.data ? (
+          <p className="faint xsmall" style={{ marginTop: 16, marginBottom: 0 }}>
+            Version {status.data.version} ·{' '}
+            <a href="/api/ca.crt" download="homexdr-ca.crt">
+              Download the HomeXDR CA certificate
+            </a>
+          </p>
+        ) : null}
       </div>
     </div>
   )

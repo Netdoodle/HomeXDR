@@ -79,6 +79,12 @@ func (p *PKI) SignCommand(payload []byte) []byte {
 	return ed25519.Sign(p.commandKey, payload)
 }
 
+// ServerCertificate returns the server certificate issued by the HomeXDR CA.
+func (p *PKI) ServerCertificate() *tls.Certificate {
+	c := p.serverCert
+	return &c
+}
+
 // TLSConfig returns the agent-listener TLS config. Client certificates are verified when
 // presented; handlers decide which routes require one.
 func (p *PKI) TLSConfig() *tls.Config {

@@ -121,6 +121,14 @@ func (h *Handler) secure(r *http.Request) bool {
 	return h.c.Cfg.SecureCookies || r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
 }
 
+// caCert serves the HomeXDR CA certificate so a browser can be told to trust the console
+// when it uses the server's own certificate. Public: a certificate is not a secret.
+func (h *Handler) caCert(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/x-pem-file")
+	w.Header().Set("Content-Disposition", `attachment; filename="homexdr-ca.crt"`)
+	_, _ = w.Write(h.c.PKI.CAPEM)
+}
+
 func forwardedFor(r *http.Request) []string {
 	var out []string
 	for _, v := range r.Header.Values("X-Forwarded-For") {

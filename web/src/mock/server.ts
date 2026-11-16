@@ -297,6 +297,23 @@ route(
 );
 
 route(
+  "GET",
+  "/api/ca.crt",
+  () =>
+    new Response(
+      "-----BEGIN CERTIFICATE-----\nMOCK-HOMEXDR-CA\n-----END CERTIFICATE-----\n",
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/x-pem-file",
+          "Content-Disposition": 'attachment; filename="homexdr-ca.crt"',
+        },
+      },
+    ),
+  { auth: false },
+);
+
+route(
   "POST",
   "/api/setup",
   ({ body }) => {

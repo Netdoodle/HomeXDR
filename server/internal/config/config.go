@@ -16,6 +16,12 @@ type Config struct {
 	DataDir   string // HOMEXDR_DATA_DIR
 	HTTPAddr  string // HOMEXDR_HTTP_ADDR: console + REST API
 	AgentAddr string // HOMEXDR_AGENT_ADDR: agent API (TLS)
+	// ConsoleHTTPSAddr serves the console over HTTPS as well (off when empty).
+	ConsoleHTTPSAddr string // HOMEXDR_CONSOLE_HTTPS_ADDR
+	ConsoleTLSCert   string // HOMEXDR_CONSOLE_TLS_CERT: PEM certificate (chain) file; empty = the HomeXDR CA's server certificate
+	ConsoleTLSKey    string // HOMEXDR_CONSOLE_TLS_KEY: PEM private key file
+	// ConsoleHTTPRedirect makes the plain HTTP listener redirect to HTTPS (except /healthz).
+	ConsoleHTTPRedirect bool // HOMEXDR_CONSOLE_HTTP_REDIRECT
 	// AgentExternalAddr is a second agent API listener for the internet (off when empty).
 	// It refuses any connection without a valid, unrevoked agent certificate and serves only
 	// what enrolled agents need.
@@ -70,6 +76,20 @@ func Load() (Config, error) {
 	c.RetentionDays = days
 	if c.RetentionMaxBytes, err = ParseSize(os.Getenv("HOMEXDR_RETENTION_MAX_SIZE")); err != nil {
 		return c, fmt.Errorf("HOMEXDR_RETENTION_MAX_SIZE: %w", err)
+	}
+
+	c.ConsoleHTTPSAddr = strings.TrimSpace(os.Getenv("HOMEXDR_CONSOLE_HTTPS_ADDR"))
+	c.ConsoleTLSCert = strings.TrimSpace(os.Getenv("HOMEXDR_CONSOLE_TLS_CERT"))
+	c.ConsoleTLSKey = strings.TrimSpace(os.Getenv("HOMEXDR_CONSOLE_TLS_KEY"))
+	if (c.ConsoleTLSCert == "") != (c.ConsoleTLSKey == "") {
+		return c, fmt.Errorf("HOMEXDR_CONSOLE_TLS_CERT and HOMEXDR_CONSOLE_TLS_KEY must be set together")
+	}
+	if c.ConsoleTLSCert != "" && c.ConsoleHTTPSAddr == "" {
+		return c, fmt.Errorf("HOMEXDR_CONSOLE_TLS_CERT needs HOMEXDR_CONSOLE_HTTPS_ADDR (for example :8448)")
+	}
+	c.ConsoleHTTPRedirect, _ = strconv.ParseBool(env("HOMEXDR_CONSOLE_HTTP_REDIRECT", "false"))
+	if c.ConsoleHTTPRedirect && c.ConsoleHTTPSAddr == "" {
+		return c, fmt.Errorf("HOMEXDR_CONSOLE_HTTP_REDIRECT needs HOMEXDR_CONSOLE_HTTPS_ADDR")
 	}
 
 	c.SecureCookies, _ = strconv.ParseBool(env("HOMEXDR_SECURE_COOKIES", "false"))
