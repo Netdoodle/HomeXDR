@@ -36,6 +36,7 @@ export const queryKeys = {
   tokens: ['settings', 'tokens'] as const,
   agentConfig: ['settings', 'agent-config'] as const,
   users: ['settings', 'users'] as const,
+  totp: ['account', 'totp'] as const,
   audit: (offset: number) => ['settings', 'audit', offset] as const,
   integrations: ['settings', 'integrations'] as const,
   aiSettings: ['settings', 'ai'] as const,

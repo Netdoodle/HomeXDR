@@ -22,22 +22,30 @@ type Handler struct {
 	c       *core.Core
 	mux     *http.ServeMux
 	limiter *loginLimiter
+	mfa     *mfaPending
 }
 
 type userKey struct{}
 
 // New returns the console API handler.
 func New(c *core.Core) *Handler {
-	h := &Handler{c: c, mux: http.NewServeMux(), limiter: newLoginLimiter()}
+	h := &Handler{c: c, mux: http.NewServeMux(), limiter: newLoginLimiter(), mfa: newMFAPending()}
 
 	// Public.
 	h.mux.HandleFunc("GET /api/setup/status", h.setupStatus)
 	h.mux.HandleFunc("POST /api/setup", h.setup)
 	h.mux.HandleFunc("POST /api/auth/login", h.login)
+	h.mux.HandleFunc("POST /api/auth/mfa", h.mfaLogin)
 	h.mux.HandleFunc("POST /api/auth/logout", h.logout)
 
 	viewer, analyst, admin := store.RoleViewer, store.RoleAnalyst, store.RoleAdmin
 	h.route("GET /api/auth/me", viewer, h.me)
+	h.route("GET /api/account/totp", viewer, h.totpStatus)
+	h.route("POST /api/account/totp/setup", viewer, h.totpSetup)
+	h.route("POST /api/account/totp/enable", viewer, h.totpEnable)
+	h.route("POST /api/account/totp/disable", viewer, h.totpDisable)
+	h.route("POST /api/account/totp/recovery", viewer, h.totpRecovery)
+	h.route("POST /api/users/{id}/totp/reset", admin, h.resetUserTOTP)
 	h.route("GET /api/stats/overview", viewer, h.overview)
 
 	h.route("GET /api/hosts", viewer, h.listHosts)
