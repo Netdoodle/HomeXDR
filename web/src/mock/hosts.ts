@@ -30,6 +30,8 @@ export const hosts: Host[] = [
     status: 'online',
     isolated: false,
     last_seen: ago(12 * SEC),
+    last_ip: '203.0.113.5',
+    last_external: true,
     enrolled_at: ago(21 * DAY),
     labels: ['workstation', 'family'],
     sensors: [

@@ -177,8 +177,9 @@ func serve() error {
 			Addr: cfg.AgentExternalAddr, Handler: agentapi.NewExternal(c),
 			TLSConfig:         p.StrictTLSConfig(knownAgent(st)),
 			ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 5 * time.Minute, WriteTimeout: 5 * time.Minute,
-			IdleTimeout:  2 * time.Minute,
-			ErrorLog:     slog.NewLogLogger(log.Handler(), slog.LevelDebug),
+			IdleTimeout: 2 * time.Minute,
+			// Handshake errors are counted (core.RefusedCounter) and still logged at debug.
+			ErrorLog:     c.Refused.ErrorLog(slog.NewLogLogger(log.Handler(), slog.LevelDebug)),
 			TLSNextProto: map[string]func(*http.Server, *tls.Conn, http.Handler){},
 		}
 	}

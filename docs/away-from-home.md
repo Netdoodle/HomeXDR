@@ -59,3 +59,23 @@ split DNS and the same port number on both sides:
 
 Check it from outside (a phone hotspot): `curl -v https://xdr.example.com:8443/` should fail
 in the TLS handshake, and the host page should keep showing the laptop as online.
+
+## Watching it
+
+**Host page.** Each host shows a "Last address", for example `203.0.113.5 (internet
+listener)` or `192.168.1.42 (local network)`: the address the agent's last heartbeat came
+from and which listener it reached. A laptop that shows the internet listener is away
+from home. The Revoke button beside it is the same one as under Danger zone.
+
+**Refused connections.** Every scanner that finds the internet listener fails the TLS
+handshake. That is normal and is not alerted one by one; the server only counts them.
+When the internet listener is on, Data health has an "Internet agent listener" section
+with the refused connections this hour, in the last full hour and in the last 24 hours,
+and the top five source addresses over 24 hours. The counts are kept in memory, in hourly
+buckets, so they start again at zero when the server restarts.
+
+**Alert.** The server raises a medium alert, "Many refused connections on the internet
+agent listener", when the last full hour had at least 50 refused connections and at least
+three times the average hourly count of the 23 hours before it. The details give the
+count, the average and the top sources. It is raised at most once every 6 hours. A steady
+level of noise, however high, does not trigger it; a sudden rise does.

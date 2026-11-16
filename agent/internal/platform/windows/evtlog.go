@@ -39,6 +39,8 @@ var (
 	procEvtQuery                    = modwevtapi.NewProc("EvtQuery")
 	procEvtOpenChannelConfig        = modwevtapi.NewProc("EvtOpenChannelConfig")
 	procEvtGetChannelConfigProperty = modwevtapi.NewProc("EvtGetChannelConfigProperty")
+	procEvtSetChannelConfigProperty = modwevtapi.NewProc("EvtSetChannelConfigProperty")
+	procEvtSaveChannelConfig        = modwevtapi.NewProc("EvtSaveChannelConfig")
 )
 
 // wevtapi constants (winevt.h).
@@ -202,6 +204,40 @@ func channelEnabled(channel string) (bool, error) {
 		return false, fmt.Errorf("channel %q: unexpected Enabled type %d", channel, v.Type)
 	}
 	return uint32(v.Val) != 0, nil
+}
+
+// setChannelEnabled turns a channel on or off (EvtSetChannelConfigProperty with
+// EvtChannelConfigEnabled, then EvtSaveChannelConfig). It needs administrator rights.
+// A missing channel returns errChannelNotFound.
+func setChannelEnabled(channel string, enabled bool) error {
+	ch, err := windows.UTF16PtrFromString(channel)
+	if err != nil {
+		return err
+	}
+	r, _, e := procEvtOpenChannelConfig.Call(0, uintptr(unsafe.Pointer(ch)), 0)
+	if r == 0 {
+		return evtError("open channel config", channel, e)
+	}
+	cfg := evtHandle(r)
+	defer evtClose(cfg)
+	// EVT_VARIANT holding a BOOL.
+	v := struct {
+		Val   uint64
+		Count uint32
+		Type  uint32
+	}{Type: evtVarTypeBoolean}
+	if enabled {
+		v.Val = 1
+	}
+	r, _, e = procEvtSetChannelConfigProperty.Call(uintptr(cfg), evtChannelConfigEnabled, 0, uintptr(unsafe.Pointer(&v)))
+	if r == 0 {
+		return evtError("set channel config", channel, e)
+	}
+	r, _, e = procEvtSaveChannelConfig.Call(uintptr(cfg), 0)
+	if r == 0 {
+		return evtError("save channel config", channel, e)
+	}
+	return nil
 }
 
 // Record is one parsed event log record.

@@ -55,6 +55,8 @@ type Core struct {
 	Notify *notify.Service
 	// Flow counts NetFlow and IPFIX intake (flowstats.go).
 	Flow *FlowStats
+	// Refused counts refused connections on the internet agent listener (refused.go).
+	Refused *RefusedCounter
 	// Inventory keeps track of the devices on the home network (inventory.go).
 	Inventory *Inventory
 	// Behavior runs the behaviour detectors (feature_network.go).
@@ -82,6 +84,8 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, st *store.Sto
 		Syslog: NewSyslogStats(),
 		Enrich: enrich.Nop{},
 		Flow:   NewFlowStats(),
+		// Refused counts handshakes the internet agent listener refused.
+		Refused: NewRefusedCounter(),
 	}
 	c.Release = NewRelease(cfg.DownloadsDir, cfg.SignaturesDir, log)
 	if cfg.ReleasesDir != "" {

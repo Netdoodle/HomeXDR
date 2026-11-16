@@ -143,6 +143,13 @@ type HostSetup interface {
 	RestoreHost() ([]string, error)
 }
 
+// StartupSetup is optionally implemented by a Platform that completes host setup for
+// installs made by an older version, when the agent service starts. It is best-effort:
+// failures are only logged.
+type StartupSetup interface {
+	StartupSetup(log *slog.Logger)
+}
+
 // Paths are the platform's default locations.
 type Paths struct {
 	ConfigFile string // local config / policy file
