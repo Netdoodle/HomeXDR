@@ -80,6 +80,7 @@ For Unraid hosts, see [deploy/unraid](deploy/unraid/README.md).
 - [Architecture](docs/architecture.md)
 - [Agent protocol](docs/protocol.md)
 - [Agents away from home](docs/away-from-home.md)
+- [HTTPS for the web console](docs/console-https.md)
 - [Console REST API](docs/api.md)
 - [AI analyst](docs/ai-analyst.md)
 - [Alert grouping and suppressions](docs/alerts.md)

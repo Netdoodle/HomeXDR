@@ -1144,6 +1144,12 @@ function AccountTab() {
               ],
             ]}
           />
+          <p className="muted small" style={{ marginTop: 12 }}>
+            <a href="/api/ca.crt" download="homexdr-ca.crt">
+              Download the HomeXDR CA certificate
+            </a>{" "}
+            to trust the console over HTTPS (see docs/console-https.md).
+          </p>
           <button
             type="button"
             className="btn"

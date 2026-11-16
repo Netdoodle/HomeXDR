@@ -32,6 +32,7 @@ func New(c *core.Core) *Handler {
 
 	// Public.
 	h.mux.HandleFunc("GET /api/setup/status", h.setupStatus)
+	h.mux.HandleFunc("GET /api/ca.crt", h.caCert)
 	h.mux.HandleFunc("POST /api/setup", h.setup)
 	h.mux.HandleFunc("POST /api/auth/login", h.login)
 	h.mux.HandleFunc("POST /api/auth/logout", h.logout)

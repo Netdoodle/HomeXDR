@@ -26,6 +26,7 @@ import (
 	"github.com/Netdoodle/homexdr/server/internal/agentapi"
 	"github.com/Netdoodle/homexdr/server/internal/config"
 	"github.com/Netdoodle/homexdr/server/internal/console"
+	"github.com/Netdoodle/homexdr/server/internal/consoletls"
 	"github.com/Netdoodle/homexdr/server/internal/core"
 	"github.com/Netdoodle/homexdr/server/internal/events"
 	"github.com/Netdoodle/homexdr/server/internal/flow"
@@ -161,6 +162,33 @@ func serve() error {
 		IdleTimeout: 120 * time.Second,
 	}
 
+	// Console over HTTPS (optional): the HomeXDR CA's server certificate, or certificate files.
+	var tlsConsoleSrv *http.Server
+	if cfg.ConsoleHTTPSAddr != "" {
+		var fc *consoletls.FileCert
+		var handler http.Handler = httpMux
+		source := "HomeXDR CA"
+		if cfg.ConsoleTLSCert != "" {
+			if fc, err = consoletls.NewFileCert(cfg.ConsoleTLSCert, cfg.ConsoleTLSKey, log); err != nil {
+				return err
+			}
+			// HSTS only with certificates the browser already trusts: with the HomeXDR CA, a
+			// browser that has not installed it would be locked out.
+			handler = consoletls.HSTS(httpMux)
+			source = cfg.ConsoleTLSCert
+		}
+		tlsConsoleSrv = &http.Server{
+			Addr: cfg.ConsoleHTTPSAddr, Handler: handler, TLSConfig: consoletls.Config(fc, p.ServerCertificate()),
+			ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second, WriteTimeout: 120 * time.Second,
+			IdleTimeout: 120 * time.Second,
+			ErrorLog:    slog.NewLogLogger(log.Handler(), slog.LevelDebug), // TLS handshake noise
+		}
+		if cfg.ConsoleHTTPRedirect {
+			httpSrv.Handler = consoletls.Redirect(cfg.ConsoleHTTPSAddr, httpMux)
+		}
+		log.Info("console HTTPS enabled", "addr", cfg.ConsoleHTTPSAddr, "certificate", source, "http_redirect", cfg.ConsoleHTTPRedirect)
+	}
+
 	// Agent API (TLS). WriteTimeout must exceed the long-poll wait.
 	agentSrv := &http.Server{
 		Addr: cfg.AgentAddr, Handler: agentapi.New(c), TLSConfig: p.TLSConfig(),
@@ -184,7 +212,7 @@ func serve() error {
 	}
 
 	var wg sync.WaitGroup
-	errc := make(chan error, 4)
+	errc := make(chan error, 8)
 	run := func(name string, fn func() error) {
 		wg.Add(1)
 		go func() {
@@ -198,6 +226,12 @@ func serve() error {
 		log.Info("console listening", "addr", cfg.HTTPAddr)
 		return httpSrv.ListenAndServe()
 	})
+	if tlsConsoleSrv != nil {
+		run("console https", func() error {
+			log.Info("console https listening", "addr", tlsConsoleSrv.Addr)
+			return tlsConsoleSrv.ListenAndServeTLS("", "")
+		})
+	}
 	run("agent api", func() error {
 		log.Info("agent api listening", "addr", cfg.AgentAddr, "agent_url", cfg.AgentURL, "ca_pin", p.CAPin())
 		return agentSrv.ListenAndServeTLS("", "")
@@ -246,6 +280,9 @@ func serve() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
+	if tlsConsoleSrv != nil {
+		_ = tlsConsoleSrv.Shutdown(shutdownCtx)
+	}
 	_ = agentSrv.Shutdown(shutdownCtx)
 	if extSrv != nil {
 		_ = extSrv.Shutdown(shutdownCtx)
