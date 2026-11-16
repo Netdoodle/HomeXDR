@@ -61,6 +61,10 @@ type Host struct {
 	UpdateOfferedAt *time.Time `json:"update_offered_at,omitempty"`
 	// UpdateError is the agent's last failed update attempt, as it reported.
 	UpdateError string `json:"update_error,omitempty"`
+	// LastIP is the address the agent last connected from, and LastExternal whether that
+	// was through the internet-facing listener.
+	LastIP       string `json:"last_ip,omitempty"`
+	LastExternal bool   `json:"last_external"`
 
 	Revoked           bool   `json:"-"`
 	CertSerial        string `json:"-"`
@@ -72,16 +76,17 @@ type Host struct {
 const hostCols = `h.id, h.kind, h.hostname, h.info, h.status, h.labels, h.enrolled_at, h.last_seen,
 	h.revoked, h.isolated, h.cert_serial, h.source_ip, h.pending_cert_serial, h.cert_expires,
 	h.decommissioned_at, h.update_now_at, h.update_offered, h.update_offered_at, h.group_id,
+	h.last_ip, h.last_external,
 	(SELECT COUNT(*) FROM alerts a WHERE a.host_id = h.id AND a.status IN ('new','in_progress'))`
 
 func scanHost(row interface{ Scan(...any) error }) (*Host, error) {
 	var h Host
 	var info, status, labels, enrolled string
 	var last, certExpires, decommissioned, updateNow, offeredAt sql.NullString
-	var revoked, isolated int
+	var revoked, isolated, lastExternal int
 	if err := row.Scan(&h.ID, &h.Kind, &h.Hostname, &info, &status, &labels, &enrolled, &last,
 		&revoked, &isolated, &h.CertSerial, &h.SourceIP, &h.PendingCertSerial, &certExpires,
-		&decommissioned, &updateNow, &h.UpdateOffered, &offeredAt, &h.GroupID, &h.OpenAlerts); err != nil {
+		&decommissioned, &updateNow, &h.UpdateOffered, &offeredAt, &h.GroupID, &h.LastIP, &lastExternal, &h.OpenAlerts); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -119,6 +124,7 @@ func scanHost(row interface{ Scan(...any) error }) (*Host, error) {
 	h.UpdateOfferedAt = parseNullTS(offeredAt)
 	h.Revoked = revoked != 0
 	h.Isolated = isolated != 0
+	h.LastExternal = lastExternal != 0
 	h.Status = hostStatus(&h)
 	return &h, nil
 }
@@ -243,6 +249,43 @@ func (s *Store) Heartbeat(ctx context.Context, id string, info api.HostInfo, st 
 		return nil, err
 	}
 	return s.GetHost(ctx, id)
+}
+
+type hostAddr struct {
+	ip       string
+	external bool
+}
+
+// RecordAddress is SetLastAddress for every heartbeat: it writes only when the address or
+// the listener differs from what was last recorded for the host (kept in memory; the
+// host record read at authentication seeds it after a restart).
+func (s *Store) RecordAddress(ctx context.Context, h *Host, ip string, external bool) error {
+	cur := hostAddr{ip, external}
+	s.addrMu.Lock()
+	last, ok := s.addrs[h.ID]
+	s.addrMu.Unlock()
+	if !ok {
+		last = hostAddr{h.LastIP, h.LastExternal}
+	}
+	if last != cur {
+		if err := s.SetLastAddress(ctx, h.ID, ip, external); err != nil {
+			return err
+		}
+	}
+	s.addrMu.Lock()
+	if s.addrs == nil {
+		s.addrs = map[string]hostAddr{}
+	}
+	s.addrs[h.ID] = cur
+	s.addrMu.Unlock()
+	return nil
+}
+
+// SetLastAddress records the address an agent last connected from and whether it came
+// through the internet-facing listener.
+func (s *Store) SetLastAddress(ctx context.Context, id, ip string, external bool) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE hosts SET last_ip = ?, last_external = ? WHERE id = ?`, ip, boolInt(external), id)
+	return err
 }
 
 // TouchHost updates last_seen.

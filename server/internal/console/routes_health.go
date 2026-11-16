@@ -14,6 +14,7 @@ import (
 func (h *Handler) routesHealth(viewer, analyst, admin string) {
 	h.route("GET /api/health/feeds", viewer, h.getFeeds)
 	h.route("PATCH /api/health/feeds", admin, h.patchFeed)
+	h.route("GET /api/health/external", viewer, h.getRefused)
 	h.route("GET /api/doctor", admin, h.getDoctor)
 	h.route("GET /api/selfcheck", admin, h.getSelfCheck)
 	h.route("POST /api/selfcheck", admin, h.startSelfCheck)
@@ -28,6 +29,11 @@ func (h *Handler) getFeeds(w http.ResponseWriter, r *http.Request, _ *store.User
 		return
 	}
 	writeJSON(w, http.StatusOK, rep)
+}
+
+// getRefused reports refused connections on the internet agent listener.
+func (h *Handler) getRefused(w http.ResponseWriter, r *http.Request, _ *store.User) {
+	writeJSON(w, http.StatusOK, h.c.RefusedReport())
 }
 
 // patchFeed sets the owner's choice for one source: muted, expected, or both.

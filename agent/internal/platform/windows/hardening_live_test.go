@@ -43,3 +43,30 @@ func TestDefenderHardeningLive(t *testing.T) {
 		t.Errorf("off did not restore the preferences:\nbefore %s\nafter  %s", before, after)
 	}
 }
+
+// TestTaskLogLive enables the Task Scheduler operational log, checks it, and puts the
+// previous state back. Needs an elevated prompt and HOMEXDR_LIVE_TASKLOG=1.
+func TestTaskLogLive(t *testing.T) {
+	if os.Getenv("HOMEXDR_LIVE_TASKLOG") != "1" {
+		t.Skip("set HOMEXDR_LIVE_TASKLOG=1 on a test machine")
+	}
+	was, err := channelEnabled(taskSchedulerChannel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = setChannelEnabled(taskSchedulerChannel, was) })
+	for _, want := range []bool{true, false, true} {
+		if err := setChannelEnabled(taskSchedulerChannel, want); err != nil {
+			t.Fatalf("set %v: %v", want, err)
+		}
+		if got, err := channelEnabled(taskSchedulerChannel); err != nil || got != want {
+			t.Fatalf("after set %v: got %v, err %v", want, got, err)
+		}
+	}
+	if err := setChannelEnabled(taskSchedulerChannel, was); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := channelEnabled(taskSchedulerChannel); got != was {
+		t.Errorf("not restored: got %v want %v", got, was)
+	}
+}

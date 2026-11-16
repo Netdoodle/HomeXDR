@@ -39,6 +39,7 @@ function report(): FeedReport {
 
 export function registerHealthMocks(route: MockRoute) {
   route('GET', '/api/health/feeds', () => report())
+  route('GET', '/api/health/external', () => ({ enabled: true, this_hour: 3, previous_hour: 12, last_24h: 187, top_sources: [{ ip: '198.51.100.23', count: 90 }, { ip: '203.0.113.77', count: 41 }] }))
   route(
     'PATCH',
     '/api/health/feeds',
