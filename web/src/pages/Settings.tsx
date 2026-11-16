@@ -47,6 +47,7 @@ import { agentUrlOptions, buildInstallCommands } from "../lib/install";
 import { ROLE_HELP, ROLE_LABEL } from "../lib/roles";
 import { formatDateTime, formatTimestamp } from "../lib/time";
 import { AgentConfigEditor } from "./AgentConfigEditor";
+import { TwoFactorCard } from "./TwoFactor";
 import { ThreatIntelTab } from "./ThreatIntelSettings";
 import { AntivirusTab } from "./AntivirusSettings";
 import { FirewallTab } from "./FirewallSettings";
@@ -565,6 +566,7 @@ function UsersTab() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("analyst");
   const [deleting, setDeleting] = useState<User | null>(null);
+  const [resetting, setResetting] = useState<User | null>(null);
   const [roleChange, setRoleChange] = useState<{
     user: User;
     role: Role;
@@ -719,6 +721,17 @@ function UsersTab() {
                           )}
                         </td>
                         <td className="right">
+                          {u.totp_enabled ? (
+                            <button
+                              type="button"
+                              className="btn ghost sm"
+                              onClick={() => setResetting(u)}
+                              aria-label={`Reset two-factor login for ${u.username}`}
+                              title="Turn off two-factor login for this user, for when they are locked out"
+                            >
+                              <Icon name="key" size={12} /> Reset 2FA
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="btn ghost sm"
@@ -758,6 +771,24 @@ function UsersTab() {
             {ROLE_HELP[roleChange.role]}
           </p>
         ) : null}
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={resetting !== null}
+        onClose={() => setResetting(null)}
+        title={`Reset two-factor login for ${resetting?.username ?? ""}?`}
+        confirmLabel="Turn off two-factor"
+        onConfirm={async () => {
+          if (!resetting) return;
+          await api.resetUserTotp(resetting.id);
+          qc.invalidateQueries({ queryKey: queryKeys.users });
+          toast.success("Two-factor login turned off");
+        }}
+      >
+        <p>
+          {resetting?.username} will be able to sign in with the password alone.
+          Their authenticator and recovery codes are removed; they can turn
+          two-factor login on again from My account.
+        </p>
       </ConfirmDialog>
       <ConfirmDialog
         open={deleting !== null}
@@ -1154,6 +1185,7 @@ function AccountTab() {
           </button>
         </div>
       </section>
+      <TwoFactorCard />
     </div>
   );
 }

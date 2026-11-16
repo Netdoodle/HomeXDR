@@ -47,6 +47,8 @@ func main() {
 			os.Exit(healthcheck())
 		case "reset-password":
 			os.Exit(resetPassword(os.Args[2:]))
+		case "users":
+			os.Exit(usersCmd(os.Args[2:]))
 		case "enrollment-token":
 			os.Exit(enrollmentToken(os.Args[2:]))
 		case "suppress-apply":
@@ -63,7 +65,7 @@ func main() {
 			os.Exit(alertsCmd(os.Args[2:]))
 		case "serve":
 		default:
-			fmt.Fprintf(os.Stderr, "usage: homexdr-server [serve|version|healthcheck|reset-password|enrollment-token|suppress-apply|release-manifest|doctor|selfcheck|ai-analyst|alerts]\n")
+			fmt.Fprintf(os.Stderr, "usage: homexdr-server [serve|version|healthcheck|reset-password|users|enrollment-token|suppress-apply|release-manifest|doctor|selfcheck|ai-analyst|alerts]\n")
 			os.Exit(2)
 		}
 	}

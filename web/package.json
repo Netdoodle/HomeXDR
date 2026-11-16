@@ -17,12 +17,14 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.0",
+    "qrcode": "1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router": "^7.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",
+    "@types/qrcode": "1.5.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.2.0",

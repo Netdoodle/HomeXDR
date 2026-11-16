@@ -61,10 +61,16 @@ function LoginForm({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  // Set when the password was right and the account asks for a second factor.
+  const [mfaToken, setMfaToken] = useState<string | null>(null)
   const login = useMutation({
     mutationFn: () => api.login(username.trim(), password),
-    onSuccess: ({ user }) => {
-      qc.setQueryData(queryKeys.me, user)
+    onSuccess: (res) => {
+      if (res.mfa_required) {
+        setMfaToken(res.mfa_token)
+        return
+      }
+      qc.setQueryData(queryKeys.me, res.user)
       onDone()
     },
   })
@@ -72,6 +78,19 @@ function LoginForm({ onDone }: { onDone: () => void }) {
     e.preventDefault()
     if (!username.trim() || !password) return
     login.mutate()
+  }
+  if (mfaToken) {
+    return (
+      <MfaForm
+        token={mfaToken}
+        onDone={onDone}
+        onBack={() => {
+          setMfaToken(null)
+          setPassword('')
+          login.reset()
+        }}
+      />
+    )
   }
   return (
     <form onSubmit={submit} noValidate>
@@ -92,6 +111,53 @@ function LoginForm({ onDone }: { onDone: () => void }) {
       ) : null}
       <button type="submit" className="btn primary" disabled={login.isPending || !username.trim() || !password}>
         {login.isPending ? <Spinner small /> : null} Sign in
+      </button>
+    </form>
+  )
+}
+
+function MfaForm({ token, onDone, onBack }: { token: string; onDone: () => void; onBack: () => void }) {
+  const qc = useQueryClient()
+  const [code, setCode] = useState('')
+  const verify = useMutation({
+    mutationFn: () => api.loginMfa(token, code.trim()),
+    onSuccess: ({ user }) => {
+      qc.setQueryData(queryKeys.me, user)
+      onDone()
+    },
+  })
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!code.trim()) return
+    verify.mutate()
+  }
+  return (
+    <form onSubmit={submit} noValidate>
+      <h1 style={{ fontSize: 'var(--fs-lg)', marginBottom: 6 }}>Two-factor login</h1>
+      <p className="muted small">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
+      <div className="field">
+        <label htmlFor="login-code">Code</label>
+        <input
+          id="login-code"
+          className="input mono"
+          inputMode="text"
+          autoComplete="one-time-code"
+          autoFocus
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+      </div>
+      {verify.isError ? (
+        <div className="callout danger" role="alert">
+          <Icon name="warning" size={14} />
+          <span>{errorMessage(verify.error)}</span>
+        </div>
+      ) : null}
+      <button type="submit" className="btn primary" disabled={verify.isPending || !code.trim()}>
+        {verify.isPending ? <Spinner small /> : null} Verify
+      </button>
+      <button type="button" className="btn ghost" onClick={onBack}>
+        Back
       </button>
     </form>
   )

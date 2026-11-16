@@ -41,9 +41,9 @@ const r = mulberry32(0xa1e27)
 // --- users ------------------------------------------------------------------------------
 
 export const users: User[] = [
-  { id: makeId(NOW - 40 * DAY, r), username: 'admin', role: 'admin', created_at: ago(40 * DAY), last_login: ago(2 * HOUR) },
-  { id: makeId(NOW - 35 * DAY, r), username: 'sam', role: 'analyst', created_at: ago(35 * DAY), last_login: ago(3 * DAY) },
-  { id: makeId(NOW - 10 * DAY, r), username: 'guest', role: 'viewer', created_at: ago(10 * DAY) },
+  { id: makeId(NOW - 40 * DAY, r), username: 'admin', role: 'admin', created_at: ago(40 * DAY), last_login: ago(2 * HOUR), totp_enabled: false },
+  { id: makeId(NOW - 35 * DAY, r), username: 'sam', role: 'analyst', created_at: ago(35 * DAY), last_login: ago(3 * DAY), totp_enabled: false },
+  { id: makeId(NOW - 10 * DAY, r), username: 'guest', role: 'viewer', created_at: ago(10 * DAY), totp_enabled: false },
 ]
 
 // --- alerts -----------------------------------------------------------------------------
