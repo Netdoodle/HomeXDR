@@ -1,0 +1,33 @@
+title: Decoy File Modified, Deleted Or Renamed
+id: c513c679-e88c-4143-8a7e-5d4dfd6314e6
+status: experimental
+description: |
+  A decoy file the HomeXDR agent placed on the host (a fake password list, backup codes or
+  credentials file) was changed, deleted, renamed or replaced. Nothing legitimate uses these
+  files; ransomware and attackers looking for credentials go for exactly such files first.
+  Check which processes ran on the host around that time, and whether other files in the
+  same folder changed too. The file and the user whose folder it is in are in the event.
+author: HomeXDR
+date: 2026-11-16
+references:
+  - https://attack.mitre.org/techniques/T1486/
+  - https://attack.mitre.org/techniques/T1552/001/
+tags:
+  - attack.impact
+  - attack.t1486
+  - attack.credential-access
+  - attack.t1552.001
+logsource:
+  category: file
+detection:
+  selection:
+    event.module: 'decoy'
+    event.dataset: 'decoy.event'
+    event.type:
+      - 'change'
+      - 'deletion'
+      - 'rename'
+  condition: selection
+falsepositives:
+  - Someone at the host deleting or editing a decoy file by hand (see docs/decoys.md)
+level: critical

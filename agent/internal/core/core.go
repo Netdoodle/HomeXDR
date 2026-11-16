@@ -29,6 +29,7 @@ import (
 	"github.com/Netdoodle/homexdr/agent/internal/pipeline"
 	"github.com/Netdoodle/homexdr/agent/internal/platform"
 	"github.com/Netdoodle/homexdr/agent/internal/selfupdate"
+	"github.com/Netdoodle/homexdr/agent/internal/sensors/decoy"
 	"github.com/Netdoodle/homexdr/agent/internal/sensors/fim"
 	"github.com/Netdoodle/homexdr/agent/internal/sensors/inventory"
 	"github.com/Netdoodle/homexdr/agent/internal/sensors/logtail"
@@ -402,6 +403,9 @@ func (a *Agent) applySensors(ctx context.Context, cfg api.AgentConfig) {
 	} else {
 		disabled = append(disabled, api.SensorStatus{Name: "fim", Impl: event.ModuleFIM, State: api.SensorDisabled})
 	}
+	// The decoy sensor also runs when decoys are off: it then removes the decoy files it
+	// created that nobody changed, and reports the rest as left in place.
+	specs = append(specs, supervisor.Spec{Sensor: decoy.New(cfg.Decoys, a.dataDir, a.log), Key: fingerprint(cfg.Decoys)})
 	if len(cfg.Logs) > 0 {
 		specs = append(specs, supervisor.Spec{Sensor: logtail.New(cfg.Logs, a.dataDir, a.log), Key: fingerprint(cfg.Logs)})
 	}

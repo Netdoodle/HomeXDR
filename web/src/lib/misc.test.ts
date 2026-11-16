@@ -202,10 +202,28 @@ describe('agent config validation', () => {
       batch: { max_events: 500, flush_interval_ms: 2000 },
       sensors: {} as never,
       fim: { enabled: true, interval_sec: 3600, max_file_size: 1 },
+      decoys: { enabled: true, check_interval_sec: 60 },
       filters: [{ field: '', op: 'regex', value: 'x' }],
       spool_max_bytes: 512 << 20,
     })
     expect(problems).toHaveLength(3)
+  })
+
+  it('checks the decoy section', () => {
+    const base = {
+      version: 1,
+      heartbeat_interval_sec: 30,
+      inventory_interval_sec: 3600,
+      batch: { max_events: 500, flush_interval_ms: 2000 },
+      sensors: {} as never,
+      fim: { enabled: true, interval_sec: 3600, max_file_size: 1 },
+      spool_max_bytes: 512 << 20,
+    }
+    const ok = { enabled: true, check_interval_sec: 60, extra: ['/srv/a.txt', 'C:\\Shares\\b.csv'] }
+    expect(validateAgentConfig({ ...base, decoys: ok })).toEqual([])
+    expect(validateAgentConfig({ ...base, decoys: { enabled: true, check_interval_sec: 5 } })).toHaveLength(1)
+    const bad = { enabled: true, check_interval_sec: 60, extra: ['notes.txt', '/srv/*.txt', '/srv/dir/', 'C:rel'] }
+    expect(validateAgentConfig({ ...base, decoys: bad })).toHaveLength(4)
   })
 })
 

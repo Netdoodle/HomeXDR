@@ -12,9 +12,9 @@ HomeXDR loads [Sigma](https://sigmahq.io/) rules from three places:
 
 `rules/homexdr/` holds rules for what community rule sets leave out on a homelab: Docker and
 Unraid hosts, SSH, DNS lookups from a resolver's query log, OPNsense (audit and firewall logs), macOS security events,
-and attempts to switch HomeXDR's own monitoring off. They load with the server and are tested
+the agents' decoy files, and attempts to switch HomeXDR's own monitoring off. They load with the server and are tested
 in `server/internal/detect/homexdr_rules_test.go`, `homexdr_rules2_test.go`, `homexdr_rules3_test.go`,
-`homexdr_rules_macos_test.go` and `homexdr_rules_defender_test.go`.
+`homexdr_rules_macos_test.go`, `homexdr_rules_defender_test.go` and `homexdr_rules_decoy_test.go`.
 They are also published at [Netdoodle/HomeXDR-SIGMA-rules](https://github.com/Netdoodle/HomeXDR-SIGMA-rules).
 
 The OPNsense rules need its audit log: **System → Settings → Logging → Remote**, add `audit`
@@ -64,6 +64,8 @@ to the destination's Applications.
 | Gatekeeper Overridden On macOS | medium | the user opening a file Gatekeeper blocked (macOS 15+) |
 | User Added To The Admin Group On macOS | high | an account added to `admin` (macOS 14+) |
 | HomeXDR Agent Stopped Or Removed On macOS | high | `launchctl bootout`/`unload`/`disable`, `pkill` or `uninstall` of the agent |
+| Decoy File Modified, Deleted Or Renamed | critical | a change, deletion, rename or replacement of a decoy file the agent placed ([decoys.md](../docs/decoys.md)) |
+| Decoy File Opened | high | a decoy file opened or read (Linux agents only) |
 
 The Docker rules match what Unraid's Docker manager runs when it updates a privileged
 container; those commands carry `labels.maintenance: docker-update`, which Settings ->

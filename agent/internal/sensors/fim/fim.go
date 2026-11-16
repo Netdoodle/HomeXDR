@@ -19,6 +19,7 @@ import (
 	"github.com/Netdoodle/homexdr/agent/internal/fsutil"
 	"github.com/Netdoodle/homexdr/agent/internal/globs"
 	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/sensors/decoy"
 	"github.com/Netdoodle/homexdr/shared/api"
 	"github.com/Netdoodle/homexdr/shared/event"
 )
@@ -260,6 +261,9 @@ func (s *Sensor) walk(ctx context.Context, root string, old *Baseline, into map[
 				return fs.SkipDir
 			}
 			return nil
+		}
+		if !d.IsDir() && decoy.IsDecoy(p) {
+			return nil // watched by the decoy sensor, where reading one is an alert
 		}
 		if len(into) >= MaxEntries {
 			return errTooMany

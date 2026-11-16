@@ -53,7 +53,7 @@ export const PLATFORM_PLACES: PlatformPlace[] = [
   // Settings tabs and their sections
   { crumbs: [S, 'Enrollment'], path: '/settings/tokens', admin: true, keywords: ['enrollment tokens', 'install agent', 'add host'] },
   { crumbs: [S, 'Users'], path: '/settings/users', admin: true, keywords: ['accounts', 'roles', 'add user'] },
-  { crumbs: [S, 'Agent config'], path: '/settings/agent-config', keywords: ['sensors', 'event log channels', 'fim', 'agent settings'] },
+  { crumbs: [S, 'Agent config'], path: '/settings/agent-config', keywords: ['sensors', 'event log channels', 'fim', 'agent settings', 'decoy files', 'honeypot', 'canary'] },
   { crumbs: [S, 'Agent updates'], path: '/settings/agents', section: 'Agent updates', admin: true, keywords: ['upgrade', 'versions', 'rollout'] },
   { crumbs: [S, 'Agent updates', 'Inactive agents'], path: '/settings/agents', section: 'Inactive agents', admin: true, keywords: ['offline agents', 'stale', 'dead agents'] },
   { crumbs: [S, 'Agent updates', 'Release archive'], path: '/settings/agents', section: 'Release archive', admin: true },
