@@ -60,6 +60,9 @@ func openChain(base string, dirs []string, mkLast bool, uid, gid int, chown, inh
 	return fd, made, nil
 }
 
+// isReparsePoint: Unix has no reparse points; links show in the file mode.
+func isReparsePoint(os.FileInfo) bool { return false }
+
 func folderOK(t target, n int) error {
 	fd, _, err := openChain(t.Base, t.Dirs[:n], false, 0, 0, false, false)
 	if err == nil {

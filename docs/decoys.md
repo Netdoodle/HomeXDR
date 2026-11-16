@@ -85,9 +85,18 @@ place, but only on unchanged ones, and only on the file the agent created (same 
 file ID or inode, reached without following links). The attribute is not part of what the
 checks compare, so the agent's own change raises no event.
 
-The agent never follows a symbolic link when it creates, checks or removes a decoy: on Linux
-and macOS it refuses a folder that is a link (a user could otherwise point their Documents
-folder at a system folder), and on Windows it refuses links and junctions.
+**Links.** Before it creates a decoy, creates its folder, removes a decoy or removes a
+folder it created, the agent checks every folder of the path, from `/` or the drive root
+down to the decoy's folder, and refuses the decoy if any of them is a symbolic link (on
+Windows: a reparse point of any kind, such as a junction, symbolic link or mount point).
+On Linux and macOS each folder is opened without following links, so a link put in place
+between the check and the write is refused too. Otherwise a user could point a folder on
+the way (their Documents, or a share they can write to) at a system folder. The only links
+followed are well-known system links at the top of the file system, which only root can
+create, and only when they point where they should: `/var`, `/tmp` and `/etc` to
+`/private/...` on macOS, and `/home` and `/root` to `/var/home` and `/var/roothome` on
+ostree-based Linux systems. A refused path raises no event; the host page says so in the
+sensor's message: "decoy path refused: /srv/link/keys.txt goes through a link".
 
 ## What is detected
 

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -16,10 +17,18 @@ import (
 // hiddenSupported: Windows has FILE_ATTRIBUTE_HIDDEN.
 const hiddenSupported = true
 
+// isReparsePoint reports whether fi (from Lstat) is a reparse point of any kind: a
+// symbolic link, junction, mount point or anything else that can send a path elsewhere.
+func isReparsePoint(fi os.FileInfo) bool {
+	d, ok := fi.Sys().(*syscall.Win32FileAttributeData)
+	return ok && d.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
 // checkChain checks that base is a folder and that each of the first n of t.Dirs is a
-// real folder, not a symbolic link or junction (which a user can create in their own
-// profile). With mkLast the last folder is created when missing; it inherits the
-// parent's permissions. It returns the deepest folder.
+// real folder, not a symbolic link, junction or other reparse point (Base is the drive
+// root, so this covers every folder on the way). With mkLast the last folder is created
+// when missing, after the folders above it were checked; it inherits the parent's
+// permissions. It returns the deepest folder.
 func checkChain(t target, n int, mkLast bool) (string, bool, error) {
 	fi, err := os.Stat(t.Base)
 	if err != nil {
@@ -158,8 +167,12 @@ func removeFile(t target, want string, createdDir bool) (bool, string, error) {
 	if err := os.Remove(p); err != nil {
 		return false, sum, err
 	}
-	if createdDir {
-		_ = os.Remove(dir) // fails if not empty
+	if createdDir && len(t.Dirs) > 0 {
+		// The same check again before removing the folder: nothing on the way, and not the
+		// folder itself, may have become a link since.
+		if _, _, err := checkChain(t, len(t.Dirs), false); err == nil {
+			_ = os.Remove(dir) // fails if not empty
+		}
 	}
 	return true, sum, nil
 }

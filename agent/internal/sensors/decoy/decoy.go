@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -77,8 +78,11 @@ type record struct {
 	// turns out unchanged, forgotten once it is gone, and checked again if its entry is
 	// configured again. Kept: when it was left, the file looked like CurSize and CurMTime
 	// and its content was not what the agent wrote.
-	Retired  bool      `json:"retired,omitempty"`
-	Kept     bool      `json:"kept,omitempty"`
+	Retired bool `json:"retired,omitempty"`
+	Kept    bool `json:"kept,omitempty"`
+	// Chain: Base is the volume root and Dirs every folder below it (see target). Records
+	// written before that had Base set to a folder further down; load converts them.
+	Chain    bool      `json:"chain,omitempty"`
 	User     string    `json:"user,omitempty"`
 	UID      int       `json:"uid,omitempty"`
 	GID      int       `json:"gid,omitempty"`
@@ -123,7 +127,7 @@ func (r *record) present() bool {
 // legacyHome reports whether a decoy created before decoy paths were configurable was in
 // a user's folder: those had a user folder and at least one folder below it, while the
 // shared ones (ProgramData\Backup, /var/backups) and extra paths had one folder.
-func (r *record) legacyHome() bool { return r.Entry == "" && !r.Extra && len(r.Dirs) >= 2 }
+func (r *record) legacyHome() bool { return !r.Chain && r.Entry == "" && !r.Extra && len(r.Dirs) >= 2 }
 
 func (r *record) isHome() bool { return r.Home || r.legacyHome() }
 
@@ -168,7 +172,9 @@ type Sensor struct {
 	events   uint64
 	watchErr string
 	left     int // when off: decoys left in place
-	dirty    bool
+	// refused: decoy paths refused in the last pass because they go through a link.
+	refused map[string]bool
+	dirty   bool
 }
 
 // New builds the decoy sensor for this OS. The state is kept in dataDir.
@@ -211,6 +217,7 @@ func (s *Sensor) Status() api.SensorStatus {
 		if s.left > 0 {
 			st.Message = plural(s.left) + " left in place because someone changed them"
 		}
+		st.Message = joinNote(st.Message, s.refusedNote())
 		return st
 	}
 	n, kept := 0, 0
@@ -229,6 +236,7 @@ func (s *Sensor) Status() api.SensorStatus {
 	case kept > 1:
 		st.Message += fmt.Sprintf("; %d decoy files no longer in the list were left in place because someone changed them", kept)
 	}
+	st.Message = joinNote(st.Message, s.refusedNote())
 	if s.watchErr != "" {
 		st.State, st.Error = api.SensorDegraded, s.watchErr
 	}
@@ -293,7 +301,21 @@ func (s *Sensor) load() {
 	s.st = stateFile{Canary: st.Canary}
 	s.byPath = map[string]*record{}
 	for _, r := range st.Decoys {
-		if r == nil || r.Path == "" || r.Base == "" || r.Name == "" || r.target().path() != r.Path || s.byPath[r.Path] != nil {
+		if r == nil || r.Path == "" || r.Base == "" || r.Name == "" || r.target().path() != r.Path {
+			continue
+		}
+		if !r.Chain {
+			// From before every folder was checked from the root: keep where a home decoy
+			// came from, then check its whole path from now on.
+			if r.legacyHome() {
+				r.Entry, r.Home = r.entryKey(s.layout.goos), true
+			}
+			base, dirs := s.layout.chain(filepath.Dir(r.Path))
+			r.Base, r.Dirs, r.Chain = base, s.layout.resolve(dirs), true
+			r.Path = r.target().path()
+			s.dirty = true
+		}
+		if s.byPath[r.Path] != nil {
 			continue
 		}
 		s.st.Decoys = append(s.st.Decoys, r)
@@ -332,6 +354,7 @@ func (s *Sensor) checkOnce() {
 		}
 	}
 	goos := s.layout.goos
+	s.refused = map[string]bool{}
 	targets := s.layout.targets(s.cfg.Files, s.dataDir, s.note)
 	byPath := make(map[string]target, len(targets))
 	for _, t := range targets {
@@ -394,7 +417,8 @@ func (s *Sensor) retire(r *record) bool {
 	fs, err := statPath(r.Path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		if folderOK(t, t.need()) != nil {
+		if ferr := folderOK(t, t.need()); ferr != nil {
+			s.unsafe(r.Path, ferr)
 			if !r.Unavailable {
 				r.Unavailable = true // decided once the folder is back
 				s.dirty = true
@@ -424,7 +448,7 @@ func (s *Sensor) retire(r *record) bool {
 			s.forget(r)
 			return true
 		case rerr != nil || sum == "":
-			if rerr != nil {
+			if rerr != nil && !s.unsafe(r.Path, rerr) {
 				s.note(r.Path, "remove: "+rerr.Error())
 			}
 			return false // try again at the next check
@@ -456,7 +480,9 @@ func (s *Sensor) syncHidden(r *record) {
 	err := setHidden(r.target(), r.Dev, r.Inode, r.wantHidden)
 	s.watch(r)
 	if err != nil {
-		s.note(r.Path, "set the hidden attribute: "+err.Error())
+		if !s.unsafe(r.Path, err) {
+			s.note(r.Path, "set the hidden attribute: "+err.Error())
+		}
 		return
 	}
 	r.Hidden = r.wantHidden
@@ -472,6 +498,44 @@ func (s *Sensor) note(path, msg string) {
 	s.log.Warn("decoy: cannot place decoy file", "path", path, "reason", msg)
 }
 
+// unsafe records a decoy path refused because a folder on the way is a link (on Windows
+// any reparse point), and reports whether err was that. It raises no event: the sensor
+// message names the path.
+func (s *Sensor) unsafe(p string, err error) bool {
+	if !errors.Is(err, errUnsafe) {
+		return false
+	}
+	if s.refused == nil {
+		s.refused = map[string]bool{}
+	}
+	s.refused[p] = true
+	s.note(p, "goes through a link")
+	return true
+}
+
+// refusedNote is the sensor message part for refused paths (s.mu held).
+func (s *Sensor) refusedNote() string {
+	if len(s.refused) == 0 {
+		return ""
+	}
+	ps := slices.Sorted(maps.Keys(s.refused))
+	msg := "decoy path refused: " + ps[0] + " goes through a link"
+	if len(ps) > 1 {
+		msg += fmt.Sprintf(" (and %d more)", len(ps)-1)
+	}
+	return msg
+}
+
+func joinNote(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	}
+	return a + "; " + b
+}
+
 // place creates the decoys of targets that are not tracked yet (s.mu held).
 func (s *Sensor) place(targets []target) {
 	for _, t := range targets {
@@ -483,6 +547,9 @@ func (s *Sensor) place(targets []target) {
 			s.note("*", fmt.Sprintf("limit of %d decoys reached", maxDecoys))
 			return
 		}
+		if s.unsafe(p, folderOK(t, t.need())) {
+			continue
+		}
 		if _, err := statPath(p); err == nil {
 			continue // something is already there: leave it alone
 		}
@@ -492,13 +559,15 @@ func (s *Sensor) place(targets []target) {
 		case err == nil:
 		case errors.Is(err, errExists), errors.Is(err, errNoFolder):
 			continue
+		case s.unsafe(p, err):
+			continue
 		default:
 			s.note(p, err.Error())
 			continue
 		}
 		r := &record{Path: p, Base: t.Base, Dirs: slices.Clone(t.Dirs), Name: t.Name, MakeDir: t.MakeDir,
 			Extra: t.OwnerFromParent, Entry: t.Entry, Home: t.Home, User: t.User, UID: t.UID, GID: t.GID,
-			HasOwner: t.HasOwner, Kind: t.Kind, wantHidden: t.Hidden}
+			HasOwner: t.HasOwner, Kind: t.Kind, Chain: true, wantHidden: t.Hidden}
 		s.adopt(r, c, data)
 		s.st.Decoys = append(s.st.Decoys, r)
 		s.byPath[p] = r
@@ -555,7 +624,8 @@ func (s *Sensor) checkRecord(r *record) {
 	t := r.target()
 	fs, err := statPath(r.Path)
 	if errors.Is(err, os.ErrNotExist) {
-		if folderOK(t, t.need()) != nil {
+		if ferr := folderOK(t, t.need()); ferr != nil {
+			s.unsafe(r.Path, ferr)
 			if !r.Unavailable {
 				r.Unavailable = true
 				s.dirty = true
@@ -671,7 +741,7 @@ func (s *Sensor) recreate(r *record) {
 	data := content(r.Kind, r.User, s.st.Canary)
 	c, err := createFile(r.target(), data, s.backdate())
 	if err != nil {
-		if !errors.Is(err, errExists) {
+		if !errors.Is(err, errExists) && !s.unsafe(r.Path, err) {
 			s.note(r.Path, "recreate: "+err.Error())
 		}
 		return
@@ -773,11 +843,13 @@ func (s *Sensor) cleanup() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var keep []*record
+	s.refused = map[string]bool{}
 	for _, r := range s.st.Decoys {
 		t := r.target()
 		fs, err := statPath(r.Path)
 		if errors.Is(err, os.ErrNotExist) {
-			if folderOK(t, t.need()) != nil {
+			if ferr := folderOK(t, t.need()); ferr != nil {
+				s.unsafe(r.Path, ferr)
 				keep = append(keep, r) // cannot tell while its folder is missing
 			} else {
 				tracked.Delete(r.Path)
@@ -792,6 +864,7 @@ func (s *Sensor) cleanup() {
 				continue
 			}
 			if rerr != nil {
+				s.unsafe(r.Path, rerr)
 				s.log.Warn("decoys off: cannot remove decoy; left in place", "path", r.Path, "err", rerr)
 				keep = append(keep, r)
 				continue

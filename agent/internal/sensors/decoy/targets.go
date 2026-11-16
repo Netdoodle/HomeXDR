@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Netdoodle/homexdr/agent/internal/fsutil"
 	"github.com/Netdoodle/homexdr/shared/api"
 )
 
@@ -21,9 +22,12 @@ const (
 	maxDirScan = 5000    // entries looked at when searching a folder for a renamed decoy
 )
 
-// target is one place a decoy may be created. Base is a folder only an administrator
-// controls; symlinks in it are followed. Every folder in Dirs is opened without following
-// symlinks, because users control them (their home folder and what is in it).
+// target is one place a decoy may be created. Base is the root of the volume ("/",
+// "C:\\"; a test's temporary folder in tests) and Dirs is every folder from there down to
+// the decoy's folder. Each folder in Dirs is opened without following links (on Windows:
+// refused if it is a reparse point of any kind), so neither a user nor anyone else who can
+// put a link somewhere along the path can redirect the agent. The only links followed are
+// the well-known root-level system links in rootLinks, resolved before the chain is built.
 type target struct {
 	Base string
 	Dirs []string
@@ -109,8 +113,9 @@ func (l layout) targets(files []api.DecoyFile, dataDir string, bad func(path, ms
 				homes, homesDone = l.homes(), true
 			}
 			for _, h := range homes {
+				base, hdirs := l.chain(h.Base)
 				t := target{
-					Base: h.Base, Dirs: append([]string{h.Dir}, dirs...), Name: name, MakeDir: len(dirs) > 0,
+					Base: base, Dirs: l.resolve(append(append(hdirs, h.Dir), dirs...)), Name: name, MakeDir: len(dirs) > 0,
 					User: h.Owner.Name, UID: h.Owner.UID, GID: h.Owner.GID, HasOwner: h.Chown,
 					Kind: kindFor(dirs, name), Entry: p, Home: true, Hidden: hidden,
 				}
@@ -122,11 +127,8 @@ func (l layout) targets(files []api.DecoyFile, dataDir string, bad func(path, ms
 		}
 		vol, rest := l.volume(p)
 		dirs, name := split(rest, sep)
-		t := target{Base: vol, Name: name, OwnerFromParent: true, Kind: kindFor(dirs, name), Entry: p, Hidden: hidden}
-		if n := len(dirs); n > 0 {
-			t.Base = filepath.Join(append([]string{vol}, dirs[:n-1]...)...)
-			t.Dirs, t.MakeDir = []string{dirs[n-1]}, true
-		}
+		t := target{Base: vol, Dirs: l.resolve(dirs), Name: name, MakeDir: len(dirs) > 0, OwnerFromParent: true,
+			Kind: kindFor(dirs, name), Entry: p, Hidden: hidden}
 		if l.allowed(t, dataDir, bad) {
 			out = append(out, t)
 		}
@@ -162,6 +164,58 @@ func (l layout) volume(p string) (string, string) {
 	return "/", p[1:]
 }
 
+// chain splits a folder into the root it starts at (the volume root, or root in tests)
+// and the folders below it.
+func (l layout) chain(dir string) (string, []string) {
+	dir = filepath.Clean(dir)
+	base := l.root
+	if base == "" {
+		base = filepath.VolumeName(dir) + string(filepath.Separator)
+	}
+	rel, err := filepath.Rel(base, dir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return dir, nil // not below the root: cannot happen for paths the layout built
+	}
+	if rel == "." {
+		return base, nil
+	}
+	return base, strings.Split(rel, string(filepath.Separator))
+}
+
+// rootLinks are well-known links directly below "/" that real systems have and only root
+// can create (it owns "/"): macOS keeps /var, /tmp and /etc in /private, and ostree-based
+// Linux systems (Fedora Atomic) keep /home and /root in /var. They are resolved before a
+// decoy path's folders are opened, and only when the link is root's and points exactly
+// where it should; any other link on the way refuses the decoy.
+var rootLinks = map[string]map[string]string{
+	"darwin": {"var": "private/var", "tmp": "private/tmp", "etc": "private/etc"},
+	"linux":  {"home": "var/home", "root": "var/roothome"},
+}
+
+// resolve replaces a known root-level system link at the start of dirs by its target
+// (real file system only).
+func (l layout) resolve(dirs []string) []string {
+	if l.root != "" || len(dirs) == 0 {
+		return dirs
+	}
+	want, ok := rootLinks[l.goos][dirs[0]]
+	if !ok {
+		return dirs
+	}
+	p := "/" + dirs[0]
+	fi, err := os.Lstat(p)
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return dirs
+	}
+	if m := fsutil.StatMeta(fi); !m.HasOwner || m.UID != 0 {
+		return dirs
+	}
+	if to, err := os.Readlink(p); err != nil || strings.TrimPrefix(to, "/") != want {
+		return dirs
+	}
+	return append(strings.Split(want, "/"), dirs[1:]...)
+}
+
 // homes lists the real users' home folders of this OS.
 func (l layout) homes() []home {
 	switch l.goos {
@@ -175,9 +229,10 @@ func (l layout) homes() []home {
 	return nil
 }
 
-// isRealDir reports whether fi (from Lstat) is a folder and not a link or junction.
+// isRealDir reports whether fi (from Lstat) is a folder and not a link, junction or any
+// other reparse point.
 func isRealDir(fi os.FileInfo) bool {
-	return fi.IsDir() && fi.Mode()&(os.ModeSymlink|os.ModeIrregular) == 0
+	return fi.IsDir() && fi.Mode()&(os.ModeSymlink|os.ModeIrregular) == 0 && !isReparsePoint(fi)
 }
 
 // profiles lists the folders directly below dir (not links), at most maxUsers.

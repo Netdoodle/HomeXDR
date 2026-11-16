@@ -236,7 +236,7 @@ func TestHomeExpansion(t *testing.T) {
 		t.Errorf("windows: %v, want %v", paths(got), want)
 	}
 	for _, x := range got {
-		if !x.Hidden || !x.Home || !x.MakeDir || x.Base != filepath.Join(w, "Users") || len(x.Dirs) != 2 || x.HasOwner || x.Kind != kindText {
+		if !x.Hidden || !x.Home || !x.MakeDir || x.Base != w || len(x.Dirs) != 3 || x.Dirs[0] != "Users" || x.need() != 2 || x.HasOwner || x.Kind != kindText {
 			t.Errorf("windows target %+v", x)
 		}
 	}
@@ -253,7 +253,7 @@ func TestHomeExpansion(t *testing.T) {
 		if x.Hidden {
 			t.Errorf("Linux target hidden: %+v", x)
 		}
-		if x.Dirs[0] == "alice" && (!x.HasOwner || x.UID != 4242 || x.GID != 4243 || x.User != "alice") {
+		if x.Dirs[1] == "alice" && (x.Base != l || x.Dirs[0] != "home" || !x.HasOwner || x.UID != 4242 || x.GID != 4243 || x.User != "alice") {
 			t.Errorf("alice's target %+v", x)
 		}
 		if x.Dirs[0] == "root" && (x.HasOwner || x.User != "root" || x.Base != l) {
@@ -265,7 +265,7 @@ func TestHomeExpansion(t *testing.T) {
 	mkdirs(t, m, "Users/eve", "Users/Shared", "Users/.localized")
 	ml := layout{goos: "darwin", root: m, lookupOwner: owner4242}
 	got = ml.targets(files, "", noBad)
-	if len(got) != 1 || got[0].path() != filepath.Join(m, "Users", "eve", "notes.txt") || got[0].MakeDir || got[0].need() != 1 {
+	if len(got) != 1 || got[0].path() != filepath.Join(m, "Users", "eve", "notes.txt") || got[0].MakeDir || got[0].need() != 2 || got[0].Base != m {
 		t.Errorf("darwin: %+v", got)
 	}
 }
@@ -624,14 +624,20 @@ func TestUpgradeFromFixedPlacements(t *testing.T) {
 	if len(s.st.Decoys) != 3 {
 		t.Fatalf("%d decoys", len(s.st.Decoys))
 	}
-	for _, r := range s.st.Decoys { // as the previous version wrote them
-		r.Entry, r.Home, r.Extra = "", false, false
-		if r.Name == "credentials.csv" {
-			r.Kind = kindCSV
+	// As the previous version wrote them: no entry, and Base one folder down (C:\Users,
+	// C:\ProgramData) with the rest in Dirs.
+	legacy := func(s *Sensor) {
+		for _, r := range s.st.Decoys {
+			r.Entry, r.Home, r.Extra, r.Chain = "", false, false, false
+			r.Base, r.Dirs = filepath.Join(r.Base, r.Dirs[0]), r.Dirs[1:]
+			if r.Name == "credentials.csv" {
+				r.Kind = kindCSV
+			}
 		}
+		s.dirty = true
+		s.save()
 	}
-	s.dirty = true
-	s.save()
+	legacy(s)
 
 	n, c, _ := testSensor(t, "windows", root, data, on())
 	n.checkOnce()
@@ -642,7 +648,8 @@ func TestUpgradeFromFixedPlacements(t *testing.T) {
 	if len(n.st.Decoys) != 2 || len(c.take()) != 0 {
 		t.Fatalf("after the upgrade: %d decoys", len(n.st.Decoys))
 	}
-	if r := n.byPath[filepath.Join(root, "Users", "bob", "Documents", "Passwords.xlsx")]; r == nil || r.Entry != `{home}\Documents\Passwords.xlsx` || !r.Home {
+	if r := n.byPath[filepath.Join(root, "Users", "bob", "Documents", "Passwords.xlsx")]; r == nil || r.Entry != `{home}\Documents\Passwords.xlsx` || !r.Home ||
+		!r.Chain || r.Base != root || !slices.Equal(r.Dirs, []string{"Users", "bob", "Documents"}) {
 		t.Errorf("Documents decoy %+v", r)
 	}
 	if r := n.byPath[filepath.Join(root, "ProgramData", "Backup", "credentials.csv")]; r == nil || r.Entry != `C:\ProgramData\Backup\credentials.csv` || r.Home {
@@ -650,11 +657,12 @@ func TestUpgradeFromFixedPlacements(t *testing.T) {
 	}
 	// An old home decoy whose profile is not listed right now stays while its entry is
 	// configured.
+	legacy(n)
 	os.Remove(filepath.Join(root, "Users", "bob", "NTUSER.DAT"))
-	r := n.byPath[filepath.Join(root, "Users", "bob", "Documents", "Passwords.xlsx")]
-	r.Entry, r.Home = "", false
-	n.checkOnce()
-	if r.Retired || !exists(r.Path) {
+	o, c2, _ := testSensor(t, "windows", root, data, on())
+	o.checkOnce()
+	r := o.byPath[filepath.Join(root, "Users", "bob", "Documents", "Passwords.xlsx")]
+	if r == nil || r.Retired || !r.Home || !exists(r.Path) || len(c2.take()) != 0 {
 		t.Errorf("home decoy of an unlisted user retired: %+v", r)
 	}
 }
