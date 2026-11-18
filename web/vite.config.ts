@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           // Long-lived vendor chunk so app updates do not bust the library cache.
-          manualChunks: (id) => (id.includes('node_modules') ? 'vendor' : undefined),
+          manualChunks: (id) => (id.includes('node_modules') && !/node_modules[\\/](@xyflow|elkjs|d3-|classcat|zustand)/.test(id) ? 'vendor' : undefined),
         },
       },
     },

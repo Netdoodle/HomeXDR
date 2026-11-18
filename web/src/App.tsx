@@ -10,6 +10,8 @@ import { Loading } from './components/States'
 
 // The threat map carries the world's country outlines, so it loads only when opened.
 const ThreatMapPage = lazy(() => import('./pages/ThreatMap').then((m) => ({ default: m.ThreatMapPage })))
+// The storyline graph pulls in the graph renderer and layout engine, so it loads only when opened.
+const StorylinePage = lazy(() => import('./pages/Storyline').then((m) => ({ default: m.StorylinePage })))
 import { ToastProvider } from './components/Toast'
 import { AlertDetailPage } from './pages/AlertDetail'
 import { AlertsPage } from './pages/Alerts'
@@ -86,6 +88,22 @@ export function App() {
                 <Route path="hosts" element={<HostsPage />} />
                 <Route path="hosts/:id" element={<HostDetailPage />} />
                 <Route path="hosts/:id/process/:entityId" element={<ProcessTreePage />} />
+                <Route
+                  path="hosts/:id/storyline/:entityId"
+                  element={
+                    <Suspense fallback={<Loading />}>
+                      <StorylinePage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="alerts/:alertId/storyline"
+                  element={
+                    <Suspense fallback={<Loading />}>
+                      <StorylinePage />
+                    </Suspense>
+                  }
+                />
                 <Route path="devices" element={<DevicesPage />} />
                 <Route path="search" element={<SearchPage />} />
                 <Route path="investigate" element={<InvestigatePage />} />

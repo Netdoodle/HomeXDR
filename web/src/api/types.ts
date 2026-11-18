@@ -1370,3 +1370,73 @@ export interface TotpSetup {
 export interface RecoveryCodes {
   recovery_codes: string[];
 }
+
+// Storyline graph (GET /api/storyline) -----------------------------------------------------
+
+export type StorylineEdgeKind =
+  | 'parent'
+  | 'remote_thread'
+  | 'process_access'
+  | 'process_tampering'
+  | 'scheduled_task'
+  | 'service'
+  | 'wmi';
+
+export interface StorylineNode {
+  entity_id: string;
+  pid: number;
+  name: string;
+  executable: string;
+  command_line: string;
+  user: string;
+  start: string | null;
+  end: string | null;
+  exit_code: number | null;
+  signed: boolean | null;
+  integrity_level: string;
+  parent_entity_id: string;
+  /** 0 = root, negative above it */
+  depth: number;
+  focus: boolean;
+  root: boolean;
+  context: boolean;
+  outside: boolean;
+  /** no start event was seen for this process */
+  stub: boolean;
+  alert_count: number;
+  max_severity: "" | Severity;
+  /** MITRE tactic slugs: persistence, privilege-escalation, defense-evasion, ... */
+  tactics: string[];
+  event_counts: Record<ProcessEventCategory, number>;
+}
+
+export interface StorylineEdge {
+  from: string;
+  to: string;
+  kind: StorylineEdgeKind;
+  at: string | null;
+  event_id: string;
+  detail: string;
+}
+
+export interface StorylineAlert {
+  id: string;
+  title: string;
+  severity: Severity;
+  status: AlertStatus;
+  first_seen: string;
+  last_seen: string;
+  entity_id: string;
+  tactics: string[];
+}
+
+export interface Storyline {
+  host_id: string;
+  hostname: string;
+  focus_entity_id: string;
+  root_entity_id: string;
+  truncated: boolean;
+  nodes: StorylineNode[];
+  edges: StorylineEdge[];
+  alerts: StorylineAlert[];
+}
