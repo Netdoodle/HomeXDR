@@ -84,6 +84,7 @@ For Unraid hosts, see [deploy/unraid](deploy/unraid/README.md).
 - [Console REST API](docs/api.md)
 - [AI analyst](docs/ai-analyst.md)
 - [Alert grouping and suppressions](docs/alerts.md)
+- [Alert storylines](docs/storyline.md)
 - [Notifications and the daily digest](docs/notifications.md)
 - [Network visibility](docs/network-visibility.md), [device inventory](docs/devices.md) and [behaviour detection](docs/behavior.md)
 - [Data health, doctor and self-check](docs/health.md)

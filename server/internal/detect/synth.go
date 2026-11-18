@@ -335,6 +335,23 @@ var categoryShape = map[string]func(e *event.Event){
 	"ps_classic_provider_start": func(e *event.Event) { e.Event.Code = "600" },
 	"ps_classic_script":         func(e *event.Event) { e.Event.Code = "800" },
 	"authentication":            shape(event.CategoryAuthentication, event.TypeStart),
+	"create_remote_thread":      crossShape(event.ActionRemoteThread, "8"),
+	"process_access":            crossShape(event.ActionProcessAccess, "10"),
+	"process_tampering":         crossShape(event.ActionProcessTampering, "25"),
+}
+
+// crossShape is a cross-process event as the Windows agent maps Sysmon's.
+func crossShape(action, code string) func(e *event.Event) {
+	return func(e *event.Event) {
+		typ := event.TypeChange
+		if action == event.ActionProcessAccess {
+			typ = event.TypeAccess
+		}
+		shape(event.CategoryProcess, typ)(e)
+		e.Event.Action = action
+		e.Event.Code = code
+		e.Event.Provider = "Microsoft-Windows-Sysmon"
+	}
 }
 
 func shape(category, typ string) func(e *event.Event) {

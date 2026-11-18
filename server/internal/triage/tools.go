@@ -10,6 +10,7 @@ import (
 
 	"github.com/Netdoodle/homexdr/server/internal/events"
 	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/server/internal/storyline"
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
@@ -50,7 +51,7 @@ func (b *toolbox) tools() []Tool {
 Use it to look at what else happened on the alert's host, who else talked to an IP or domain, or whether something is routine.
 Query language: field:value or field=value (case-insensitive), field!=value, field:val* wildcards, field:"quoted value", field>N / field:>N comparisons, AND / OR / NOT, parentheses; bare words match message, command line and file path. An empty query returns the newest events.
 Splunk-style commands can follow the filter with |, and then a table is returned instead of events: stats count, dc(f), sum(f), avg(f), min(f), max(f), values(f) [as name] [by f, ...]; top [limit=N] f; rare f; table f, ...; sort [-]f; head N; dedup f; where <expression>; eval name=<expression>; rex field=f "(?<name>regex)". Example: destination.ip:203.0.113.7 | stats count, dc(host.name) as hosts by event.module.
-Useful fields: host.name, host.id, event.category (process, network, file, authentication, dns, registry), event.action, event.outcome, event.module (opnsense, suricata, procconn, fanotify, ...), process.name, process.command_line, process.entity_id, process.parent.name, user.name, file.path, source.ip, destination.ip, destination.port, destination.domain, dns.question.name, network.community_id.
+Useful fields: host.name, host.id, event.category (process, network, file, authentication, dns, registry), event.action, event.outcome, event.module (opnsense, suricata, procconn, fanotify, ...), process.name, process.command_line, process.entity_id, process.parent.name, user.name, file.path, source.ip, destination.ip, destination.port, destination.domain, dns.question.name, network.community_id, and for cross-process events (event.action remote-thread-created, process-accessed, process-tampered) target.process.name, target.process.entity_id, target.granted_access.
 The time window defaults to 24 hours before the alert's first hit (or the last 24 hours) until now. Results are newest first and trimmed.`,
 			Properties: map[string]any{
 				"query":   map[string]any{"type": "string", "description": "Query in the language above, e.g. process.name:curl AND destination.port:443"},
@@ -80,6 +81,16 @@ The time window defaults to 24 hours before the alert's first hit (or the last 2
 			},
 			Required: []string{"host_id", "entity_id"},
 			Run:      b.processTree,
+		},
+		{
+			Name: "get_storyline",
+			Description: `Return the attack chain around a process on an endpoint as a graph: its lineage from the first ancestor below a system process (the root), the root's descendants, processes it injected a thread into, opened or tampered with and those that did so to it (Windows with Sysmon only), processes it set up through a scheduled task, service or WMI (best effort), and the alerts on all of them with their ATT&CK tactics.
+Nodes carry parent_entity_id; edges list the links other than parent ones. Without arguments it shows the alert's own process.`,
+			Properties: map[string]any{
+				"host_id":   map[string]any{"type": "string", "description": "Host (agent ID) the process ran on. Default: the alert's host."},
+				"entity_id": map[string]any{"type": "string", "description": "The process.entity_id of the process. Default: the alert's process."},
+			},
+			Run: b.storyline,
 		},
 		{
 			Name:        "get_host",
@@ -295,7 +306,7 @@ func render(v any) (string, error) {
 		return string(b), nil
 	}
 	if m, ok := v.(map[string]any); ok {
-		for _, key := range []string{"events", "rows", "alerts", "children"} {
+		for _, key := range []string{"events", "rows", "alerts", "children", "edges", "nodes"} {
 			list, ok := m[key].([]any)
 			for ok && len(list) > 1 && len(b) > maxToolOutput {
 				list = list[:len(list)*2/3]
@@ -513,6 +524,70 @@ func (b *toolbox) processTree(ctx context.Context, in json.RawMessage) (string, 
 		kids = append(kids, kid)
 	}
 	return render(map[string]any{"process": target, "ancestors": ancestors, "children": kids})
+}
+
+// storylineDepth is how many levels of descendants the storyline tool shows.
+const storylineDepth = 4
+
+func (b *toolbox) storyline(ctx context.Context, in json.RawMessage) (string, error) {
+	var p struct {
+		HostID   string `json:"host_id"`
+		EntityID string `json:"entity_id"`
+	}
+	if len(in) > 0 {
+		if err := json.Unmarshal(in, &p); err != nil {
+			return "", fmt.Errorf("invalid input: %v", err)
+		}
+	}
+	if p.HostID == "" && p.EntityID == "" && b.alert != nil {
+		p.HostID, p.EntityID = b.alert.HostID, b.alert.ProcessEntityID
+	}
+	if p.HostID == "" || p.EntityID == "" {
+		return "", errors.New("host_id and entity_id are required (the alert is not about a process)")
+	}
+	g, err := storyline.Build(ctx, storyline.Sources{Events: b.ev, State: b.st}, p.HostID, p.EntityID, storylineDepth)
+	if errors.Is(err, storyline.ErrNotFound) {
+		return "", fmt.Errorf("no process %s on host %s in the stored events", p.EntityID, p.HostID)
+	}
+	if err != nil {
+		return "", err
+	}
+	nodes := make([]any, 0, len(g.Nodes))
+	for _, n := range g.Nodes {
+		m := map[string]any{"entity_id": n.EntityID, "name": n.Name, "pid": n.PID, "depth": n.Depth}
+		for k, v := range map[string]string{"parent_entity_id": n.ParentEntityID, "user": n.User,
+			"command_line": compact(n.CommandLine).(string), "max_severity": n.MaxSeverity} {
+			if v != "" {
+				m[k] = v
+			}
+		}
+		for k, v := range map[string]bool{"focus": n.Focus, "root": n.Root, "context": n.Context, "outside": n.Outside} {
+			if v {
+				m[k] = true
+			}
+		}
+		if n.Start != nil {
+			m["start"] = n.Start
+		}
+		if n.AlertCount > 0 {
+			m["alert_count"], m["tactics"] = n.AlertCount, n.Tactics
+		}
+		nodes = append(nodes, m)
+	}
+	edges := []any{}
+	for _, e := range g.Edges {
+		if e.Kind != storyline.EdgeParent {
+			edges = append(edges, map[string]any{"from": e.From, "to": e.To, "kind": e.Kind, "at": e.At,
+				"event_id": e.EventID, "detail": compact(e.Detail)})
+		}
+	}
+	alerts := make([]any, 0, len(g.Alerts))
+	for _, a := range g.Alerts {
+		alerts = append(alerts, map[string]any{"id": a.ID, "title": a.Title, "severity": a.Severity, "status": a.Status,
+			"entity_id": a.EntityID, "tactics": a.Tactics})
+	}
+	return render(map[string]any{"host_id": g.HostID, "root_entity_id": g.RootEntityID, "focus_entity_id": g.FocusEntityID,
+		"truncated": g.Truncated, "nodes": nodes, "edges": edges, "alerts": alerts})
 }
 
 func (b *toolbox) getHost(ctx context.Context, in json.RawMessage) (string, error) {

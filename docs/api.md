@@ -216,6 +216,57 @@ type ProcessNode = {
 `GET /api/process-events?host_id=&entity_id=&category=&limit=` → `{"events": Event[]}`:
 the network/file/registry/dns events attributed to one process.
 
+## Storylines
+
+`GET /api/storyline?host_id=&entity_id=&depth=6` or `GET /api/storyline?alert_id=&depth=6`
+(viewer)
+
+The attack-chain graph around a process: its lineage from the root, the root's
+descendants, cross-process links, processes launched through a scheduled task, service or
+WMI, and the alerts on all of them. How the root and the links are chosen is in
+[storyline.md](storyline.md). With `alert_id`, the host and the focus are the alert's
+`host_id` and `process_entity_id`. `depth` is the number of descendant levels (default 6,
+0 to 10). `400` without `host_id`+`entity_id` or `alert_id`; `404` for an unknown alert, an
+alert that is not about a process, or a process with no stored events on that host.
+
+```ts
+type StorylineNode = {
+  entity_id: string; pid: number; name: string; executable: string; command_line: string;
+  user: string; start: string | null; end: string | null; exit_code: number | null;
+  signed: boolean | null; integrity_level: string; parent_entity_id: string;
+  depth: number;          // 0 = root, -1 = context, larger = further down
+  focus: boolean;         // the requested process (the alert's)
+  root: boolean;
+  context: boolean;       // the system process above the root
+  outside: boolean;       // reached only through a cross-process event
+  stub: boolean;          // no start/end event: built from other events
+  alert_count: number; max_severity: string;  // "" when no alerts
+  tactics: string[];      // ATT&CK tactic slugs: "persistence", "defense-evasion", ...
+  event_counts: { network: number; file: number; registry: number; dns: number; library: number };
+}
+type StorylineEdge = {
+  from: string; to: string;  // entity IDs
+  kind: "parent" | "remote_thread" | "process_access" | "process_tampering" | "scheduled_task" | "service" | "wmi";
+  at: string | null;
+  event_id: string;          // evidence: start event, cross-process event or launched process's start
+  detail: string;            // granted access, tampering type, thread start, or the creating command
+}
+type StorylineAlert = {
+  id: string; title: string; severity: string; status: string;
+  first_seen: string; last_seen: string; entity_id: string; tactics: string[];
+}
+// response; arrays are never null
+{
+  host_id: string; hostname: string; focus_entity_id: string; root_entity_id: string;
+  truncated: boolean;        // nodes, children or cross-process events were left out
+  nodes: StorylineNode[]; edges: StorylineEdge[]; alerts: StorylineAlert[];
+}
+```
+
+Nodes are ordered by depth, then start time. Repeated cross-process events between the
+same pair and of the same kind are one edge (the first). Alerts are newest first, at most
+200, suppressed ones left out.
+
 ## Alerts
 
 | Method | Path | Notes |
