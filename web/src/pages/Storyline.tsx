@@ -47,6 +47,7 @@ import {
   collapsedView,
   groupSiblings,
   hasLoadedChildren,
+  importantNodes,
   initialOpen,
   isTreeEdge,
   mergeStoryline,
@@ -121,7 +122,7 @@ function ProcNode({ data }: NodeProps<FlowNode>) {
   ].join(' ')
   const style = n.alert_count > 0 ? ({ '--sl-sev': severityVar(n.max_severity) } as React.CSSProperties) : undefined
   return (
-    <div className={cls} style={style} title={n.stub ? 'no start event seen' : group ? `${group} × ${n.name} (click to expand)` : n.executable || n.name}>
+    <div className={cls} style={style} title={n.stub ? 'no start event seen' : item.others ? `${group} other processes with no alert below them (click to show)` : group ? `${group} × ${n.name} (click to expand)` : n.executable || n.name}>
       <Handle type="target" position={Position.Left} className="sl-handle" isConnectable={false} />
       <div className="sl-circle">
         <Icon name={group ? 'tree' : 'settings'} size={22} />
@@ -143,9 +144,9 @@ function ProcNode({ data }: NodeProps<FlowNode>) {
         ) : null}
       </div>
       <div className="sl-name" title={n.name}>
-        {group ? `${group} × ${n.name}` : n.name}
+        {item.others ? `${group} other processes` : group ? `${group} × ${n.name}` : n.name}
       </div>
-      {group ? <div className="sl-pid">same parent</div> : <div className="sl-pid">PID {n.pid}</div>}
+      {group ? <div className="sl-pid">{item.others ? 'no alerts · click to show' : 'same parent'}</div> : <div className="sl-pid">PID {n.pid}</div>}
       {!group ? (
         <div className="sl-counts">
           {PROCESS_EVENT_CATEGORIES.filter((c) => (n.event_counts?.[c] ?? 0) > 0).map((c) => (
@@ -287,13 +288,16 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
     setSelTactics((s) => new Set([...s, ...fresh]))
   }, [allSlugs])
 
+  // Quiet children fold into "other processes" until Expand all.
+  const [fold, setFold] = useState(true)
+  const important = useMemo(() => (fold ? importantNodes(data) : undefined), [data, fold])
   const { items, edges, hidden } = useMemo(() => {
     let g = { nodes: data.nodes, edges: data.edges }
     if (view === 'process') g = processView(g, data.focus_entity_id)
     if (!cross) g = withoutCrossProcess(g)
     const c = collapsedView(g, open)
-    return { ...groupSiblings(c, expanded), hidden: c.hidden }
-  }, [data, view, cross, expanded, open])
+    return { ...groupSiblings(c, expanded, important), hidden: c.hidden }
+  }, [data, view, cross, expanded, open, important])
 
   const layoutKey = useMemo(() => items.map((i) => i.id).join(',') + '|' + edges.map((e) => `${e.from}>${e.to}`).join(','), [items, edges])
 
@@ -525,13 +529,20 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
             <button type="button" className="btn sm" onClick={() => void fitView({ padding: 0.2, maxZoom: 1, duration: 200 })}>
               Fit to view
             </button>
-            <button type="button" className="btn sm" onClick={() => setOpen(new Set(data.nodes.map((n) => n.entity_id)))} title="Open every loaded branch">
+            <button type="button" className="btn sm" onClick={() => {
+                setFold(false)
+                setOpen(new Set(data.nodes.map((n) => n.entity_id)))
+              }} title="Open every loaded branch">
               Expand all
             </button>
             <button
               type="button"
               className="btn sm"
-              onClick={() => setOpen(new Set(data.nodes.filter((n) => n.context || n.root).map((n) => n.entity_id)))}
+              onClick={() => {
+                setFold(true)
+                setExpanded(new Set())
+                setOpen(new Set(data.nodes.filter((n) => n.context || n.root).map((n) => n.entity_id)))
+              }}
               title="Show only the root process and its children"
             >
               Collapse all

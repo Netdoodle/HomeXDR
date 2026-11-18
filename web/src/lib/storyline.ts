@@ -101,35 +101,93 @@ export interface GraphItem {
   node: StorylineNode
   /** every collapsed member (only for groups) */
   members?: StorylineNode[]
+  /** a group of a parent's other children (not one name) */
+  others?: boolean
 }
 
 export function groupId(parent: string, name: string): string {
   return `group:${parent}:${name}`
 }
 
+export function othersId(parent: string): string {
+  return `others:${parent}`
+}
+
+/** An open process shows at most this many children before the quiet ones fold away. */
+export const MAX_CHILDREN = 6
+
 /**
- * Collapses more than GROUP_THRESHOLD siblings sharing a name (and a parent) into one item.
- * Only leaf processes without alerts that are not the focus or root are grouped, and
- * groups listed in `expanded` are left as individual nodes.
+ * The processes that matter for the first view: the focus, every process with alerts, and
+ * every process above them. Their siblings are the ones that fold into "other processes".
  */
-export function groupSiblings(data: GraphData, expanded: ReadonlySet<string> = new Set()): { items: GraphItem[]; edges: StorylineEdge[] } {
+export function importantNodes(data: Pick<Storyline, 'nodes' | 'edges'>): Set<string> {
+  const parentOf = new Map<string, string>()
+  for (const e of data.edges) if (isTreeEdge(e) && e.from !== e.to && !parentOf.has(e.to)) parentOf.set(e.to, e.from)
+  const keep = new Set<string>()
+  for (const n of data.nodes) {
+    if (!n.focus && n.alert_count === 0) continue
+    for (let cur: string | undefined = n.entity_id; cur && !keep.has(cur); cur = parentOf.get(cur)) keep.add(cur)
+  }
+  return keep
+}
+
+/**
+ * Folds processes to keep the graph readable:
+ * - when `keep` is given and a process shows more than MAX_CHILDREN children, the
+ *   children outside `keep` (no alert or focus below them) become one "other processes"
+ *   item;
+ * - more than GROUP_THRESHOLD remaining siblings sharing a name (and a parent) become one
+ *   item. Only leaf processes without alerts that are not the focus or root are grouped.
+ * Groups listed in `expanded` are left as individual nodes.
+ */
+export function groupSiblings(
+  data: GraphData,
+  expanded: ReadonlySet<string> = new Set(),
+  keep?: ReadonlySet<string>,
+): { items: GraphItem[]; edges: StorylineEdge[] } {
   const hasOut = new Set(data.edges.map((e) => e.from))
   const crossIn = new Set(data.edges.filter((e) => e.kind !== 'parent').map((e) => e.to))
+  const byId = new Map(data.nodes.map((n) => [n.entity_id, n]))
+  const memberOf = new Map<string, string>()
+  const groups = new Map<string, StorylineNode[]>()
+  const others = new Set<string>()
+
+  if (keep) {
+    const kidsOf = new Map<string, StorylineNode[]>()
+    for (const e of data.edges) {
+      const n = byId.get(e.to)
+      if (!n || !isTreeEdge(e) || e.from === e.to) continue
+      const list = kidsOf.get(e.from)
+      if (list) {
+        if (!list.includes(n)) list.push(n)
+      } else kidsOf.set(e.from, [n])
+    }
+    for (const [parent, list] of kidsOf) {
+      const key = othersId(parent)
+      if (list.length <= MAX_CHILDREN || expanded.has(key)) continue
+      const quiet = list.filter((n) => !keep.has(n.entity_id) && !n.focus && !n.root && n.alert_count === 0 && !crossIn.has(n.entity_id))
+      if (quiet.length < 2) continue
+      groups.set(key, quiet)
+      others.add(key)
+      for (const m of quiet) memberOf.set(m.entity_id, key)
+    }
+  }
+
   const buckets = new Map<string, StorylineNode[]>()
   for (const n of data.nodes) {
+    if (memberOf.has(n.entity_id)) continue
     if (n.alert_count > 0 || n.focus || n.root || !n.parent_entity_id) continue
     if (hasOut.has(n.entity_id) || crossIn.has(n.entity_id)) continue
     const key = groupId(n.parent_entity_id, n.name)
     buckets.set(key, [...(buckets.get(key) ?? []), n])
   }
-  const memberOf = new Map<string, string>()
-  const groups = new Map<string, StorylineNode[]>()
   for (const [key, list] of buckets) {
     if (list.length > GROUP_THRESHOLD && !expanded.has(key)) {
       groups.set(key, list)
       for (const m of list) memberOf.set(m.entity_id, key)
     }
   }
+
   const items: GraphItem[] = []
   const emitted = new Set<string>()
   for (const n of data.nodes) {
@@ -139,7 +197,7 @@ export function groupSiblings(data: GraphData, expanded: ReadonlySet<string> = n
     } else if (!emitted.has(g)) {
       emitted.add(g)
       const members = groups.get(g) as StorylineNode[]
-      items.push({ id: g, node: members[0], members })
+      items.push({ id: g, node: members[0], members, ...(others.has(g) ? { others: true } : {}) })
     }
   }
   const seen = new Set<string>()
@@ -147,6 +205,8 @@ export function groupSiblings(data: GraphData, expanded: ReadonlySet<string> = n
   for (const e of data.edges) {
     const from = memberOf.get(e.from) ?? e.from
     const to = memberOf.get(e.to) ?? e.to
+    // Edges inside a group (a member's child folded into the same group) disappear.
+    if (from === to && e.from !== e.to) continue
     const key = `${from}|${to}|${e.kind}`
     if (seen.has(key)) continue
     seen.add(key)
