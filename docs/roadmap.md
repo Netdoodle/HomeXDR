@@ -127,13 +127,16 @@ agents at the MagicDNS name; the spool covers the gaps.
 
 ## Later
 
-- **Map Sysmon's other events.** Network (3), file (11, 23, 26), registry (12-14), DNS (22),
+- **Map Sysmon's other events.** Remote threads (8), process access (10) and tampering
+  (25) are mapped and turned on by the agent. Still to do: network (3), file (11, 23, 26), registry (12-14), DNS (22),
   image load (7) and process access/injection (8, 10) to their categories, so the SigmaHQ
   rules for them fire. Needs a Sysmon config that logs them.
 - **Scan new executables when they're written**, not only when they run.
 - **Ransomware protection.** Bait files (part of Decoys, above), detection of mass renames and encryption,
   automatic isolation, and rollback from Volume Shadow Copy snapshots.
-- **Incident view.** Group related alerts and the process tree into one attack timeline.
+- **Incident view.** The storyline graph groups an attack chain's alerts; still to do: a
+  timeline across hosts, and finding who created the task or service that started a
+  storyline's root.
 - **Live response.** A restricted set of signed, logged commands: processes, connections,
   services, autoruns, fetching files.
 - **Windows artifact collectors.** Startup items, services, scheduled tasks, installed
@@ -154,6 +157,11 @@ agents at the MagicDNS name; the spool covers the gaps.
 
 ## Done
 
+- November 2026: the alert storyline, a graph of the whole attack chain around an alert
+  with cross-process links, scheduled-task, service and WMI launches, alerts and ATT&CK
+  tactics per process ([storyline.md](storyline.md)); Windows agents turn on Sysmon (the
+  built-in Windows feature) and configure remote-thread, process-access and tampering
+  events, per group ([sysmon.md](sysmon.md)).
 - November 2026: optional two-factor login (authenticator codes with recovery codes and an
   admin reset), built-in HTTPS for the console (HomeXDR CA or your own certificate files,
   optional redirect), threshold and correlation rules (Sigma `count()` and correlation
