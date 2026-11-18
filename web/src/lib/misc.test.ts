@@ -68,27 +68,40 @@ describe('install commands', () => {
     ])
   })
 
+  const H = { unix: 'a'.repeat(64), windows: 'b'.repeat(64) }
+
   it('builds the documented Linux, macOS and Windows commands', () => {
-    const c = buildInstallCommands('https://homexdr.lan:8443', 'hxe_abc123', 'sha256:00ff')
-    expect(c.linux).toBe('curl -fsSLk https://homexdr.lan:8443/v1/install/linux.sh | sudo sh -s -- --token hxe_abc123 --ca-pin sha256:00ff')
-    expect(c.macos).toBe('curl -fsSLk https://homexdr.lan:8443/v1/install/macos.sh | sudo sh -s -- --token hxe_abc123 --ca-pin sha256:00ff')
+    const c = buildInstallCommands('https://homexdr.lan:8443', 'hxe_abc123', 'sha256:00ff', H)
+    const mismatch = "'homexdr: the downloaded install script does not match the checksum from the console; not running it'"
+    expect(c.linux).toBe(
+      'f=$(mktemp) && curl -fsSLk https://homexdr.lan:8443/v1/install/linux.sh -o "$f" && ' +
+        `if [ "$( (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | cut -d' ' -f1)" = ${H.unix} ]; ` +
+        'then sudo sh "$f" --token hxe_abc123 --ca-pin sha256:00ff; ' +
+        `else echo ${mismatch} >&2; fi; rm -f "$f"`,
+    )
+    expect(c.macos).toContain('/v1/install/macos.sh -o "$f"')
     expect(c.windows).toBe(
       "$u='https://homexdr.lan:8443/v1/install/windows.ps1'; " +
-        "if ($PSEdition -eq 'Core') { $s=Invoke-RestMethod $u -SkipCertificateCheck } else { " +
+        "if ($PSEdition -eq 'Core') { $b=(Invoke-WebRequest $u -SkipCertificateCheck -UseBasicParsing).RawContentStream.ToArray() } else { " +
         '[Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor 3072; ' +
         '[Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; ' +
-        'try { $s=(New-Object Net.WebClient).DownloadString($u) } finally { [Net.ServicePointManager]::ServerCertificateValidationCallback=$null } }; ' +
-        '& ([scriptblock]::Create($s)) -Server https://homexdr.lan:8443 -Token hxe_abc123 -CaPin sha256:00ff',
+        'try { $b=(New-Object Net.WebClient).DownloadData($u) } finally { [Net.ServicePointManager]::ServerCertificateValidationCallback=$null } }; ' +
+        "$h=-join ([Security.Cryptography.SHA256]::Create().ComputeHash($b) | ForEach-Object { $_.ToString('x2') }); " +
+        `if ($h -ne '${H.windows}') { throw ${mismatch} }; ` +
+        '& ([scriptblock]::Create([Text.Encoding]::UTF8.GetString($b))) -Server https://homexdr.lan:8443 -Token hxe_abc123 -CaPin sha256:00ff',
     )
   })
 
   it('adds the update key to the Linux and macOS commands only', () => {
-    const c = buildInstallCommands('https://homexdr.lan:8443', 'hxe_abc123', 'sha256:00ff', 'ed25519:AbC+/9=')
-    expect(c.linux).toBe(
-      'curl -fsSLk https://homexdr.lan:8443/v1/install/linux.sh | sudo sh -s -- --token hxe_abc123 --ca-pin sha256:00ff --update-key ed25519:AbC+/9=',
-    )
+    const c = buildInstallCommands('https://homexdr.lan:8443', 'hxe_abc123', 'sha256:00ff', H, 'ed25519:AbC+/9=')
+    expect(c.linux).toContain('--ca-pin sha256:00ff --update-key ed25519:AbC+/9=; else')
     expect(c.macos).toContain('--update-key ed25519:AbC+/9=')
     expect(c.windows).not.toContain('update-key')
+  })
+
+  it('refuses to build commands without valid script checksums', () => {
+    expect(() => buildInstallCommands('https://h:8443', 't', 'p', { unix: '', windows: H.windows })).toThrow()
+    expect(() => buildInstallCommands('https://h:8443', 't', 'p', { unix: "'; rm -rf /", windows: H.windows })).toThrow()
   })
 
   it('quotes unsafe shell values', () => {

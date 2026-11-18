@@ -131,12 +131,22 @@ function InstallCommands({
 }) {
   const options = agentUrlOptions(settings);
   const [url, setUrl] = useState(options[0] ?? "");
-  const cmds = buildInstallCommands(
-    url,
-    token,
-    settings.ca_pin,
-    settings.agent_release.signed ? settings.update_key : undefined,
-  );
+  let cmds;
+  try {
+    cmds = buildInstallCommands(
+      url,
+      token,
+      settings.ca_pin,
+      settings.install_sha256,
+      settings.agent_release.signed ? settings.update_key : undefined,
+    );
+  } catch (e) {
+    return (
+      <p className="error">
+        Cannot show install commands: {e instanceof Error ? e.message : String(e)}.
+      </p>
+    );
+  }
   return (
     <div className="stack" style={{ gap: 10 }}>
       <div className="field">
@@ -195,8 +205,9 @@ function InstallCommands({
         talking to this server before it sends the token. The install
         scripts are fetched without checking the certificate (
         <span className="mono">-k</span> on Linux and macOS) because the CA is not
-        installed yet; each script checks the CA against the pin before it
-        downloads the agent, and the agent then pins it. On Windows the agent is
+        installed yet, so each command checks the script against a SHA-256 from
+        this console before running it. The script checks the CA against the pin
+        before it downloads the agent, and the agent then pins it. On Windows the agent is
         installed to <span className="mono">C:\Program Files\HomeXDR</span>.
         {settings.agent_release.signed && settings.update_key ? (
           <>

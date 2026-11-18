@@ -3,11 +3,12 @@ package console
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/Netdoodle/homexdr/server/internal/agentapi"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/shared/api"
 	"github.com/Netdoodle/homexdr/shared/version"
@@ -21,6 +22,7 @@ func (h *Handler) serverSettings(w http.ResponseWriter, r *http.Request, _ *stor
 		"server_names": cfg.ServerNames, "event_store": cfg.EventStore, "retention_days": h.c.Retention().Days,
 		"retention_max_bytes": h.c.Retention().MaxBytes, "syslog_addr": cfg.SyslogAddr,
 		"update_key": rel.UpdateKey, "agent_release": rel,
+		"install_sha256": agentapi.InstallScriptSHA256(cfg.AgentURL),
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
@@ -208,17 +210,22 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request, u *store.Use
 	// Your own password changes only with the current one, so a session left open (or a
 	// stolen cookie) is not enough to take the account over. Counted like failed logins.
 	if req.Password != "" && id == u.ID {
-		key := h.clientIP(r) + "|" + strings.ToLower(u.Username)
-		if !h.limiter.allow(key) {
+		key := h.passwordKey(r, u.Username)
+		if !h.limiter.take(key, loginMaxFails) {
 			writeErr(w, http.StatusTooManyRequests, "too many failed attempts; try again in 15 minutes")
 			return
 		}
 		if _, err := h.c.State.Authenticate(r.Context(), u.Username, req.CurrentPassword); err != nil {
-			h.limiter.fail(key)
+			if !errors.Is(err, store.ErrNotFound) {
+				h.limiter.success(key)
+				h.fail(w, err)
+				return
+			}
 			h.c.Audit(r.Context(), u.Username, "user.password.failed", u.ID, "wrong current password")
 			writeErr(w, http.StatusForbidden, "the current password is not right")
 			return
 		}
+		h.limiter.success(key)
 	}
 	nu, err := h.c.State.UpdateUser(r.Context(), id, req.Role, req.Password)
 	if err != nil {

@@ -228,3 +228,23 @@ func TestNewNetworkHostLimit(t *testing.T) {
 		t.Fatalf("known source: %v", err)
 	}
 }
+
+// A message names a host known only by its address, but never renames a named one: the
+// name is written by the sender, and over UDP anyone can claim to be the sender.
+func TestNetworkHostNameFromMessages(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	h, err := s.EnsureNetworkHost(ctx, "10.0.0.1", "", "")
+	if err != nil || h.Hostname != "10.0.0.1" {
+		t.Fatalf("new host: %v %+v", err, h)
+	}
+	if h, err = s.EnsureNetworkHost(ctx, "10.0.0.1", "fw", ""); err != nil || h.Hostname != "fw" {
+		t.Fatalf("first name: %v %+v", err, h)
+	}
+	if h, err = s.EnsureNetworkHost(ctx, "10.0.0.1", "spoofed", ""); err != nil || h.Hostname != "fw" {
+		t.Fatalf("renamed by a message: %v %+v", err, h)
+	}
+	if got, _ := s.GetHost(ctx, h.ID); got.Hostname != "fw" {
+		t.Fatalf("stored name %q", got.Hostname)
+	}
+}

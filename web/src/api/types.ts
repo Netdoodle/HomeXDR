@@ -1058,6 +1058,8 @@ export interface ServerSettings {
   /** release public key agents pin for signed automatic updates; empty when not set up */
   update_key?: string;
   agent_release: AgentReleaseStatus;
+  /** SHA-256 (hex) of the served install scripts; the install one-liners check it */
+  install_sha256: { unix: string; windows: string };
 }
 
 export interface AgentReleaseStatus {

@@ -351,7 +351,10 @@ func (s *Store) EnsureNetworkHost(ctx context.Context, sourceIP, name, vendor st
 	h, err := scanHost(s.db.QueryRowContext(ctx,
 		`SELECT `+hostCols+` FROM hosts h WHERE h.kind = 'network' AND h.source_ip = ?`, sourceIP))
 	if err == nil {
-		if name != "" && name != h.Hostname {
+		// The name comes from the message, which any sender can write (and over UDP from a
+		// made-up address), so it only names a host still known by its address: it never
+		// renames a device that has a name.
+		if name != "" && name != h.Hostname && h.Hostname == sourceIP {
 			_, _ = s.db.ExecContext(ctx, `UPDATE hosts SET hostname = ? WHERE id = ?`, name, h.ID)
 			h.Hostname = name
 		}

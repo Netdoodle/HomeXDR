@@ -57,10 +57,11 @@ once a third of the lifetime is left (about four months), it generates a new key
 calls `POST /v1/renew {csr_pem}` → `200 {cert_pem}`, retrying hourly on failure.
 
 - **Authentication.** The request is authenticated with the current client certificate,
-  which may have expired: the server checks that it chains to the CA and names a known,
-  unrevoked agent, but not its dates. An agent that was offline past its expiry renews the
-  moment it is back (retrying every five minutes) instead of being locked out. Revoked agents
-  get `403`. Every other endpoint answers an expired certificate with
+  which may have expired by up to 180 days: the server checks that it chains to the CA and
+  names a known, unrevoked agent. An agent that was offline past its expiry renews the
+  moment it is back (retrying every five minutes) instead of being locked out. Past 180 days
+  the certificate is refused with `401` and the agent must be reinstalled, so a key left on a
+  retired machine that was never revoked stops working. Revoked agents get `403`. Every other endpoint answers an expired certificate with
   `401 "certificate expired: renew it at /v1/renew"`.
 - **Switch-over.** The server signs the CSR with `CN=<agent_id>` (the CSR's subject is
   ignored) and records the new serial as pending. It accepts both the current and the pending
@@ -119,9 +120,9 @@ The agent listener also serves, without a client certificate:
 - `GET /v1/releases/<version>/<name>` the same files for an archived release (see below)
 - `GET /v1/install/linux.sh` an install script that fetches `/v1/ca.crt`, checks it against
   `--ca-pin`, then downloads the binary and `SHA256SUMS` over TLS verified by that CA, checks
-  the checksum, and runs `homexdr-agent install`. Fetching the script itself (`curl -k`) is the
-  one unverified step; review the script once, or copy the agent binary manually, if that
-  matters on your network.
+  the checksum, and runs `homexdr-agent install`. The script itself is fetched with `curl -k`
+  (the CA is not trusted yet), so the console's install commands check it against the
+  SHA-256 in `GET /api/settings/server` (`install_sha256`) before running it.
 
 ## Agent updates
 

@@ -7,9 +7,11 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"io"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/Netdoodle/homexdr/server/internal/config"
 	"github.com/Netdoodle/homexdr/server/internal/core"
+	"github.com/Netdoodle/homexdr/server/internal/pki"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/shared/api"
 	"github.com/Netdoodle/homexdr/shared/event"
@@ -166,6 +169,31 @@ func TestCertificateRenewal(t *testing.T) {
 		t.Fatalf("heartbeat after renewing an expired certificate: %d %s", code, body)
 	}
 
+	// Past pki.MaxRenewAfterExpiry even renewal is refused: the agent is reinstalled.
+	keyOld, csrOld := newCSR(t)
+	gone := time.Now().Add(-pki.MaxRenewAfterExpiry - time.Hour)
+	oldPEM, oldSerial, err := l.c.PKI.SignAgentCSRValidity([]byte(csrOld), id, gone.Add(-time.Hour), gone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blk, _ = pem.Decode(oldPEM)
+	oldCert, _ := x509.ParseCertificate(blk.Bytes)
+	if err := l.c.State.UseCert(ctx, id, oldSerial, oldCert.NotAfter); err != nil {
+		t.Fatal(err)
+	}
+	tooOld := l.client(string(oldPEM), keyOld)
+	if _, _, code, body := l.renew(tooOld); code != 401 || !strings.Contains(body, "reinstall") {
+		t.Fatalf("renew with a certificate expired %v ago: %d %s", pki.MaxRenewAfterExpiry, code, body)
+	}
+	if code, body := l.heartbeat(tooOld); code != 401 || !strings.Contains(body, "reinstall") {
+		t.Fatalf("heartbeat with a long-expired certificate: %d %s", code, body)
+	}
+	blk, _ = pem.Decode([]byte(certC))
+	cCert, _ := x509.ParseCertificate(blk.Bytes)
+	if err := l.c.State.UseCert(ctx, id, cCert.SerialNumber.Text(16), cCert.NotAfter); err != nil {
+		t.Fatal(err)
+	}
+
 	// A certificate from another CA is refused, renewal included.
 	otherKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	tmpl := &x509.Certificate{SerialNumber: big.NewInt(7), Subject: pkix.Name{CommonName: id},
@@ -287,6 +315,24 @@ func TestHeartbeatOffersArchivedRelease(t *testing.T) {
 func TestInstallScripts(t *testing.T) {
 	l := newLifecycle(t)
 	anon := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: l.roots}}}
+	// The console's one-liners check the downloaded script against these hashes, so they
+	// must be the hashes of exactly the bytes served.
+	sums := InstallScriptSHA256(l.c.Cfg.AgentURL)
+	served := func(p string) string {
+		resp, err := anon.Get(l.srv.URL + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		h := sha256.New()
+		_, _ = io.Copy(h, resp.Body)
+		return hex.EncodeToString(h.Sum(nil))
+	}
+	for p, want := range map[string]string{"/v1/install/linux.sh": sums["unix"], "/v1/install/macos.sh": sums["unix"], "/v1/install/windows.ps1": sums["windows"]} {
+		if got := served(p); len(want) != 64 || got != want {
+			t.Fatalf("%s: served sha256 %s, console is told %s", p, got, want)
+		}
+	}
 	for _, p := range []string{"/v1/install/linux.sh", "/v1/install/macos.sh"} {
 		resp, err := anon.Get(l.srv.URL + p)
 		if err != nil {

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/Netdoodle/homexdr/server/internal/core"
+	"github.com/Netdoodle/homexdr/server/internal/pki"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 	"github.com/Netdoodle/homexdr/shared/api"
 	"github.com/Netdoodle/homexdr/shared/event"
@@ -115,9 +116,14 @@ func (h *Handler) authAgent(r *http.Request, allowExpired bool) (*store.Host, in
 	leaf, err := h.c.PKI.VerifyAgentCert(r.TLS.PeerCertificates, allowExpired)
 	if err != nil {
 		if !allowExpired && time.Now().After(r.TLS.PeerCertificates[0].NotAfter) {
-			if _, err := h.c.PKI.VerifyAgentCert(r.TLS.PeerCertificates, true); err == nil {
+			_, err = h.c.PKI.VerifyAgentCert(r.TLS.PeerCertificates, true)
+			if err == nil {
 				return nil, http.StatusUnauthorized, "certificate expired: renew it at " + api.PathRenew
 			}
+		}
+		if errors.Is(err, pki.ErrExpiredTooLong) {
+			return nil, http.StatusUnauthorized, fmt.Sprintf("certificate expired more than %d days ago: reinstall the agent",
+				int(pki.MaxRenewAfterExpiry.Hours()/24))
 		}
 		return nil, http.StatusUnauthorized, "invalid client certificate"
 	}
