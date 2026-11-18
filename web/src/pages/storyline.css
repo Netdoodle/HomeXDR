@@ -233,3 +233,39 @@
   background: var(--accent);
   color: var(--bg, #fff);
 }
+
+/* A closed branch: how many processes are hidden below, or "+" when they still have to be loaded. */
+.sl-more {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 22px;
+  padding: 0 5px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--panel, var(--bg));
+  color: var(--text);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.sl-node:hover .sl-more {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* An open branch: a small bar under the icon, so a click visibly closes it. */
+.sl-open {
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--text-faint);
+}
+.sl-node {
+  cursor: pointer;
+}

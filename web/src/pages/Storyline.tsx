@@ -44,7 +44,12 @@ import { EmptyState, ErrorState, Loading } from '../components/States'
 import { useDocumentTitle } from '../lib/hooks'
 import {
   buildElkGraph,
+  collapsedView,
   groupSiblings,
+  hasLoadedChildren,
+  initialOpen,
+  isTreeEdge,
+  mergeStoryline,
   isDimmed,
   NODE_HEIGHT,
   NODE_WIDTH,
@@ -80,6 +85,13 @@ interface FlowNodeData extends Record<string, unknown> {
   dimmed: boolean
   /** Tooltips of edges from the process to itself (tampering with no other target). */
   selfTips: string[]
+  /** Loaded processes hidden below this one (a closed branch). */
+  hidden: number
+  /** Children not loaded yet: a click fetches them. */
+  more: boolean
+  /** The branch is open. */
+  open: boolean
+  loading: boolean
 }
 type FlowNode = Node<FlowNodeData, 'proc'>
 
@@ -94,7 +106,7 @@ function severityVar(s: string): string {
 }
 
 function ProcNode({ data }: NodeProps<FlowNode>) {
-  const { item, selected, highlighted, dimmed, selfTips } = data
+  const { item, selected, highlighted, dimmed, selfTips, hidden, more, open, loading } = data
   const n = item.node
   const group = item.members?.length
   const cls = [
@@ -118,6 +130,12 @@ function ProcNode({ data }: NodeProps<FlowNode>) {
             {n.alert_count}
           </span>
         ) : null}
+        {!group && (hidden > 0 || more) ? (
+          <span className="sl-more" title={loading ? 'Loading child processes…' : hidden > 0 ? `${hidden} more processes below: click to open` : 'Click to load child processes'}>
+            {loading ? '…' : hidden > 0 ? `+${hidden}` : '+'}
+          </span>
+        ) : null}
+        {!group && open && !n.context ? <span className="sl-open" title="Click to close this branch" aria-hidden="true" /> : null}
         {selfTips.length > 0 ? (
           <span className="sl-self" title={selfTips.join('\n')}>
             <Icon name="warning" size={10} />
@@ -233,7 +251,16 @@ export function StorylinePage() {
   )
 }
 
-function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
+function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }) {
+  // The storyline on screen: the server's answer plus deeper branches loaded on click.
+  const [data, setData] = useState<Storyline>(initial)
+  const [open, setOpen] = useState<Set<string>>(() => initialOpen(initial))
+  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set())
+  const [loadError, setLoadError] = useState('')
+  useEffect(() => {
+    setData(initial)
+    setOpen(initialOpen(initial))
+  }, [initial])
   const { fitView, setCenter, zoomTo, getNode, getZoom } = useReactFlow<FlowNode, Edge<FlowEdgeData>>()
   const { zoom } = useViewport()
   const [view, setView] = useState<'process' | 'storyline'>('storyline')
@@ -248,17 +275,25 @@ function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
   const [positions, setPositions] = useState<{ key: string; pos: Map<string, { x: number; y: number }> } | null>(null)
 
   useEffect(() => {
-    setSelTactics(new Set(allSlugs))
-    setSelected(data.focus_entity_id)
+    setSelected(initial.focus_entity_id)
     setExpanded(new Set())
-  }, [data, allSlugs])
+  }, [initial])
+  // Tactics that appear (a new storyline, or a branch loaded with new alerts) start selected.
+  const knownSlugs = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const fresh = allSlugs.filter((t) => !knownSlugs.current.has(t))
+    if (fresh.length === 0) return
+    for (const t of fresh) knownSlugs.current.add(t)
+    setSelTactics((s) => new Set([...s, ...fresh]))
+  }, [allSlugs])
 
-  const { items, edges } = useMemo(() => {
+  const { items, edges, hidden } = useMemo(() => {
     let g = { nodes: data.nodes, edges: data.edges }
     if (view === 'process') g = processView(g, data.focus_entity_id)
     if (!cross) g = withoutCrossProcess(g)
-    return groupSiblings(g, expanded)
-  }, [data, view, cross, expanded])
+    const c = collapsedView(g, open)
+    return { ...groupSiblings(c, expanded), hidden: c.hidden }
+  }, [data, view, cross, expanded, open])
 
   const layoutKey = useMemo(() => items.map((i) => i.id).join(',') + '|' + edges.map((e) => `${e.from}>${e.to}`).join(','), [items, edges])
 
@@ -285,9 +320,11 @@ function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
 
   const ready = positions?.key === layoutKey
   const fitKey = useRef('')
+  const fitFor = `${initial.host_id}|${initial.focus_entity_id}|${view}`
   useEffect(() => {
-    if (!ready || fitKey.current === layoutKey) return
-    fitKey.current = layoutKey
+    // Fit once per storyline and view; opening or closing a branch keeps the viewport.
+    if (!ready || fitKey.current === fitFor) return
+    fitKey.current = fitFor
     // Show the whole graph when it fits at a readable size; otherwise start on the focus
     // process, at a size where names can be read.
     const focusPos = positions?.pos.get(data.focus_entity_id)
@@ -298,7 +335,7 @@ function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
       })
     }, 30)
     return () => clearTimeout(t)
-  }, [ready, layoutKey, fitView, getZoom, setCenter, positions, data.focus_entity_id])
+  }, [ready, fitFor, fitView, getZoom, setCenter, positions, data.focus_entity_id])
 
   const flowNodes: FlowNode[] = useMemo(() => {
     if (!ready || !positions) return []
@@ -315,9 +352,13 @@ function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
         highlighted: it.id === highlight,
         dimmed: isDimmed(it.node, selTactics, allSlugs),
         selfTips: edges.filter((e) => e.from === it.id && e.to === it.id).map(edgeTip),
+        hidden: hidden.get(it.id) ?? 0,
+        more: !!it.node.more && !hasLoadedChildren(data, it.id),
+        open: open.has(it.id) && hasLoadedChildren(data, it.id),
+        loading: loadingIds.has(it.id),
       },
     }))
-  }, [items, edges, positions, ready, selected, highlight, selTactics, allSlugs])
+  }, [items, edges, hidden, data, open, loadingIds, positions, ready, selected, highlight, selTactics, allSlugs])
 
   const flowEdges: Edge<FlowEdgeData>[] = useMemo(() => {
     const accent = 'var(--accent)'
@@ -342,6 +383,63 @@ function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
   const selectedNode = selectedItem?.members ? undefined : selectedItem?.node ?? data.nodes.find((n) => n.entity_id === selected)
   const nodeAlerts = (id: string) => data.alerts.filter((a) => a.entity_id === id)
 
+  /** Opens or closes the branch below a process, loading it from the server when needed. */
+  function toggle(id: string) {
+    // The system process above the root stays open: closing it would hide everything.
+    if (data.nodes.find((n) => n.entity_id === id)?.context) return
+    if (open.has(id) && hasLoadedChildren(data, id)) {
+      setOpen((s) => {
+        const n = new Set(s)
+        n.delete(id)
+        return n
+      })
+      return
+    }
+    if (hasLoadedChildren(data, id)) {
+      setOpen((s) => new Set(s).add(id))
+      return
+    }
+    const node = data.nodes.find((n) => n.entity_id === id)
+    if (!node?.more || loadingIds.has(id)) return
+    setLoadingIds((s) => new Set(s).add(id))
+    setLoadError('')
+    api
+      .storyline({ hostId: data.host_id, entityId: id })
+      .then((more) => {
+        setData((d) => {
+          const merged = mergeStoryline(d, more)
+          // Nothing below it after all: stop offering to load.
+          return hasLoadedChildren(merged, id)
+            ? merged
+            : { ...merged, nodes: merged.nodes.map((n) => (n.entity_id === id ? { ...n, more: false } : n)) }
+        })
+        setOpen((s) => new Set(s).add(id))
+      })
+      .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : String(err)))
+      .finally(() =>
+        setLoadingIds((s) => {
+          const n = new Set(s)
+          n.delete(id)
+          return n
+        }),
+      )
+  }
+
+  /** Opens every branch above a process so it is on screen. */
+  function reveal(id: string) {
+    const parentOf = new Map<string, string>()
+    for (const e of data.edges) if (isTreeEdge(e) && e.from !== e.to && !parentOf.has(e.to)) parentOf.set(e.to, e.from)
+    setOpen((s) => {
+      const n = new Set(s)
+      const seen = new Set<string>([id])
+      for (let cur = parentOf.get(id); cur && !seen.has(cur); cur = parentOf.get(cur)) {
+        seen.add(cur)
+        n.add(cur)
+      }
+      return n
+    })
+  }
+
   function focusNode(id: string) {
     const nd = getNode(id)
     if (nd) void setCenter(nd.position.x + NODE_WIDTH / 2, nd.position.y + NODE_HEIGHT / 2, { zoom: Math.max(zoom, 0.9), duration: 250 })
@@ -351,6 +449,7 @@ function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
     // The node may be inside a collapsed group: expand it first.
     const grp = items.find((i) => i.members?.some((m) => m.entity_id === a.entity_id))
     if (grp) setExpanded((s) => new Set(s).add(grp.id))
+    reveal(a.entity_id)
     setSelected(a.entity_id)
     setHighlight(a.entity_id)
     setTimeout(() => focusNode(a.entity_id), 60)
@@ -372,6 +471,11 @@ function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
         {data.truncated ? (
           <div className="callout warn" role="status" style={{ marginBottom: 8 }}>
             This storyline is truncated: only part of the process activity is shown.
+          </div>
+        ) : null}
+        {loadError ? (
+          <div className="callout warn" role="alert" style={{ marginBottom: 8 }}>
+            Could not load the child processes: {loadError}
           </div>
         ) : null}
         <section className="panel sl-graph-panel" aria-label="Storyline graph">
@@ -399,6 +503,17 @@ function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
             <button type="button" className="btn sm" onClick={() => void fitView({ padding: 0.2, maxZoom: 1, duration: 200 })}>
               Fit to view
             </button>
+            <button type="button" className="btn sm" onClick={() => setOpen(new Set(data.nodes.map((n) => n.entity_id)))} title="Open every loaded branch">
+              Expand all
+            </button>
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => setOpen(new Set(data.nodes.filter((n) => n.context || n.root).map((n) => n.entity_id)))}
+              title="Show only the root process and its children"
+            >
+              Collapse all
+            </button>
             <button type="button" className="btn sm" onClick={() => setDrawer((d) => !d)} aria-expanded={drawer}>
               <Icon name="filter" size={12} /> {drawer ? 'Hide filters' : 'Filters'}
             </button>
@@ -422,6 +537,7 @@ function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
                 } else {
                   setSelected(nd.id)
                   setHighlight('')
+                  toggle(nd.id)
                 }
               }}
               onPaneClick={() => setHighlight('')}

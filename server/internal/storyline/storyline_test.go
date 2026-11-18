@@ -360,6 +360,16 @@ func TestStorylineRoots(t *testing.T) {
 		t.Errorf("service child root = %s, edges %v", g.RootEntityID, edgeKeys(g))
 	}
 
+	// More marks nodes whose children were not looked up.
+	g, err = Build(f.ctx, f.src, host, "w-sess1", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes = nodeMap(g)
+	if nodes["w-sess1"].More || !nodes["w-ps"].More || nodes["w-sshd"].More {
+		t.Errorf("more: sess1 %v, ps %v, sshd (context) %v", nodes["w-sess1"].More, nodes["w-ps"].More, nodes["w-sshd"].More)
+	}
+
 	g, err = Build(f.ctx, f.src, host, "l-curl", DefaultDepth)
 	if err != nil {
 		t.Fatal(err)

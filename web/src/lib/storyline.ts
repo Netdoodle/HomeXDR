@@ -1,7 +1,7 @@
 // Pure helpers for the Storyline graph page: view filtering, sibling grouping, tactic
 // list and the input handed to the ELK layered layout.
 
-import type { Storyline, StorylineEdge, StorylineNode } from '../api/types'
+import type { Storyline, StorylineEdge, StorylineEdgeKind, StorylineNode } from '../api/types'
 
 export const NODE_WIDTH = 132
 export const NODE_HEIGHT = 112
@@ -185,4 +185,115 @@ export function buildElkGraph(items: GraphItem[], edges: StorylineEdge[]): ElkIn
         layoutOptions: e.kind === 'parent' ? { 'elk.edgeRouting': 'ORTHOGONAL' } : { 'elk.edgeRouting': 'SPLINES' },
       })),
   }
+}
+
+// Opening and closing branches -----------------------------------------------------------
+
+/** Edge kinds that make up the branches a click opens: parent links and launches. */
+const TREE_KINDS: ReadonlySet<StorylineEdgeKind> = new Set<StorylineEdgeKind>(['parent', 'scheduled_task', 'service', 'wmi'])
+
+export function isTreeEdge(e: Pick<StorylineEdge, 'kind'>): boolean {
+  return TREE_KINDS.has(e.kind)
+}
+
+function treeChildren(edges: StorylineEdge[]): Map<string, string[]> {
+  const out = new Map<string, string[]>()
+  for (const e of edges) {
+    if (!isTreeEdge(e) || e.from === e.to) continue
+    const list = out.get(e.from)
+    if (list) {
+      if (!list.includes(e.to)) list.push(e.to)
+    } else out.set(e.from, [e.to])
+  }
+  return out
+}
+
+/**
+ * The branches open at first: the context process, the root, and every process on the
+ * way from the root down to the focus, so the focus is on screen and everything else
+ * starts closed.
+ */
+export function initialOpen(data: Pick<Storyline, 'nodes' | 'edges' | 'focus_entity_id'>): Set<string> {
+  const open = new Set<string>()
+  for (const n of data.nodes) if (n.context || n.root) open.add(n.entity_id)
+  const parentOf = new Map<string, string>()
+  for (const e of data.edges) if (isTreeEdge(e) && e.from !== e.to && !parentOf.has(e.to)) parentOf.set(e.to, e.from)
+  const seen = new Set<string>([data.focus_entity_id])
+  for (let cur = parentOf.get(data.focus_entity_id); cur && !seen.has(cur); cur = parentOf.get(cur)) {
+    seen.add(cur)
+    open.add(cur)
+  }
+  return open
+}
+
+export interface CollapsedGraph extends GraphData {
+  /** Per shown process, how many loaded processes are hidden below it (closed branch). */
+  hidden: Map<string, number>
+}
+
+/**
+ * Keeps the processes reachable from the top of the storyline through open branches.
+ * A process reached only through a cross-process event (outside) is shown when the
+ * process it is linked to is.
+ */
+export function collapsedView(data: GraphData, open: ReadonlySet<string>): CollapsedGraph {
+  const kids = treeChildren(data.edges)
+  const byId = new Map(data.nodes.map((n) => [n.entity_id, n]))
+  const hasParent = new Set<string>()
+  for (const list of kids.values()) for (const k of list) hasParent.add(k)
+  const visible = new Set<string>()
+  const stack = data.nodes.filter((n) => !n.outside && !hasParent.has(n.entity_id)).map((n) => n.entity_id)
+  while (stack.length) {
+    const id = stack.pop() as string
+    if (visible.has(id)) continue
+    visible.add(id)
+    if (open.has(id)) for (const k of kids.get(id) ?? []) if (byId.has(k)) stack.push(k)
+  }
+  for (const e of data.edges) {
+    if (isTreeEdge(e)) continue
+    if (visible.has(e.from) && byId.get(e.to)?.outside) visible.add(e.to)
+    if (visible.has(e.to) && byId.get(e.from)?.outside) visible.add(e.from)
+  }
+  const hidden = new Map<string, number>()
+  for (const id of visible) {
+    if (open.has(id)) continue
+    const seen = new Set<string>()
+    const walk = [...(kids.get(id) ?? [])]
+    while (walk.length) {
+      const k = walk.pop() as string
+      if (seen.has(k) || visible.has(k) || !byId.has(k)) continue
+      seen.add(k)
+      walk.push(...(kids.get(k) ?? []))
+    }
+    if (seen.size > 0) hidden.set(id, seen.size)
+  }
+  const nodes = data.nodes.filter((n) => visible.has(n.entity_id))
+  return { nodes, edges: pruneEdges(nodes, data.edges), hidden }
+}
+
+/** True when the process has loaded children (open or closed). */
+export function hasLoadedChildren(data: GraphData, id: string): boolean {
+  return data.edges.some((e) => isTreeEdge(e) && e.from === id && e.to !== id)
+}
+
+/**
+ * Adds a storyline fetched with another process as its focus (its deeper branches) to
+ * the one on screen. Processes already shown keep their flags; "more" is cleared on any
+ * process the new storyline looked up.
+ */
+export function mergeStoryline(base: Storyline, add: Storyline): Storyline {
+  const byId = new Map(base.nodes.map((n) => [n.entity_id, n]))
+  const nodes = base.nodes.map((n) => {
+    const other = add.nodes.find((m) => m.entity_id === n.entity_id)
+    return other && n.more && !other.more ? { ...n, more: false } : n
+  })
+  for (const n of add.nodes) {
+    if (!byId.has(n.entity_id)) nodes.push({ ...n, focus: false, root: false, context: false })
+  }
+  const key = (e: StorylineEdge) => `${e.from}|${e.to}|${e.kind}`
+  const edgeKeys = new Set(base.edges.map(key))
+  const edges = [...base.edges, ...add.edges.filter((e) => !edgeKeys.has(key(e)))]
+  const alertIds = new Set(base.alerts.map((a) => a.id))
+  const alerts = [...base.alerts, ...add.alerts.filter((a) => !alertIds.has(a.id))]
+  return { ...base, nodes, edges, alerts, truncated: base.truncated || add.truncated }
 }

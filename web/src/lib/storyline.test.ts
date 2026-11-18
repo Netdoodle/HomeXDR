@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { StorylineEdge, StorylineNode } from '../api/types'
-import { buildElkGraph, groupId, groupSiblings, isDimmed, processView, tacticLabel, tacticList, withoutCrossProcess } from './storyline'
+import { buildElkGraph, collapsedView, groupId, groupSiblings, hasLoadedChildren, initialOpen, isDimmed, mergeStoryline, processView, tacticLabel, tacticList, withoutCrossProcess } from './storyline'
+import type { Storyline } from '../api/types'
 
 function node(id: string, parent = '', extra: Partial<StorylineNode> = {}): StorylineNode {
   return {
@@ -104,5 +105,82 @@ describe('buildElkGraph', () => {
     expect(g.layoutOptions['elk.edgeRouting']).toBe('ORTHOGONAL')
     expect(g.children).toHaveLength(2)
     expect(g.edges).toHaveLength(1)
+  })
+})
+
+describe('opening and closing branches', () => {
+  // ctx -> root -> a -> a1 -> focus ; root -> b -> b1 ; root -> t (task launch from b) ; a1 accesses out
+  const nodes = [
+    node('ctx', '', { context: true }),
+    node('root', 'ctx', { root: true }),
+    node('a', 'root'),
+    node('a1', 'a'),
+    node('focus', 'a1', { focus: true }),
+    node('b', 'root'),
+    node('b1', 'b'),
+    node('t', 'svc'),
+    node('out', '', { outside: true }),
+  ]
+  const edges = [
+    edge('ctx', 'root'),
+    edge('root', 'a'),
+    edge('a', 'a1'),
+    edge('a1', 'focus'),
+    edge('root', 'b'),
+    edge('b', 'b1'),
+    edge('b', 't', 'scheduled_task'),
+    edge('a1', 'out', 'process_access'),
+  ]
+  const data = { nodes, edges, focus_entity_id: 'focus' }
+
+  it('starts with the root, its children and the path to the focus open', () => {
+    const open = initialOpen(data)
+    expect([...open].sort()).toEqual(['a', 'a1', 'ctx', 'root'])
+    const v = collapsedView(data, open)
+    expect(v.nodes.map((n) => n.entity_id).sort()).toEqual(['a', 'a1', 'b', 'ctx', 'focus', 'out', 'root'])
+    // b is closed with b1 and the task-launched t below it.
+    expect(v.hidden.get('b')).toBe(2)
+    expect(v.hidden.has('a')).toBe(false)
+  })
+
+  it('opens and closes a branch', () => {
+    const open = initialOpen(data)
+    open.add('b')
+    expect(collapsedView(data, open).nodes.map((n) => n.entity_id)).toContain('t')
+    open.delete('a')
+    const v = collapsedView(data, open)
+    expect(v.nodes.map((n) => n.entity_id)).not.toContain('focus')
+    // An outside process goes away with the process it is linked to.
+    expect(v.nodes.map((n) => n.entity_id)).not.toContain('out')
+    expect(v.hidden.get('a')).toBe(2)
+  })
+
+  it('knows which processes have loaded children', () => {
+    expect(hasLoadedChildren({ nodes, edges }, 'b')).toBe(true)
+    expect(hasLoadedChildren({ nodes, edges }, 'b1')).toBe(false)
+    // A cross-process edge is not a child.
+    expect(hasLoadedChildren({ nodes, edges: [edge('x', 'y', 'remote_thread')] }, 'x')).toBe(false)
+  })
+
+  it('merges a deeper branch loaded later', () => {
+    const base: Storyline = {
+      host_id: 'h', hostname: 'h', focus_entity_id: 'focus', root_entity_id: 'root', truncated: false,
+      nodes: [node('root', '', { root: true }), node('b1', 'root', { more: true })],
+      edges: [edge('root', 'b1')],
+      alerts: [],
+    }
+    const add: Storyline = {
+      ...base,
+      focus_entity_id: 'b1',
+      nodes: [node('root', '', { root: true }), node('b1', 'root', { focus: true, more: false }), node('c', 'b1', { more: true })],
+      edges: [edge('root', 'b1'), edge('b1', 'c')],
+      alerts: [{ id: 'al', title: '', severity: 'high', status: 'new', first_seen: '', last_seen: '', entity_id: 'c', tactics: [] }],
+    }
+    const m = mergeStoryline(base, add)
+    expect(m.focus_entity_id).toBe('focus')
+    expect(m.nodes.map((n) => n.entity_id)).toEqual(['root', 'b1', 'c'])
+    expect(m.nodes.find((n) => n.entity_id === 'b1')).toMatchObject({ more: false, focus: false })
+    expect(m.edges).toHaveLength(2)
+    expect(m.alerts.map((a) => a.id)).toEqual(['al'])
   })
 })

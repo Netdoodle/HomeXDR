@@ -21,6 +21,7 @@ registry, DNS and library events it produced. Flags say what the node is:
 | `root` | Where the chain starts (see below). `depth` counts from it: 0 is the root, 1 its children, and so on. |
 | `context` | The system process just above the root (`explorer.exe`, `services.exe`, `sshd`, ...), shown for orientation at depth -1. Its other children are not walked. |
 | `outside` | A process outside the lineage, in the graph only because of a cross-process event with a node. It takes the depth of the node it touches. |
+| `more` | Its children were not looked up (past the depth limit or the node cap). A storyline with this process as its focus has them; the console loads it when the branch is opened. |
 | `stub` | No start or end event was found for it; it was built from what other events said (a child naming its parent, a cross-process event). Fields may be missing. |
 
 **Edges** link nodes:
@@ -40,11 +41,26 @@ other process is an edge from the process to itself.
 **Alerts** lists the alerts on any node, open and closed (suppressed ones are left out),
 newest first, each with its process and tactics.
 
+## Opening and closing branches in the console
+
+The graph opens small: the root, its children, and the processes on the way down to the
+focus, so the alert's process is on screen. Every other branch starts closed, with a
+"+N" badge counting the processes below it. Clicking a process opens its next level of
+children; clicking an open one closes its branch. A branch past what the server sent (a
+`more` process, shown with a plain "+") is loaded from the server when it is opened.
+Processes started through a task, service or WMI count as children of the process that set
+them up. A process linked only by a cross-process event is shown while the process it is
+linked to is. **Expand all** opens every loaded branch, **Collapse all** goes back to the
+root and its children, and picking an alert in the list opens the branches above it.
+
 ## How the root is chosen
 
 The server walks up from the focus through its parents until the next parent is a system
 process, and calls the topmost process below it the root. That system parent becomes the
-context node. The system processes are, by name and in any case:
+context node. A system process is a Windows service (any process `services.exe` started, such
+as the OpenSSH server `sshd.exe`: it runs for as long as the machine and starts unrelated
+work, so each of its children is a storyline of its own) or one of these, by name and in
+any case:
 
 - Windows: `System`, `smss.exe`, `csrss.exe`, `wininit.exe`, `winlogon.exe`,
   `services.exe`, `lsass.exe`, `svchost.exe`, `explorer.exe`, `userinit.exe`,
