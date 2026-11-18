@@ -128,9 +128,9 @@ agents at the MagicDNS name; the spool covers the gaps.
 ## Later
 
 - **Map Sysmon's other events.** Remote threads (8), process access (10) and tampering
-  (25) are mapped and turned on by the agent. Still to do: network (3), file (11, 23, 26), registry (12-14), DNS (22),
-  image load (7) and process access/injection (8, 10) to their categories, so the SigmaHQ
-  rules for them fire. Needs a Sysmon config that logs them.
+  (25) are mapped and turned on by the agent. Still to do: network (3), file (11, 23, 26),
+  registry (12-14), DNS (22) and image load (7), so the SigmaHQ rules for them fire; the
+  agent's Sysmon config would log them too.
 - **Scan new executables when they're written**, not only when they run.
 - **Ransomware protection.** Bait files (part of Decoys, above), detection of mass renames and encryption,
   automatic isolation, and rollback from Volume Shadow Copy snapshots.
