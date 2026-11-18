@@ -47,6 +47,13 @@ Fields are the ECS-style paths of the event (`process.name`, `destination.ip`,
 A name without a dot that is not a top-level event field is looked up under `data`,
 where parsed log fields are kept: `LogonType` means `data.LogonType`.
 
+Cross-process events (a remote thread, a process opened or tampered with; `event.action`
+`remote-thread-created`, `process-accessed`, `process-tampered`) keep the acting process
+in `process.*` and the one acted on in `target.process.*`, with `target.granted_access`,
+`target.call_trace`, `target.start_module`, `target.start_function` and
+`target.tampering`: `target.process.name:lsass.exe target.granted_access:0x1010`.
+`target.process.entity_id` is indexed.
+
 ## Commands
 
 A search that ends in `stats`, `timechart`, `top`, `rare`, `table` or `fields` returns a

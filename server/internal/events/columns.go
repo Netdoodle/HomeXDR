@@ -180,6 +180,14 @@ var Columns = []Column{
 		}
 		return ""
 	}},
+	// Columns added after the first release go last: the backends add them to existing
+	// tables in this order (see the migrate functions).
+	{"target_entity_id", "target.process.entity_id", KString, func(e *event.Event) any {
+		if e.Target != nil && e.Target.Process != nil {
+			return e.Target.Process.EntityID
+		}
+		return ""
+	}},
 }
 
 // columnByField maps ECS paths (and a few aliases) to columns.

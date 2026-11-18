@@ -695,6 +695,36 @@ func (s *Store) AlertCountsByEntity(ctx context.Context, entityIDs []string) (ma
 	return out, rows.Err()
 }
 
+// AlertsForEntities returns the alerts on a host about any of the given processes, open
+// and closed alike (suppressed ones excluded), newest last_seen first, at most limit.
+func (s *Store) AlertsForEntities(ctx context.Context, hostID string, entityIDs []string, limit int) ([]*Alert, error) {
+	out := []*Alert{}
+	if len(entityIDs) == 0 || limit <= 0 {
+		return out, nil
+	}
+	args := make([]any, 0, len(entityIDs)+2)
+	args = append(args, hostID)
+	for _, v := range entityIDs {
+		args = append(args, v)
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+alertCols+` FROM alerts WHERE host_id = ? AND status != 'suppressed'
+		 AND process_entity_id IN (`+placeholders(len(entityIDs))+`) ORDER BY last_seen DESC, id LIMIT ?`,
+		append(args, limit)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		a, err := scanAlert(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
