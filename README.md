@@ -90,6 +90,7 @@ For Unraid hosts, see [deploy/unraid](deploy/unraid/README.md).
 - [Offline lists](docs/lists.md)
 - [Known-exploited software](docs/vulnerabilities.md)
 - [Decoy files](docs/decoys.md)
+- [Sysmon on Windows agents](docs/sysmon.md)
 
 ## Building from source
 

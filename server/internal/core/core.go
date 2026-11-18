@@ -128,7 +128,8 @@ func (c *Core) AgentConfig(ctx context.Context) api.AgentConfig {
 // files existed has no "decoys" section: it gets the default (on). One saved before decoy
 // paths were configurable has no "decoys.files": it gets the default paths plus its old
 // "extra" paths (see api.DecoyConfig.UnmarshalJSON), which also drops the Desktop decoys.
-// Either way it is served with a version one higher than the stored one, so agents
+// One saved before Sysmon management existed has no "sysmon" section: it gets the default
+// (on). Either way it is served with a version one higher than the stored one, so agents
 // already running that config pick the change up on their next heartbeat. Saving the
 // config stores the new fields, and the version keeps rising from there.
 func ParseAgentConfig(raw []byte) api.AgentConfig {
@@ -140,14 +141,23 @@ func ParseAgentConfig(raw []byte) api.AgentConfig {
 		Decoys *struct {
 			Files json.RawMessage `json:"files"`
 		} `json:"decoys"`
+		Sysmon json.RawMessage `json:"sysmon"`
 	}
 	if json.Unmarshal(raw, &probe) == nil {
+		bumped := false
 		switch {
 		case probe.Decoys == nil:
 			cfg.Decoys = api.DefaultAgentConfig().Decoys
-			cfg.Version++
+			bumped = true
 		case len(probe.Decoys.Files) == 0 || string(probe.Decoys.Files) == "null":
-			cfg.Version++ // UnmarshalJSON filled in the default paths
+			bumped = true // UnmarshalJSON filled in the default paths
+		}
+		if len(probe.Sysmon) == 0 || string(probe.Sysmon) == "null" {
+			cfg.Sysmon = api.DefaultAgentConfig().Sysmon
+			bumped = true
+		}
+		if bumped {
+			cfg.Version++
 		}
 	}
 	return cfg

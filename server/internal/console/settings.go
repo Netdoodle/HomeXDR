@@ -133,6 +133,7 @@ func (h *Handler) putAgentConfig(w http.ResponseWriter, r *http.Request, u *stor
 	var cfg api.AgentConfig
 	var probe struct {
 		Decoys json.RawMessage `json:"decoys"`
+		Sysmon json.RawMessage `json:"sysmon"`
 	}
 	if json.Unmarshal(raw, &cfg) != nil || json.Unmarshal(raw, &probe) != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body")
@@ -141,6 +142,10 @@ func (h *Handler) putAgentConfig(w http.ResponseWriter, r *http.Request, u *stor
 	if len(probe.Decoys) == 0 {
 		// A client that predates decoy files keeps the current decoy settings.
 		cfg.Decoys = h.c.AgentConfig(r.Context()).Decoys
+	}
+	if len(probe.Sysmon) == 0 || string(probe.Sysmon) == "null" {
+		// Likewise for a client that predates Sysmon management.
+		cfg.Sysmon = h.c.AgentConfig(r.Context()).Sysmon
 	}
 	saved, err := h.c.SetAgentConfig(r.Context(), cfg)
 	if err != nil {

@@ -38,3 +38,21 @@ describe('Decoy files group setting', () => {
     expect(def.weaker('Office')).toBe('will have their decoy files removed (unchanged ones) and no longer raise decoy alerts')
   })
 })
+
+describe('Sysmon events group setting', () => {
+  const def = SETTINGS.find((d) => d.key === 'sysmon')!
+
+  it('is an inherited on/off switch', () => {
+    expect(def.label).toBe('Sysmon events')
+    expect(def.choices.map((c) => c.value)).toEqual(['on', 'off'])
+    expect(isWeaker(def, 'off', 'on')).toBe(true)
+    const p: GroupPolicy = { av: {} }
+    expect(def.get(p)).toBeUndefined()
+    const off = def.set(p, 'off')
+    expect(off.sysmon).toEqual({ enabled: false })
+    expect(off.decoys).toBeUndefined()
+    expect(def.get(off)).toBe('off')
+    expect(def.get(def.set(off, undefined))).toBeUndefined()
+    expect(def.weaker('Office')).toMatch(/Sysmon/)
+  })
+})

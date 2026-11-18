@@ -32,6 +32,8 @@ type effectiveView struct {
 	core.EffectiveAV
 	// Decoys: whether the group's hosts place decoy files.
 	Decoys core.SettingSource `json:"decoys"`
+	// Sysmon: whether the group's Windows hosts set up Sysmon.
+	Sysmon core.SettingSource `json:"sysmon"`
 }
 
 type groupsView struct {
@@ -50,6 +52,8 @@ type groupsView struct {
 		Firewall bool `json:"firewall"`
 		// Decoys: whether agents place decoy files (Settings → Agent config).
 		Decoys bool `json:"decoys"`
+		// Sysmon: whether Windows agents set up Sysmon (Settings → Agent config).
+		Sysmon bool `json:"sysmon"`
 	} `json:"global"`
 	Groups    []groupView `json:"groups"`
 	Ungrouped int         `json:"ungrouped"` // hosts in no group
@@ -66,9 +70,12 @@ func (h *Handler) groupsView(r *http.Request) (*groupsView, error) {
 	v.Global.AppControl = set.AppControl
 	v.Global.DefenderHardening = set.DefenderHardening
 	v.Global.Firewall = h.c.FirewallGlobalEnabled()
-	v.Global.Decoys = h.c.AgentConfig(r.Context()).Decoys.Enabled
+	agentCfg := h.c.AgentConfig(r.Context())
+	v.Global.Decoys = agentCfg.Decoys.Enabled
+	v.Global.Sysmon = agentCfg.Sysmon.Enabled
 	for _, g := range gs {
-		eff := effectiveView{EffectiveAV: h.c.ResolveAV(g.ID), Decoys: h.c.ResolveDecoys(g.ID, v.Global.Decoys)}
+		eff := effectiveView{EffectiveAV: h.c.ResolveAV(g.ID), Decoys: h.c.ResolveDecoys(g.ID, v.Global.Decoys),
+			Sysmon: h.c.ResolveSysmon(g.ID, v.Global.Sysmon)}
 		v.Groups = append(v.Groups, groupView{HostGroup: g, Effective: eff})
 	}
 	hosts, err := h.c.State.ListHosts(r.Context(), store.HostFilter{Kind: store.HostEndpoint, GroupIDs: []string{""}})
@@ -165,6 +172,7 @@ func (h *Handler) patchGroup(w http.ResponseWriter, r *http.Request, u *store.Us
 			parts = append(parts, "Defender hardening "+dh)
 			parts = append(parts, "host firewall "+onOffInherit(in.Policy.Firewall.Enabled))
 			parts = append(parts, "decoy files "+onOffInherit(in.Policy.Decoys.Enabled))
+			parts = append(parts, "Sysmon events "+onOffInherit(in.Policy.Sysmon.Enabled))
 		}
 		h.c.Audit(r.Context(), u.Username, "group.update", g.ID, g.Name+": "+strings.Join(parts, ", "))
 	}

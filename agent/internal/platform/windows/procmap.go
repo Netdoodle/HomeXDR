@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,12 +15,20 @@ import (
 )
 
 // Turning Sysmon and Security records into ECS process events.
+//
+// Sysmon also reports cross-process activity when its configuration asks for it (HomeXDR's
+// does, see sysmon.go): event 8 (CreateRemoteThread), 10 (ProcessAccess) and 25
+// (ProcessTampering). They become process events whose process is the actor and whose
+// target is the process acted on (25: the process is the tampered one, and the target only
+// says how it was tampered with). Types: 8 and 25 are "change" (the target's code or
+// image is modified), 10 is "access" (a handle was opened). None is "start", so Sigma's
+// process_creation rules and the process tree do not take them for process starts.
 
 const (
 	sysmonChannel   = "Microsoft-Windows-Sysmon/Operational"
 	securityChannel = "Security"
 
-	sysmonQuery   = "*[System[(EventID=1 or EventID=5)]]"
+	sysmonQuery   = "*[System[(EventID=1 or EventID=5 or EventID=8 or EventID=10 or EventID=25)]]"
 	securityQuery = "*[System[(EventID=4688 or EventID=4689)]]"
 
 	// startWindow is how long before an event a live process's creation time may be
@@ -51,10 +60,20 @@ type procMapper struct {
 	// origins caches each process's lineage (lineage.go), by entity ID.
 	lineMu  sync.Mutex
 	origins map[string]origin
+
+	// selfPID and selfExe identify the agent: cross-process events it causes itself (it
+	// opens processes to read their details) are dropped.
+	selfPID int64
+	selfExe string
 }
 
 func newProcMapper(env platform.Env, src procSource, pe func(string) *event.PE) *procMapper {
-	return &procMapper{env: env, src: src, table: newProcTable(procTableMax), users: newUserCache(), pe: pe, now: time.Now, origins: map[string]origin{}}
+	m := &procMapper{env: env, src: src, table: newProcTable(procTableMax), users: newUserCache(), pe: pe, now: time.Now, origins: map[string]origin{}}
+	m.selfPID = int64(os.Getpid())
+	if exe, err := os.Executable(); err == nil {
+		m.selfExe = exe
+	}
+	return m
 }
 
 // loadSnapshot fills the table with the running processes and returns how many it
@@ -117,6 +136,10 @@ func (m *procMapper) handle(r *Record) *event.Event {
 			return ev
 		case 5:
 			return m.sysmonExit(r)
+		case 8, 10:
+			return m.sysmonCross(r)
+		case 25:
+			return m.sysmonTampering(r)
 		}
 	case isSecurity(r):
 		switch r.EventID {
@@ -330,6 +353,129 @@ func (m *procMapper) sysmonExit(r *Record) *event.Event {
 		p.User = u
 	}
 	return m.exitEvent(r, p, "")
+}
+
+// sysmonCross maps Sysmon event 8 (CreateRemoteThread) and 10 (ProcessAccess): the source
+// process is the event's process, the target goes to Target. Events the agent causes
+// itself are dropped.
+func (m *procMapper) sysmonCross(r *Record) *event.Event {
+	d := r.Data
+	at := parseSysmonTime(d["UtcTime"])
+	if at.IsZero() {
+		at = recordTime(r)
+	}
+	srcPID := parsePID(d["SourceProcessId"])
+	srcImage := clean(d["SourceImage"])
+	if m.isSelf(srcPID, srcImage) {
+		return nil
+	}
+	src := m.crossProcess(srcPID, field(d, "SourceProcessGuid", "SourceProcessGUID"), at, srcImage, d["SourceUser"])
+	tgt := m.crossProcess(parsePID(d["TargetProcessId"]), field(d, "TargetProcessGuid", "TargetProcessGUID"), at, clean(d["TargetImage"]), d["TargetUser"])
+	if src == nil || tgt == nil {
+		return nil
+	}
+	t := &event.Target{Process: tgt}
+	var typ, action, msg string
+	if r.EventID == 8 {
+		typ, action = event.TypeChange, event.ActionRemoteThread
+		t.StartAddress = clean(d["StartAddress"])
+		t.StartModule = clean(d["StartModule"])
+		t.StartFunction = clean(d["StartFunction"])
+		msg = "remote thread created: " + src.Name + " -> " + tgt.Name
+	} else {
+		typ, action = event.TypeAccess, event.ActionProcessAccess
+		t.GrantedAccess = clean(d["GrantedAccess"])
+		t.CallTrace = clean(d["CallTrace"])
+		msg = "process accessed: " + src.Name + " -> " + tgt.Name
+		if t.GrantedAccess != "" {
+			msg += " (" + t.GrantedAccess + ")"
+		}
+	}
+	return m.crossEvent(r, typ, action, msg, src, t)
+}
+
+// sysmonTampering maps Sysmon event 25 (ProcessTampering): a process whose image was
+// hollowed out or replaced. Sysmon does not say who did it, so the tampered process is
+// the event's process (with its parent, which created it and is often the one that did
+// it), as Sigma rules expect for Image; Target only carries the kind of tampering and has
+// no process.
+func (m *procMapper) sysmonTampering(r *Record) *event.Event {
+	d := r.Data
+	at := parseSysmonTime(d["UtcTime"])
+	if at.IsZero() {
+		at = recordTime(r)
+	}
+	p := m.crossProcess(parsePID(d["ProcessId"]), clean(d["ProcessGuid"]), at, clean(d["Image"]), d["User"])
+	if p == nil {
+		return nil
+	}
+	t := &event.Target{Tampering: clean(d["Type"])}
+	msg := "process tampering: " + p.Name
+	if t.Tampering != "" {
+		msg += ": " + t.Tampering
+	}
+	return m.crossEvent(r, event.TypeChange, event.ActionProcessTampering, msg, p, t)
+}
+
+// crossProcess describes one side of a cross-process event: the known process (found by
+// its Sysmon GUID or PID, like a parent) with the image and user the event names. A
+// process the agent cannot place still gets its PID and image, without an entity ID.
+func (m *procMapper) crossProcess(pid int64, guid string, at time.Time, image, user string) *event.Process {
+	if pid <= 0 {
+		return nil
+	}
+	p := &event.Process{PID: pid}
+	if e := m.lookup(pid, guid, at, image); e != nil {
+		p.EntityID, p.Name, p.Executable, p.CommandLine = e.EntityID, e.Name, e.Executable, e.CommandLine
+		if e.User != nil {
+			u := *e.User
+			p.User = &u
+		}
+		if e.ParentEntityID != "" || e.PPID > 0 {
+			p.Parent = &event.Process{EntityID: e.ParentEntityID, PID: e.PPID}
+		}
+	}
+	if image != "" {
+		p.Executable, p.Name = image, baseName(image)
+	}
+	if u := accountUser(user); u != nil {
+		if p.User != nil && strings.EqualFold(p.User.Name, u.Name) {
+			u.ID = p.User.ID
+		}
+		p.User = u
+	}
+	return p
+}
+
+func (m *procMapper) crossEvent(r *Record, typ, action, msg string, p *event.Process, t *event.Target) *event.Event {
+	return &event.Event{
+		Timestamp: recordTime(r),
+		Event: event.Meta{
+			Kind: event.KindEvent, Category: []string{event.CategoryProcess}, Type: []string{typ},
+			Action: action, Module: event.ModuleEventLog, Dataset: "process",
+			Provider: r.Provider, Code: strconv.FormatUint(uint64(r.EventID), 10),
+		},
+		Message: msg,
+		Process: p,
+		Target:  t,
+		Data:    winlogData(r, ""),
+	}
+}
+
+// isSelf reports whether a process is the agent itself.
+func (m *procMapper) isSelf(pid int64, image string) bool {
+	return (pid > 0 && pid == m.selfPID) || sameImage(image, m.selfExe)
+}
+
+// field returns the first of the named values that is set: Sysmon spells some names
+// differently between events (SourceProcessGuid in event 8, SourceProcessGUID in 10).
+func field(d map[string]string, names ...string) string {
+	for _, n := range names {
+		if v := clean(d[n]); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // securityStart maps Security event 4688 (a new process has been created). What the

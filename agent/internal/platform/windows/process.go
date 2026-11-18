@@ -41,8 +41,10 @@ func (s processSource) String() string {
 }
 
 // processSensor reports process start and exit from the Windows Event Log. Sources,
-// best first: Sysmon (Microsoft-Windows-Sysmon/Operational, events 1 and 5; standalone
-// Sysmon or the Windows Sysmon feature), then the Security log (4688 and 4689), which
+// best first: Sysmon (Microsoft-Windows-Sysmon/Operational, events 1 and 5, plus the
+// cross-process events 8, 10 and 25 when Sysmon logs them; standalone Sysmon or the
+// Windows Sysmon feature, which sysmon.go can set up), then the Security log (4688 and
+// 4689, process start and exit only), which
 // needs "Audit Process Creation" and, for command lines, "Include command line in
 // process creation events". The sensor reads the audit policy but never changes it.
 type processSensor struct {

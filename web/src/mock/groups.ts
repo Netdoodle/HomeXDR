@@ -48,6 +48,8 @@ function own(g: G, k: SettingKey): boolean | string | undefined {
       return g.policy.firewall?.enabled
     case 'decoys':
       return g.policy.decoys?.enabled
+    case 'sysmon':
+      return g.policy.sysmon?.enabled
   }
 }
 
@@ -56,6 +58,7 @@ function globalOf(k: SettingKey): boolean | string {
   if (k === 'defender_hardening') return s.defender_hardening
   if (k === 'firewall') return firewallGlobal()
   if (k === 'decoys') return agentConfig.decoys?.enabled ?? true
+  if (k === 'sysmon') return agentConfig.sysmon?.enabled ?? true
   return k === 'clamav' ? s.use_clamav : k === 'yara' ? s.use_yara : k === 'action' ? s.action : k === 'app_control' ? s.app_control : true
 }
 
@@ -67,7 +70,7 @@ function effective(id: string): Effective {
     }
     return { value: globalOf(k) }
   }
-  return { clamav: one('clamav'), yara: one('yara'), action: one('action'), app_control: one('app_control'), ai_auto: one('ai_auto'), defender_hardening: one('defender_hardening'), firewall: one('firewall'), decoys: one('decoys') } as Effective
+  return { clamav: one('clamav'), yara: one('yara'), action: one('action'), app_control: one('app_control'), ai_auto: one('ai_auto'), defender_hardening: one('defender_hardening'), firewall: one('firewall'), decoys: one('decoys'), sysmon: one('sysmon') } as Effective
 }
 
 /** For the firewall mock: a group and its ancestors, nearest first. */
@@ -93,7 +96,7 @@ function view(): GroupsView {
   }))
   return {
     org: { name: org },
-    global: { clamav: avStatus.settings.use_clamav, yara: avStatus.settings.use_yara, action: avStatus.settings.action, app_control: avStatus.settings.app_control, ai_auto: true, defender_hardening: avStatus.settings.defender_hardening, firewall: firewallGlobal(), decoys: globalOf('decoys') as boolean },
+    global: { clamav: avStatus.settings.use_clamav, yara: avStatus.settings.use_yara, action: avStatus.settings.action, app_control: avStatus.settings.app_control, ai_auto: true, defender_hardening: avStatus.settings.defender_hardening, firewall: firewallGlobal(), decoys: globalOf('decoys') as boolean, sysmon: globalOf('sysmon') as boolean },
     groups: out,
     ungrouped: hosts.filter((h) => h.kind === 'endpoint' && !h.group_id).length,
   }
@@ -144,7 +147,7 @@ export function groupRoutes(route: Route, fail: (status: number, message: string
       if (!g) fail(404, 'no such group')
       const b = body as { name?: string; policy?: GroupPolicy }
       if (b.name !== undefined) g!.name = checkName(b.name, g!.parent_id, g!.id)
-      if (b.policy) g!.policy = { av: { ...b.policy.av }, ai: { ...b.policy.ai }, firewall: { ...b.policy.firewall }, decoys: { ...b.policy.decoys } }
+      if (b.policy) g!.policy = { av: { ...b.policy.av }, ai: { ...b.policy.ai }, firewall: { ...b.policy.firewall }, decoys: { ...b.policy.decoys }, sysmon: { ...b.policy.sysmon } }
       return view()
     },
     { role: 'admin' },

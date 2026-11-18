@@ -35,6 +35,9 @@ type Data struct {
 	// DecoysEnabled is the server's last per-host decoy switch (host groups can override
 	// Config.Decoys.Enabled); nil when the server does not send one.
 	DecoysEnabled *bool `json:"decoys_enabled,omitempty"`
+	// SysmonEnabled is the server's last per-host Sysmon switch (host groups can override
+	// Config.Sysmon.Enabled); nil when the server does not send one.
+	SysmonEnabled *bool `json:"sysmon_enabled,omitempty"`
 }
 
 // Store is the state file with a mutex. Every mutation is written to disk before it
@@ -129,6 +132,34 @@ func (s *Store) SetDecoysEnabled(v *bool) (bool, error) {
 		v = &b
 	}
 	s.d.DecoysEnabled = v
+	return true, s.saveLocked()
+}
+
+// SysmonEnabled returns the server's last per-host Sysmon switch, nil if none.
+func (s *Store) SysmonEnabled() *bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.SysmonEnabled == nil {
+		return nil
+	}
+	v := *s.d.SysmonEnabled
+	return &v
+}
+
+// SetSysmonEnabled records the per-host Sysmon switch from a heartbeat. It reports whether
+// the value changed; an unchanged value is not written.
+func (s *Store) SetSysmonEnabled(v *bool) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.d.SysmonEnabled
+	if (old == nil) == (v == nil) && (v == nil || *old == *v) {
+		return false, nil
+	}
+	if v != nil {
+		b := *v
+		v = &b
+	}
+	s.d.SysmonEnabled = v
 	return true, s.saveLocked()
 }
 
