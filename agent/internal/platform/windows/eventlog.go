@@ -33,7 +33,7 @@ type eventlogSensor struct {
 	sensorState
 	env       platform.Env
 	cfg       api.EventLogConfig
-	processOn bool // the process sensor reports 4688/4689 and Sysmon 1/5
+	processOn bool // the process sensor reports 4688/4689 and Sysmon 1, 5, 8, 10 and 25
 
 	chMu     sync.Mutex
 	problems map[string]string // channel → why it is not being read ("" = reading)
@@ -168,10 +168,10 @@ func normalizeChannels(in []string) []string {
 }
 
 // channelQuery leaves out records another sensor already reports (process creation and
-// exit, when the process sensor is on) and a few that flood their log with little
-// detection value: Windows Filtering Platform connections (5156-5158, which the network
-// sensor will cover), Credential Manager reads (5379, logged constantly on Windows 11)
-// and PowerShell console startup notices.
+// exit, and Sysmon's cross-process events 8, 10 and 25, when the process sensor is on)
+// and a few that flood their log with little detection value: Windows Filtering Platform
+// connections (5156-5158, which the network sensor will cover), Credential Manager reads
+// (5379, logged constantly on Windows 11) and PowerShell console startup notices.
 func channelQuery(channel string, processOn bool) string {
 	var skip []int
 	switch strings.ToLower(strings.TrimSpace(channel)) {
@@ -182,7 +182,7 @@ func channelQuery(channel string, processOn bool) string {
 		}
 	case strings.ToLower(sysmonChannel):
 		if processOn {
-			skip = []int{1, 5}
+			skip = []int{1, 5, 8, 10, 25}
 		}
 	case "microsoft-windows-powershell/operational":
 		// Console startup notices, three per PowerShell session.

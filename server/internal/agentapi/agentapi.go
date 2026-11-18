@@ -290,6 +290,8 @@ func (h *Handler) heartbeat(w http.ResponseWriter, r *http.Request, host *store.
 	// config's. It is one bool, sent every time, so it needs no version.
 	decoys := h.c.ResolveDecoys(host.GroupID, cfg.Decoys.Enabled).Value
 	resp.DecoysEnabled = &decoys
+	sysmon := h.c.ResolveSysmon(host.GroupID, cfg.Sysmon.Enabled).Value
+	resp.SysmonEnabled = &sysmon
 	resp.CommandsPending, _ = h.c.State.HasPendingCommands(r.Context(), host.ID)
 	resp.Update = h.c.UpdateOffer(r.Context(), updated)
 	writeJSON(w, http.StatusOK, resp)

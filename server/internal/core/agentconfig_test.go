@@ -21,7 +21,7 @@ func TestAgentConfigDecoyDefaults(t *testing.T) {
 	c := &Core{State: st}
 
 	def := c.AgentConfig(ctx)
-	if !def.Decoys.Enabled || def.Decoys.CheckIntervalSec != 60 || def.Version != 4 || !reflect.DeepEqual(def.Decoys.Files, api.DefaultDecoyFiles()) {
+	if !def.Decoys.Enabled || def.Decoys.CheckIntervalSec != 60 || def.Version != 5 || !def.Sysmon.Enabled || !reflect.DeepEqual(def.Decoys.Files, api.DefaultDecoyFiles()) {
 		t.Fatalf("default: %+v version %d", def.Decoys, def.Version)
 	}
 
@@ -31,7 +31,7 @@ func TestAgentConfigDecoyDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := c.AgentConfig(ctx)
-	if !old.Decoys.Enabled || old.Version != 8 || old.HeartbeatIntervalSec != 30 || len(old.Decoys.Files) != len(api.DefaultDecoyFiles()) {
+	if !old.Decoys.Enabled || !old.Sysmon.Enabled || old.Version != 8 || old.HeartbeatIntervalSec != 30 || len(old.Decoys.Files) != len(api.DefaultDecoyFiles()) {
 		t.Fatalf("old config: %+v version %d", old.Decoys, old.Version)
 	}
 
@@ -98,8 +98,31 @@ func TestAgentConfigOldExtraPaths(t *testing.T) {
 		t.Fatalf("files:\n%+v\nwant\n%+v", cfg.Decoys.Files, want)
 	}
 	// With a files list the version is served as stored.
-	cur := ParseAgentConfig([]byte(`{"version":12,"decoys":{"enabled":true,"check_interval_sec":60,"files":[]}}`))
+	cur := ParseAgentConfig([]byte(`{"version":12,"decoys":{"enabled":true,"check_interval_sec":60,"files":[]},"sysmon":{"enabled":true}}`))
 	if cur.Version != 12 || len(cur.Decoys.Files) != 0 {
 		t.Fatalf("current config: %+v version %d", cur.Decoys, cur.Version)
+	}
+}
+
+// A config saved before Sysmon management existed gets it on, with a higher version; a
+// saved choice (on or off) is served as stored.
+func TestAgentConfigSysmonDefault(t *testing.T) {
+	cases := []struct {
+		raw     string
+		on      bool
+		version int64
+	}{
+		{`{"version":20,"decoys":{"enabled":true,"check_interval_sec":60,"files":[]}}`, true, 21},
+		{`{"version":20,"decoys":{"enabled":true,"check_interval_sec":60,"files":[]},"sysmon":null}`, true, 21},
+		{`{"version":20,"decoys":{"enabled":true,"check_interval_sec":60,"files":[]},"sysmon":{"enabled":false}}`, false, 20},
+		{`{"version":20,"decoys":{"enabled":true,"check_interval_sec":60,"files":[]},"sysmon":{"enabled":true}}`, true, 20},
+		// Neither decoys nor sysmon: both defaults, one version step.
+		{`{"version":20}`, true, 21},
+	}
+	for _, c := range cases {
+		cfg := ParseAgentConfig([]byte(c.raw))
+		if cfg.Sysmon.Enabled != c.on || cfg.Version != c.version {
+			t.Errorf("%s: sysmon %v version %d, want %v %d", c.raw, cfg.Sysmon.Enabled, cfg.Version, c.on, c.version)
+		}
 	}
 }

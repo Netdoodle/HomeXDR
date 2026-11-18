@@ -40,6 +40,8 @@ The agent runs three loops, each with jittered exponential backoff (1s → 5min)
    decoy files are on for this host, after its host group's override
    ([decoys.md](decoys.md)). The server sends it with every reply; the agent keeps the
    last value and uses `decoys.enabled` from the config when a server sends none.
+   `sysmon_enabled` works the same way for Sysmon management on Windows agents
+   ([sysmon.md](sysmon.md)), falling back to `sysmon.enabled`.
 2. **Events** — `POST /v1/events`, body gzip NDJSON of `event.Event`, at most
    `MaxEventBatchBytes` uncompressed, sent when `batch.max_events` is reached or every
    `batch.flush_interval_ms`. `202` with `EventsResponse` means the batch is durable and the

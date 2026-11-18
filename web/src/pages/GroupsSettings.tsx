@@ -40,6 +40,7 @@ const GLOBAL_LINK: Record<string, string> = {
   ai_auto: '/settings/ai',
   firewall: '/settings/firewall',
   decoys: '/settings/agent-config',
+  sysmon: '/settings/agent-config',
 }
 
 export function GroupsTab() {
