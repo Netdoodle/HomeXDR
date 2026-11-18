@@ -13,7 +13,7 @@ import { useDocumentTitle } from '../lib/hooks'
 import { collapsibleIds, countNodes, defaultCollapsed, flattenTree, totalEventCount, type FlatRow } from '../lib/processTree'
 import { formatDateTime, formatTimestamp } from '../lib/time'
 
-const CAT_ICON: Record<ProcessEventCategory, IconName> = {
+export const CAT_ICON: Record<ProcessEventCategory, IconName> = {
   network: 'network',
   file: 'file',
   registry: 'registry',
@@ -70,6 +70,9 @@ export function ProcessTreePage() {
         actions={
           <>
             {tree.isFetching && !tree.isPending ? <Spinner small /> : null}
+            <Link className="btn sm" to={`/hosts/${encodeURIComponent(hostId)}/storyline/${encodeURIComponent(entityId)}`}>
+              <Icon name="pulse" size={12} /> Storyline
+            </Link>
             <label className="row small muted">
               Depth
               <select className="select" value={depth} onChange={(e) => setDepth(Number(e.target.value))} aria-label="Descendant depth">

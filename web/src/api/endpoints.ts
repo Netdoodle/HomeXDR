@@ -36,6 +36,7 @@ import type {
   Overview,
   ProcessEventCategory,
   ProcessNode,
+  Storyline,
   Role,
   Row,
   Rule,
@@ -245,3 +246,8 @@ export const audit = (limit = 100, offset = 0) =>
   http.get<{ entries: AuditEntry[]; total: number }>('/api/audit', { limit, offset })
 export const integrations = () => http.get<Integrations>('/api/integrations')
 export const health = () => http.get<Health>('/healthz')
+
+// Storyline ------------------------------------------------------------------------------
+
+export const storyline = (q: { hostId?: string; entityId?: string; alertId?: string; depth?: number }) =>
+  http.get<Storyline>('/api/storyline', { host_id: q.hostId, entity_id: q.entityId, alert_id: q.alertId, depth: q.depth })

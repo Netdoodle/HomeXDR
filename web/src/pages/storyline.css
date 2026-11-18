@@ -1,0 +1,221 @@
+/* Storyline graph page. Loaded together with the lazy Storyline chunk. */
+.sl-layout {
+  display: flex;
+  gap: var(--gap);
+  align-items: flex-start;
+  min-width: 0;
+}
+.sl-main {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.sl-side {
+  flex: none;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  max-height: calc(100vh - var(--topbar-h) - 28px);
+  overflow: auto;
+  position: sticky;
+  top: calc(var(--topbar-h) + 12px);
+}
+.sl-side.hidden {
+  display: none;
+}
+.sl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.sl-toolbar .tabs {
+  border-bottom: 0;
+}
+.sl-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--text-muted);
+}
+.sl-zoom input {
+  width: 110px;
+}
+.sl-canvas {
+  position: relative;
+  height: max(460px, calc(100vh - 340px));
+  background: var(--surface-1);
+}
+.sl-canvas .react-flow {
+  --xy-background-color: var(--surface-1);
+  --xy-node-color: var(--text);
+  --xy-edge-stroke: var(--text-faint);
+  --xy-controls-button-background-color: var(--surface-2);
+  --xy-controls-button-background-color-hover: var(--surface-3);
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-border-color: var(--border);
+  --xy-minimap-background-color: var(--surface-2);
+  --xy-background-pattern-color: var(--border);
+}
+.sl-canvas > .state {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: var(--surface-1);
+}
+.sl-minimap {
+  border: 1px solid var(--border);
+}
+.sl-node {
+  --sl-ring: var(--border-strong);
+  width: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--text);
+}
+.sl-circle {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-3);
+  border: 2px solid var(--sl-ring);
+  color: var(--text-2);
+}
+.sl-node.alerted .sl-circle {
+  --sl-ring: var(--sl-sev, var(--danger));
+  background: var(--danger-soft);
+  color: var(--sl-sev, var(--danger));
+}
+.sl-node.ctx .sl-circle {
+  background: var(--surface-2);
+  color: var(--text-faint);
+  border-style: dashed;
+}
+.sl-node.focus .sl-circle {
+  box-shadow: 0 0 0 3px var(--surface-1), 0 0 0 5px #8b5cf6;
+}
+.sl-node.selected .sl-circle,
+.sl-node.highlight .sl-circle {
+  box-shadow: 0 0 0 3px var(--surface-1), 0 0 0 5px var(--accent);
+}
+.sl-node.stub {
+  opacity: 0.6;
+}
+.sl-node.dim {
+  opacity: 0.25;
+}
+.sl-badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  line-height: 17px;
+  font-weight: 600;
+}
+.sl-name {
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sl-pid {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.sl-counts {
+  display: flex;
+  gap: 3px;
+  min-height: 14px;
+  color: var(--text-muted);
+}
+.sl-handle {
+  opacity: 0;
+  pointer-events: none;
+  top: 23px !important;
+}
+.sl-edge-label {
+  font-size: 10px;
+  fill: var(--text-2);
+}
+.sl-evcounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sl-alerts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sl-alerts li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.sl-alerts li.on {
+  background: var(--surface-selected);
+}
+.sl-alert-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.sl-alert-title {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1100px) {
+  .sl-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sl-main {
+    flex: none;
+    width: 100%;
+  }
+  .sl-side {
+    width: 100%;
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  .sl-canvas {
+    height: 60vh;
+    min-height: 380px;
+  }
+  .sl-zoom {
+    margin-left: 0;
+  }
+}
