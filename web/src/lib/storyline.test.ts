@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { StorylineEdge, StorylineNode } from '../api/types'
-import { buildElkGraph, collapsedView, groupId, groupSiblings, hasLoadedChildren, initialOpen, isDimmed, mergeStoryline, processView, tacticLabel, tacticList, withoutCrossProcess } from './storyline'
+import { buildElkGraph, collapsedView, groupId, groupSiblings, hasLoadedChildren, importantNodes, initialOpen, isDimmed, mergeStoryline, othersId, processView, tacticLabel, tacticList, withoutCrossProcess } from './storyline'
 import type { Storyline } from '../api/types'
 
 function node(id: string, parent = '', extra: Partial<StorylineNode> = {}): StorylineNode {
@@ -182,5 +182,37 @@ describe('opening and closing branches', () => {
     expect(m.nodes.find((n) => n.entity_id === 'b1')).toMatchObject({ more: false, focus: false })
     expect(m.edges).toHaveLength(2)
     expect(m.alerts.map((a) => a.id)).toEqual(['al'])
+  })
+})
+
+describe('folding quiet children', () => {
+  // root has 10 children; c3 leads to the focus, c7 has an alert, the rest are quiet.
+  const kids = Array.from({ length: 10 }, (_, i) => node(`c${i}`, 'root', { name: `tool${i}.exe` }))
+  kids[7] = node('c7', 'root', { name: 'tool7.exe', alert_count: 1 })
+  const nodes = [node('root', '', { root: true }), ...kids, node('focus', 'c3', { focus: true })]
+  const edges = [...kids.map((k) => edge('root', k.entity_id)), edge('c3', 'focus')]
+
+  it('keeps the way to the focus and to alerts', () => {
+    expect([...importantNodes({ nodes, edges })].sort()).toEqual(['c3', 'c7', 'focus', 'root'])
+  })
+
+  it('folds the other children into one item', () => {
+    const { items, edges: out } = groupSiblings({ nodes, edges }, new Set(), importantNodes({ nodes, edges }))
+    const ids = items.map((i) => i.id)
+    expect(ids).toEqual(['root', othersId('root'), 'c3', 'c7', 'focus'])
+    const others = items.find((i) => i.others)
+    expect(others?.members).toHaveLength(8)
+    expect(out.filter((e) => e.from === 'root').map((e) => e.to).sort()).toEqual(['c3', 'c7', othersId('root')].sort())
+  })
+
+  it('shows them once the group is expanded, or without a keep set', () => {
+    const keep = importantNodes({ nodes, edges })
+    expect(groupSiblings({ nodes, edges }, new Set([othersId('root')]), keep).items).toHaveLength(12)
+    expect(groupSiblings({ nodes, edges }).items).toHaveLength(12)
+  })
+
+  it('leaves a parent with few children alone', () => {
+    const few = { nodes: nodes.slice(0, 4), edges: edges.slice(0, 3) }
+    expect(groupSiblings(few, new Set(), new Set(['root'])).items.some((i) => i.others)).toBe(false)
   })
 })
