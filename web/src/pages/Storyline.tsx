@@ -59,6 +59,9 @@ import { CAT_ICON } from './ProcessTree'
 
 const elk = new ELK()
 
+/** Below this zoom node names are unreadable, so the first view centres on the focus. */
+const MIN_READABLE_ZOOM = 0.45
+
 const KIND_LABEL: Record<StorylineEdgeKind, string> = {
   parent: 'Parent process',
   remote_thread: 'Remote thread',
@@ -231,7 +234,7 @@ export function StorylinePage() {
 }
 
 function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
-  const { fitView, setCenter, zoomTo, getNode } = useReactFlow<FlowNode, Edge<FlowEdgeData>>()
+  const { fitView, setCenter, zoomTo, getNode, getZoom } = useReactFlow<FlowNode, Edge<FlowEdgeData>>()
   const { zoom } = useViewport()
   const [view, setView] = useState<'process' | 'storyline'>('storyline')
   const [cross, setCross] = useState(true)
@@ -285,9 +288,17 @@ function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
   useEffect(() => {
     if (!ready || fitKey.current === layoutKey) return
     fitKey.current = layoutKey
-    const t = setTimeout(() => void fitView({ padding: 0.2, maxZoom: 1, duration: 200 }), 30)
+    // Show the whole graph when it fits at a readable size; otherwise start on the focus
+    // process, at a size where names can be read.
+    const focusPos = positions?.pos.get(data.focus_entity_id)
+    const t = setTimeout(() => {
+      void fitView({ padding: 0.2, maxZoom: 1 }).then(() => {
+        if (getZoom() >= MIN_READABLE_ZOOM || !focusPos) return
+        void setCenter(focusPos.x + NODE_WIDTH / 2, focusPos.y + NODE_HEIGHT / 2, { zoom: 0.85 })
+      })
+    }, 30)
     return () => clearTimeout(t)
-  }, [ready, layoutKey, fitView])
+  }, [ready, layoutKey, fitView, getZoom, setCenter, positions, data.focus_entity_id])
 
   const flowNodes: FlowNode[] = useMemo(() => {
     if (!ready || !positions) return []

@@ -376,14 +376,26 @@ func (b *builder) parentOf(child *Node) (*Node, error) {
 	return n, nil
 }
 
+// stopsAt reports whether a storyline stops climbing at n: a system process (isBoundary)
+// or a Windows service, a process services.exe started. A service such as sshd.exe runs
+// for as long as the machine and starts unrelated work (every SSH session), so its child
+// is the root, not the service.
+func (b *builder) stopsAt(n *Node) bool {
+	if isBoundary(n.Name) {
+		return true
+	}
+	p, err := b.parentOf(n)
+	return err == nil && p != nil && strings.EqualFold(p.Name, "services.exe")
+}
+
 // walkUp climbs from the focus to the root: the topmost ancestor below a system process
-// (isBoundary), which becomes the context node. A focus that is itself a system process
+// (stopsAt), which becomes the context node. A focus that is itself a system process
 // is its own root.
 func (b *builder) walkUp(focus *Node) (*Node, error) {
 	chain := []*Node{focus}
 	var ctxNode *Node
 	cur := focus
-	if isBoundary(focus.Name) {
+	if b.stopsAt(focus) {
 		p, err := b.parentOf(focus)
 		if err != nil {
 			return nil, err
@@ -401,7 +413,7 @@ func (b *builder) walkUp(focus *Node) (*Node, error) {
 			if _, inGraph := b.nodes[p.EntityID]; inGraph {
 				break // a loop (PID reuse or bad data)
 			}
-			if isBoundary(p.Name) {
+			if b.stopsAt(p) {
 				ctxNode = p
 				break
 			}
