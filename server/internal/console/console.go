@@ -68,6 +68,7 @@ func New(c *core.Core) *Handler {
 	h.route("GET /api/events/{id}", viewer, h.getEvent)
 	h.route("GET /api/process-tree", viewer, h.processTree)
 	h.route("GET /api/process-events", viewer, h.processEvents)
+	h.route("GET /api/storyline", viewer, h.storyline)
 
 	h.route("GET /api/alerts", viewer, h.listAlerts)
 	h.route("GET /api/alerts/{id}", viewer, h.getAlert)

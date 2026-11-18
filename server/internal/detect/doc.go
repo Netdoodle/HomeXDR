@@ -99,7 +99,9 @@ func (d *Doc) synthesize() {
 	// Sysmon's User and ParentUser are "DOMAIN\name" (e.g. "NT AUTHORITY\SYSTEM"), and
 	// rules match on either part ("AUTHORI", "\SYSTEM"). Without a domain (Unix) the
 	// name alone is used.
-	for key, prefix := range map[string]string{"sigma.user": "process.user", "sigma.parent_user": "process.parent.user"} {
+	for key, prefix := range map[string]string{
+		"sigma.user": "process.user", "sigma.parent_user": "process.parent.user", "sigma.target_user": "target.process.user",
+	} {
 		name := d.flat[prefix+".name"]
 		if !nonEmpty(name) {
 			continue
@@ -185,6 +187,22 @@ var sigmaFields = map[string][]string{
 	"imphash":             {"sigma.imphash"},
 	"signed":              {"sigma.signed"},
 	"initiated":           {"sigma.initiated"},
+	// Cross-process events (Sysmon 8, 10 and 25): Source* is the acting process, Target*
+	// the one acted on.
+	"sourceimage":       {"process.executable"},
+	"sourceprocessid":   {"process.pid"},
+	"sourceprocessguid": {"process.entity_id"},
+	"sourceuser":        {"sigma.user"},
+	"targetimage":       {"target.process.executable"},
+	"targetprocessid":   {"target.process.pid"},
+	"targetprocessguid": {"target.process.entity_id"},
+	"targetuser":        {"sigma.target_user"},
+	"grantedaccess":     {"target.granted_access"},
+	"calltrace":         {"target.call_trace"},
+	"startaddress":      {"target.start_address"},
+	"startmodule":       {"target.start_module"},
+	"startfunction":     {"target.start_function"},
+	"type":              {"target.tampering"},
 }
 
 // libraryFields override PE metadata fields for image-load events, where Sysmon's fields

@@ -22,6 +22,7 @@ The code is in `server/internal/triage`; the console settings are under
   | `search_events` | Events matching a search (the console's [search language](search.md)), on one or all hosts, in a time window; newest first, trimmed. With commands such as `\| stats count by destination.ip` it returns the table instead (up to 100 rows) |
   | `get_event` | One event in full (long values trimmed) |
   | `get_process_tree` | A process, its ancestors and its children/grandchildren |
+  | `get_storyline` | The attack chain around a process (the alert's by default): lineage from the root, descendants, cross-process and task/service/WMI links, and the alerts on them ([storyline](storyline.md)) |
   | `get_host` | Host details, sensors and open alert count |
   | `list_alerts` | Recent alerts, optionally for one host, with earlier AI verdicts |
   | `get_network_flow` | Every event for one flow by Community ID: endpoint, OPNsense and Suricata |

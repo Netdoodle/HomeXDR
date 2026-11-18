@@ -309,6 +309,12 @@ func TestTools(t *testing.T) {
 	if out := run("get_process_tree", `{"host_id":"h1","entity_id":"e-curl"}`); !strings.Contains(out, `"e-bash"`) || !strings.Contains(out, `"e-sh"`) {
 		t.Fatalf("process tree lacks parent or child: %s", out)
 	}
+	if out := run("get_storyline", `{"host_id":"h1","entity_id":"e-curl"}`); !strings.Contains(out, `"e-bash"`) || !strings.Contains(out, `"focus_entity_id":"e-curl"`) {
+		t.Fatalf("storyline: %s", out)
+	}
+	if _, err := tools["get_storyline"].Run(ctx, json.RawMessage(`{"host_id":"h1","entity_id":"e-nothing"}`)); err == nil {
+		t.Fatal("storyline of a missing process")
+	}
 	if out := run("get_event", `{"event_id":"`+f.hit.ID+`"}`); !strings.Contains(out, "x.sh") {
 		t.Fatalf("get_event: %s", out)
 	}

@@ -160,6 +160,11 @@ Rules use standard Sigma field names, so SigmaHQ rules work unchanged. The serve
 | `Provider_Name` | `event.provider` |
 | `ServiceName`, `ImagePath` | `service.name`, `service.path` |
 | `TargetUserName`, `SubjectUserName` | `user.target.name`, `user.name` |
+| `SourceImage`, `SourceProcessId`, `SourceProcessGUID`, `SourceUser` | `process.executable`, `.pid`, `.entity_id`, `DOMAIN\name` from `process.user` (cross-process events: the actor) |
+| `TargetImage`, `TargetProcessId`, `TargetProcessGUID`, `TargetUser` | `target.process.executable`, `.pid`, `.entity_id`, `DOMAIN\name` from `target.process.user` (the process acted on) |
+| `GrantedAccess`, `CallTrace` | `target.granted_access`, `target.call_trace` |
+| `StartAddress`, `StartModule`, `StartFunction` | `target.start_address`, `.start_module`, `.start_function` |
+| `Type` (process tampering) | `target.tampering` |
 | `LogonType`, `IpAddress`, other EventData | `data.<Name>` (Windows EventData is kept verbatim) |
 | `ScriptBlockText` | `data.ScriptBlockText` |
 
@@ -167,7 +172,8 @@ Sigma `logsource` maps to event filters:
 
 | logsource | Matches |
 |---|---|
-| `category: process_creation` | `event.category` has `process` and `event.type` has `start` |
+| `category: process_creation` | `event.category` has `process` and `event.type` has `start` (not a cross-process event) |
+| `category: create_remote_thread` / `process_access` / `process_tampering` | `event.action` `remote-thread-created` / `process-accessed` / `process-tampered`, or Sysmon (`event.provider` `Microsoft-Windows-Sysmon`) `event.code` 8 / 10 / 25 |
 | `category: network_connection` | `network` + `connection` |
 | `category: file_event` | `file` + `creation` (also `change`) |
 | `category: file_delete` | `file` + `deletion` |
