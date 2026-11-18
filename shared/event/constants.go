@@ -104,3 +104,10 @@ const (
 	ModuleDHCP       = "dhcp"       // DHCP server logs (ISC dhcpd, Kea, dnsmasq)
 	ModuleHomeXDR    = "homexdr"    // findings the server itself produces (health, behaviour)
 )
+
+// Cross-process actions (event.action), with the acted-on process in Target.
+const (
+	ActionRemoteThread     = "remote-thread-created"
+	ActionProcessAccess    = "process-accessed"
+	ActionProcessTampering = "process-tampered"
+)
