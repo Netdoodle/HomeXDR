@@ -625,11 +625,13 @@ type HostCount struct {
 	Alerts   int    `json:"alerts"`
 }
 
-// TopHosts returns the hosts with the most alerts since `since`.
+// TopHosts returns the hosts with the most alerts since `since`. Alerts filed under the
+// server count per host name, since that names the device they are about.
 func (s *Store) TopHosts(ctx context.Context, since time.Time, limit int) ([]HostCount, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT host_id, MAX(hostname), COUNT(*) AS n FROM alerts WHERE last_seen >= ? AND status != 'suppressed'
-		 GROUP BY host_id ORDER BY n DESC LIMIT ?`, ts(since), limit)
+		 GROUP BY host_id, CASE WHEN host_id = 'homexdr-server' THEN hostname ELSE '' END
+		 ORDER BY n DESC LIMIT ?`, ts(since), limit)
 	if err != nil {
 		return nil, err
 	}

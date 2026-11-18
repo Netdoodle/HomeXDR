@@ -12,6 +12,10 @@ import { formatTerm } from '../lib/query'
 import { SEVERITY_LABEL } from '../lib/severity'
 import { fillHourlyBuckets } from '../lib/time'
 
+// Network alerts are filed under the server's host ID, named after the device they are about.
+const SERVER_HOST_ID = 'homexdr-server'
+const SERVER_HOSTNAME = 'HomeXDR'
+
 const WINDOWS = [
   { hours: 24, label: '24h' },
   { hours: 72, label: '3d' },
@@ -177,8 +181,11 @@ function DashboardBody({ o, hours }: { o: Overview; hours: number }) {
             ) : (
               <BarList
                 items={o.top_hosts.map((h) => ({
-                  key: h.host_id,
-                  href: `/hosts/${encodeURIComponent(h.host_id)}?tab=alerts`,
+                  key: `${h.host_id}|${h.hostname}`,
+                  href:
+                    h.host_id === SERVER_HOST_ID && h.hostname !== SERVER_HOSTNAME
+                      ? `/alerts?q=${encodeURIComponent(h.hostname)}`
+                      : `/hosts/${encodeURIComponent(h.host_id)}?tab=alerts`,
                   label: h.hostname,
                   value: h.alerts,
                 }))}
