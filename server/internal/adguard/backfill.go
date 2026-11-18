@@ -60,6 +60,15 @@ func (p *Poller) runBackfill(set Settings, since time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Hour)
 	defer cancel()
 	err := p.backfillOlder(ctx, set, since)
+	if err == nil {
+		// Record the import before reporting it done, so a second Backfill call that
+		// sees "done" also sees the flag and is refused.
+		var stt state
+		if p.st.GetKV(ctx, stateKey, &stt) == nil {
+			stt.Backfilled = true
+			_ = p.st.SetKV(ctx, stateKey, stt)
+		}
+	}
 	p.mu.Lock()
 	if err != nil {
 		p.backfill.State, p.backfill.Error = "error", err.Error()
@@ -71,11 +80,6 @@ func (p *Poller) runBackfill(set Settings, since time.Time) {
 	if err != nil {
 		p.log.Warn("dns query log: history import failed", "resolver", Product(set.Kind), "imported", n, "err", err)
 		return
-	}
-	var stt state
-	if p.st.GetKV(ctx, stateKey, &stt) == nil {
-		stt.Backfilled = true
-		_ = p.st.SetKV(ctx, stateKey, stt)
 	}
 	p.log.Info("dns query log: history imported", "resolver", Product(set.Kind), "lookups", n)
 }
