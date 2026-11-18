@@ -167,6 +167,11 @@ agents at the MagicDNS name; the spool covers the gaps.
   optional redirect), threshold and correlation rules (Sigma `count()` and correlation
   rules), decoy files on every agent, the Task Scheduler log turned on by the Windows
   install, and host addresses plus refused-connection monitoring for agents away from home.
+- Security fixes (November 2026 review): install commands check the downloaded script's
+  SHA-256 before running it; sign-in and two-factor limits hold under parallel requests,
+  count IPv6 per /64 and cap wrong codes per account with an alert; syslog messages no
+  longer rename named network devices; expired agent certificates renew only within 180
+  days of expiry.
 - Security fixes: getting files from hosts is admin only, quarantine refuses
   operating-system files, AI keys from the environment only go to approved endpoints,
   enrollment tokens expire and are single-use by default, and CI checks Go dependencies
