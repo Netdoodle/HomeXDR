@@ -43,4 +43,5 @@ export const queryKeys = {
   agentLifecycle: ['settings', 'agent-lifecycle'] as const,
   mcpTokens: ['settings', 'ai', 'mcp-tokens'] as const,
   health: ['health'] as const,
+  storyline: (hostId: string, entityId: string, alertId: string) => ['storyline', hostId, entityId, alertId] as const,
 }

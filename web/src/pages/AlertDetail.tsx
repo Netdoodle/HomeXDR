@@ -118,6 +118,11 @@ function AlertView({ alert: a }: { alert: Alert }) {
                 <Icon name="tree" size={14} /> View process tree
               </Link>
             ) : null}
+            {a.process_entity_id ? (
+              <Link className="btn" to={`/hosts/${encodeURIComponent(a.host_id)}/storyline/${encodeURIComponent(a.process_entity_id)}`}>
+                <Icon name="pulse" size={14} /> Storyline
+              </Link>
+            ) : null}
             {hostQ.data ? (
               <ResponseButtons
                 host={hostQ.data}
