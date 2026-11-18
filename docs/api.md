@@ -240,6 +240,7 @@ type StorylineNode = {
   context: boolean;       // the system process above the root
   outside: boolean;       // reached only through a cross-process event
   stub: boolean;          // no start/end event: built from other events
+  more: boolean;          // children not looked up: request a storyline focused on it
   alert_count: number; max_severity: string;  // "" when no alerts
   tactics: string[];      // ATT&CK tactic slugs: "persistence", "defense-evasion", ...
   event_counts: { network: number; file: number; registry: number; dns: number; library: number };

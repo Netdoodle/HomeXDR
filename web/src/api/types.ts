@@ -1405,6 +1405,8 @@ export interface StorylineNode {
   outside: boolean;
   /** no start event was seen for this process */
   stub: boolean;
+  /** The process's children were not loaded yet: a storyline focused on it has them. */
+  more?: boolean;
   alert_count: number;
   max_severity: "" | Severity;
   /** MITRE tactic slugs: persistence, privilege-escalation, defense-evasion, ... */

@@ -51,28 +51,31 @@ type Sources struct {
 
 // Node is one process.
 type Node struct {
-	EntityID       string           `json:"entity_id"`
-	PID            int64            `json:"pid"`
-	Name           string           `json:"name"`
-	Executable     string           `json:"executable"`
-	CommandLine    string           `json:"command_line"`
-	User           string           `json:"user"`
-	Start          *time.Time       `json:"start"`
-	End            *time.Time       `json:"end"`
-	ExitCode       *int64           `json:"exit_code"`
-	Signed         *bool            `json:"signed"`
-	IntegrityLevel string           `json:"integrity_level"`
-	ParentEntityID string           `json:"parent_entity_id"`
-	Depth          int              `json:"depth"` // 0 is the root, -1 its context parent
-	Focus          bool             `json:"focus"`
-	Root           bool             `json:"root"`
-	Context        bool             `json:"context"` // the system process above the root
-	Outside        bool             `json:"outside"` // reached only through a cross-process event
-	Stub           bool             `json:"stub"`    // no start or end event: built from what other events said
-	AlertCount     int              `json:"alert_count"`
-	MaxSeverity    string           `json:"max_severity"`
-	Tactics        []string         `json:"tactics"`
-	EventCounts    map[string]int64 `json:"event_counts"`
+	EntityID       string     `json:"entity_id"`
+	PID            int64      `json:"pid"`
+	Name           string     `json:"name"`
+	Executable     string     `json:"executable"`
+	CommandLine    string     `json:"command_line"`
+	User           string     `json:"user"`
+	Start          *time.Time `json:"start"`
+	End            *time.Time `json:"end"`
+	ExitCode       *int64     `json:"exit_code"`
+	Signed         *bool      `json:"signed"`
+	IntegrityLevel string     `json:"integrity_level"`
+	ParentEntityID string     `json:"parent_entity_id"`
+	Depth          int        `json:"depth"` // 0 is the root, -1 its context parent
+	Focus          bool       `json:"focus"`
+	Root           bool       `json:"root"`
+	Context        bool       `json:"context"` // the system process above the root
+	Outside        bool       `json:"outside"` // reached only through a cross-process event
+	Stub           bool       `json:"stub"`    // no start or end event: built from what other events said
+	// More is true when the node's children were not looked up (past the depth limit or
+	// the node cap): a storyline focused on it can show them.
+	More        bool             `json:"more"`
+	AlertCount  int              `json:"alert_count"`
+	MaxSeverity string           `json:"max_severity"`
+	Tactics     []string         `json:"tactics"`
+	EventCounts map[string]int64 `json:"event_counts"`
 
 	parentInfo   *event.Process // what a child's event said about this node's parent
 	startEventID string
@@ -710,6 +713,9 @@ func (b *builder) counts() error {
 }
 
 func (b *builder) finish() {
+	for _, n := range b.order {
+		n.More = !b.expanded[n.EntityID] && !n.Context && !n.Outside
+	}
 	if b.src.State != nil {
 		if h, err := b.src.State.GetHost(b.ctx, b.hostID); err == nil && h.Hostname != "" {
 			b.hostname = h.Hostname
