@@ -31,6 +31,7 @@ import {
   type Host,
   type Storyline,
   type StorylineAlert,
+  type StorylineEdge,
   type StorylineEdgeKind,
   type StorylineNode,
 } from '../api'
@@ -74,6 +75,8 @@ interface FlowNodeData extends Record<string, unknown> {
   selected: boolean
   highlighted: boolean
   dimmed: boolean
+  /** Tooltips of edges from the process to itself (tampering with no other target). */
+  selfTips: string[]
 }
 type FlowNode = Node<FlowNodeData, 'proc'>
 
@@ -88,7 +91,7 @@ function severityVar(s: string): string {
 }
 
 function ProcNode({ data }: NodeProps<FlowNode>) {
-  const { item, selected, highlighted, dimmed } = data
+  const { item, selected, highlighted, dimmed, selfTips } = data
   const n = item.node
   const group = item.members?.length
   const cls = [
@@ -112,6 +115,11 @@ function ProcNode({ data }: NodeProps<FlowNode>) {
             {n.alert_count}
           </span>
         ) : null}
+        {selfTips.length > 0 ? (
+          <span className="sl-self" title={selfTips.join('\n')}>
+            <Icon name="warning" size={10} />
+          </span>
+        ) : null}
       </div>
       <div className="sl-name" title={n.name}>
         {group ? `${group} × ${n.name}` : n.name}
@@ -129,6 +137,10 @@ function ProcNode({ data }: NodeProps<FlowNode>) {
       <Handle type="source" position={Position.Right} className="sl-handle" isConnectable={false} />
     </div>
   )
+}
+
+function edgeTip(e: StorylineEdge): string {
+  return `${KIND_LABEL[e.kind]}${e.detail ? `: ${e.detail}` : ''}${e.at ? ` · ${formatTimestamp(e.at)}` : ''}`
 }
 
 function CrossEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, style, data }: EdgeProps<Edge<FlowEdgeData>>) {
@@ -291,14 +303,15 @@ function StorylineView({ data, host }: { data: Storyline; host?: Host }) {
         selected: it.id === selected,
         highlighted: it.id === highlight,
         dimmed: isDimmed(it.node, selTactics, allSlugs),
+        selfTips: edges.filter((e) => e.from === it.id && e.to === it.id).map(edgeTip),
       },
     }))
-  }, [items, positions, ready, selected, highlight, selTactics, allSlugs])
+  }, [items, edges, positions, ready, selected, highlight, selTactics, allSlugs])
 
   const flowEdges: Edge<FlowEdgeData>[] = useMemo(() => {
     const accent = 'var(--accent)'
-    return edges.map((e, i) => {
-      const tip = `${KIND_LABEL[e.kind]}${e.detail ? `: ${e.detail}` : ''}${e.at ? ` · ${formatTimestamp(e.at)}` : ''}`
+    return edges.filter((e) => e.from !== e.to).map((e, i) => {
+      const tip = edgeTip(e)
       const base = { id: `${e.from}>${e.to}:${e.kind}:${i}`, source: e.from, target: e.to }
       if (e.kind === 'parent') {
         return { ...base, type: 'smoothstep', style: { stroke: 'var(--text-faint)', strokeWidth: 1.6 }, data: { tip } }
