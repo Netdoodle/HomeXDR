@@ -34,6 +34,14 @@ import (
 // AgentCertValidity is how long enrolled agent certificates are valid.
 const AgentCertValidity = 365 * 24 * time.Hour
 
+// MaxRenewAfterExpiry is how long after its expiry a certificate can still be renewed. An
+// agent offline for longer is reinstalled; without a limit, a key copied off a retired
+// machine that was never revoked would work for ever.
+const MaxRenewAfterExpiry = 180 * 24 * time.Hour
+
+// ErrExpiredTooLong is VerifyAgentCert's answer to a certificate past MaxRenewAfterExpiry.
+var ErrExpiredTooLong = errors.New("certificate expired too long ago to renew")
+
 // PKI holds the loaded key material.
 type PKI struct {
 	dir        string
@@ -122,7 +130,8 @@ func (p *PKI) StrictTLSConfig(verify func(*x509.Certificate) error) *tls.Config 
 
 // VerifyAgentCert checks that the client certificate chain from a TLS handshake was
 // issued by the CA for client authentication. allowExpired accepts a certificate past
-// its NotAfter (for renewal); everything else about it must still be valid.
+// its NotAfter by up to MaxRenewAfterExpiry (for renewal); everything else about it must
+// still be valid.
 func (p *PKI) VerifyAgentCert(chain []*x509.Certificate, allowExpired bool) (*x509.Certificate, error) {
 	if len(chain) == 0 {
 		return nil, errors.New("client certificate required")
@@ -136,6 +145,9 @@ func (p *PKI) VerifyAgentCert(chain []*x509.Certificate, allowExpired bool) (*x5
 	}
 	opts := x509.VerifyOptions{Roots: roots, Intermediates: inter, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
 	if allowExpired && time.Now().After(leaf.NotAfter) {
+		if time.Now().After(leaf.NotAfter.Add(MaxRenewAfterExpiry)) {
+			return nil, ErrExpiredTooLong
+		}
 		opts.CurrentTime = leaf.NotAfter.Add(-time.Second)
 	}
 	if _, err := leaf.Verify(opts); err != nil {

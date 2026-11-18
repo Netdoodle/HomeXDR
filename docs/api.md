@@ -657,6 +657,7 @@ type ServerSettings = {
   syslog_addr: string;
   update_key?: string;             // release public key for signed agent updates
   agent_release: { version?: string; signed: boolean; update_key?: string; problem?: string };
+  install_sha256: { unix: string; windows: string }; // SHA-256 of the served install scripts
 }
 type EnrollmentToken = {
   id: string; name: string; token?: string; created_at: string; created_by: string;
@@ -683,16 +684,18 @@ type AgentLifecycleView = {
 
 See [protocol.md](protocol.md#agent-updates) for how the policy picks and offers releases.
 
-The settings page shows ready-to-copy install commands built from `agent_url`, `ca_pin`
-and a token:
+The settings page shows ready-to-copy install commands built from `agent_url`, `ca_pin`,
+`install_sha256` and a token. Each downloads the install script without checking the
+certificate (the CA is not trusted yet), checks it against `install_sha256` (`unix` for
+linux.sh and macos.sh, `windows` for windows.ps1), and only then runs it:
 
 ```
-# Linux (--update-key only when the server has a signed release)
-curl -fsSLk https://<server>:8443/v1/install/linux.sh | sudo sh -s -- --token <token> --ca-pin <pin> [--update-key <key>]
-# Windows (PowerShell, Run as administrator): fetches /v1/install/windows.ps1 without
-# checking the certificate, then runs it; the script checks the CA pin, downloads the agent
-# over verified TLS, checks SHA256SUMS, installs to C:\Program Files\HomeXDR and enrolls
-$u='https://<server>:8443/v1/install/windows.ps1'; if ($PSEdition -eq 'Core') { ... } else { ... }; & ([scriptblock]::Create($s)) -Server https://<server>:8443 -Token <token> -CaPin <pin>
+# Linux and macOS (--update-key only when the server has a signed release)
+f=$(mktemp) && curl -fsSLk https://<server>:8443/v1/install/linux.sh -o "$f" && if [ "$( (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | cut -d' ' -f1)" = <unix sha256> ]; then sudo sh "$f" --token <token> --ca-pin <pin> [--update-key <key>]; else echo '...' >&2; fi; rm -f "$f"
+# Windows (PowerShell, Run as administrator): downloads windows.ps1 as bytes, checks its
+# SHA-256, then runs it; the script checks the CA pin, downloads the agent over verified
+# TLS, checks SHA256SUMS, installs to C:\Program Files\HomeXDR and enrolls
+$u='https://<server>:8443/v1/install/windows.ps1'; ...; if ($h -ne '<windows sha256>') { throw '...' }; & ([scriptblock]::Create(...)) -Server https://<server>:8443 -Token <token> -CaPin <pin>
 ```
 
 ## Devices and behaviour detection

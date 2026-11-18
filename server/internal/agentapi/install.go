@@ -1,7 +1,9 @@
 package agentapi
 
 import (
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"net/http"
 	"strings"
 )
@@ -14,8 +16,8 @@ var windowsInstall string
 
 // unixInstall installs the agent on Linux and macOS (served as linux.sh and macos.sh). It verifies the server's CA against the pin
 // before downloading anything else, so the binary is fetched over a verified TLS
-// connection. Fetching this script itself with `curl -k` is the one unverified step; to
-// avoid it, download the script once and review it, or copy the agent binary manually.
+// connection. The script itself is fetched with `curl -k` (the CA is not trusted yet), so
+// the console's one-liner checks it against InstallScriptSHA256 before running it.
 const unixInstall = `#!/bin/sh
 # HomeXDR agent installer for Linux and macOS.
 #   sh install.sh --token <enrollment token> --ca-pin sha256:<hex> [--labels a,b]
@@ -88,14 +90,38 @@ if [ "$OS" = darwin ]; then
 fi
 `
 
+// UnixInstallScript is linux.sh and macos.sh as served for agentURL.
+func UnixInstallScript(agentURL string) []byte {
+	return []byte(strings.Replace(unixInstall, "__SERVER__", shellSafe(agentURL), 1))
+}
+
+// WindowsInstallScript is windows.ps1 as served for agentURL.
+func WindowsInstallScript(agentURL string) []byte {
+	return []byte(strings.Replace(windowsInstall, "__SERVER__", shellSafe(agentURL), 1))
+}
+
+// InstallScriptSHA256 is the SHA-256 (hex) of each served install script, by "unix" and
+// "windows". The install one-liners download a script without checking the certificate,
+// so they check its hash, taken from the signed-in console, before running it.
+func InstallScriptSHA256(agentURL string) map[string]string {
+	sum := func(b []byte) string {
+		s := sha256.Sum256(b)
+		return hex.EncodeToString(s[:])
+	}
+	return map[string]string{
+		"unix":    sum(UnixInstallScript(agentURL)),
+		"windows": sum(WindowsInstallScript(agentURL)),
+	}
+}
+
 func (h *Handler) installScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
-	_, _ = w.Write([]byte(strings.Replace(unixInstall, "__SERVER__", shellSafe(h.c.Cfg.AgentURL), 1)))
+	_, _ = w.Write(UnixInstallScript(h.c.Cfg.AgentURL))
 }
 
 func (h *Handler) windowsInstallScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(strings.Replace(windowsInstall, "__SERVER__", shellSafe(h.c.Cfg.AgentURL), 1)))
+	_, _ = w.Write(WindowsInstallScript(h.c.Cfg.AgentURL))
 }
 
 func (h *Handler) caCert(w http.ResponseWriter, r *http.Request) {

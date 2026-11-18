@@ -253,6 +253,11 @@ func serve() error {
 			return extSrv.ServeTLS(netutil.LimitListener(ln, maxExternalConns), "", "")
 		})
 	}
+	if (cfg.SyslogAddr != "" || cfg.NetFlowAddr != "") && os.Getenv("HOMEXDR_SYSLOG_ALLOW") == "" {
+		// Syslog and flows over UDP carry no proof of who sent them, so any device on the
+		// home network could send made-up firewall or IDS events.
+		log.Warn("syslog and NetFlow accept any local address; set HOMEXDR_SYSLOG_ALLOW to the firewall's address")
+	}
 	if cfg.SyslogAddr != "" {
 		lis := syslog.New(c, cfg.SyslogAllow)
 		run("syslog", func() error { return lis.Run(ctx, cfg.SyslogAddr) })

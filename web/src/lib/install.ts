@@ -63,29 +63,52 @@ export function psLiteral(s: string): string {
   return `'${s.replace(/'/g, "''")}'`
 }
 
+/** SHA-256 (hex) of the served install scripts, from GET /api/settings/server. */
+export interface InstallScriptHashes {
+  unix: string
+  windows: string
+}
+
+const sha256Hex = /^[0-9a-f]{64}$/
+
 /**
  * `updateKey` (the release key from the server settings) turns on signed automatic
  * updates on Linux and macOS. Windows agents cannot update themselves yet, so it is left
  * out there.
  *
- * The Windows command downloads windows.ps1 without checking the certificate (the CA is not
- * trusted yet, like `curl -k` on Linux) and runs it; the script then checks the CA against
- * the pin before it downloads the agent. Windows PowerShell 5.1 needs the
- * ServicePointManager callback, PowerShell 7 has -SkipCertificateCheck.
+ * The install script is downloaded without checking the certificate (the HomeXDR CA is not
+ * trusted yet), so each command checks the script against the SHA-256 the signed-in console
+ * gave, and only then runs it. The script then checks the CA against the pin before it
+ * downloads the agent. Windows PowerShell 5.1 needs the ServicePointManager callback,
+ * PowerShell 7 has -SkipCertificateCheck.
  */
-export function buildInstallCommands(agentUrl: string, token: string, caPin: string, updateKey?: string): InstallCommands {
+export function buildInstallCommands(
+  agentUrl: string,
+  token: string,
+  caPin: string,
+  scripts: InstallScriptHashes,
+  updateKey?: string,
+): InstallCommands {
   const base = normalizeAgentUrl(agentUrl)
+  if (!sha256Hex.test(scripts.unix) || !sha256Hex.test(scripts.windows)) {
+    throw new Error('the server did not give install script checksums')
+  }
+  const mismatch = 'homexdr: the downloaded install script does not match the checksum from the console; not running it'
   const unix = (script: string) =>
-    `curl -fsSLk ${shellQuote(base + '/v1/install/' + script)} | sudo sh -s -- ` +
-    `--token ${shellQuote(token)} --ca-pin ${shellQuote(caPin)}` +
-    (updateKey ? ` --update-key ${shellQuote(updateKey)}` : '')
+    `f=$(mktemp) && curl -fsSLk ${shellQuote(base + '/v1/install/' + script)} -o "$f" && ` +
+    `if [ "$( (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | cut -d' ' -f1)" = ${scripts.unix} ]; ` +
+    `then sudo sh "$f" --token ${shellQuote(token)} --ca-pin ${shellQuote(caPin)}` +
+    (updateKey ? ` --update-key ${shellQuote(updateKey)}` : '') +
+    `; else echo ${shellQuote(mismatch)} >&2; fi; rm -f "$f"`
   const spm = '[Net.ServicePointManager]'
   const windows =
     `$u=${psLiteral(base + '/v1/install/windows.ps1')}; ` +
-    `if ($PSEdition -eq 'Core') { $s=Invoke-RestMethod $u -SkipCertificateCheck } else { ` +
+    `if ($PSEdition -eq 'Core') { $b=(Invoke-WebRequest $u -SkipCertificateCheck -UseBasicParsing).RawContentStream.ToArray() } else { ` +
     `${spm}::SecurityProtocol=${spm}::SecurityProtocol -bor 3072; ${spm}::ServerCertificateValidationCallback={$true}; ` +
-    `try { $s=(New-Object Net.WebClient).DownloadString($u) } finally { ${spm}::ServerCertificateValidationCallback=$null } }; ` +
-    `& ([scriptblock]::Create($s)) -Server ${psQuote(base)} -Token ${psQuote(token)} -CaPin ${psQuote(caPin)}`
+    `try { $b=(New-Object Net.WebClient).DownloadData($u) } finally { ${spm}::ServerCertificateValidationCallback=$null } }; ` +
+    `$h=-join ([Security.Cryptography.SHA256]::Create().ComputeHash($b) | ForEach-Object { $_.ToString('x2') }); ` +
+    `if ($h -ne '${scripts.windows}') { throw ${psLiteral(mismatch)} }; ` +
+    `& ([scriptblock]::Create([Text.Encoding]::UTF8.GetString($b))) -Server ${psQuote(base)} -Token ${psQuote(token)} -CaPin ${psQuote(caPin)}`
   return {
     linux: unix('linux.sh'),
     macos: unix('macos.sh'),

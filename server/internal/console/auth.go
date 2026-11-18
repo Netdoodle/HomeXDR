@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -58,19 +59,19 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	key := h.clientIP(r) + "|" + strings.ToLower(strings.TrimSpace(req.Username))
-	if !h.limiter.allow(key) {
+	key := h.passwordKey(r, req.Username)
+	if !h.limiter.take(key, loginMaxFails) {
 		writeErr(w, http.StatusTooManyRequests, "too many failed attempts; try again in 15 minutes")
 		return
 	}
 	u, err := h.c.State.Authenticate(r.Context(), req.Username, req.Password)
 	if errors.Is(err, store.ErrNotFound) {
-		h.limiter.fail(key)
 		h.c.Audit(r.Context(), req.Username, "login.failed", "", "from "+h.clientIP(r))
 		writeErr(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
 	if err != nil {
+		h.limiter.success(key)
 		h.fail(w, err)
 		return
 	}
@@ -197,7 +198,10 @@ func (h *Handler) localRequest(r *http.Request) bool {
 	return true
 }
 
-// loginLimiter allows 5 failures per key per 15 minutes.
+// loginLimiter counts password and code attempts per key in a sliding window. An attempt
+// is reserved with take before the check and only given back (success) or cleared (reset)
+// once it passed, so parallel requests cannot all get past the limit before the first
+// failure is recorded.
 type loginLimiter struct {
 	mu       sync.Mutex
 	failures map[string][]time.Time
@@ -206,12 +210,14 @@ type loginLimiter struct {
 const (
 	loginWindow   = 15 * time.Minute
 	loginMaxFails = 5
+	// limiterMaxKeys bounds memory under a spray; above it the keys idle longest go first.
+	limiterMaxKeys = 10000
 )
 
 func newLoginLimiter() *loginLimiter { return &loginLimiter{failures: map[string][]time.Time{}} }
 
-func (l *loginLimiter) recent(key string) []time.Time {
-	cut := time.Now().Add(-loginWindow)
+func (l *loginLimiter) recent(key string, now time.Time) []time.Time {
+	cut := now.Add(-loginWindow)
 	var keep []time.Time
 	for _, t := range l.failures[key] {
 		if t.After(cut) {
@@ -226,28 +232,88 @@ func (l *loginLimiter) recent(key string) []time.Time {
 	return keep
 }
 
-func (l *loginLimiter) allow(key string) bool {
+// take reserves one attempt for key, allowing max per window. It reports false, and
+// reserves nothing, when the key is at its limit. A reserved attempt counts as a failure
+// until success or reset gives it back.
+func (l *loginLimiter) take(key string, max int) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return len(l.recent(key)) < loginMaxFails
+	now := time.Now()
+	cur := l.recent(key, now)
+	if len(cur) >= max {
+		return false
+	}
+	l.failures[key] = append(cur, now)
+	if len(l.failures) > limiterMaxKeys {
+		l.evict(now)
+	}
+	return true
 }
 
-func (l *loginLimiter) fail(key string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.failures[key] = append(l.recent(key), time.Now())
-	if len(l.failures) > 10000 { // bound memory under a spray attack
-		for k := range l.failures {
-			delete(l.failures, k)
-			if len(l.failures) < 5000 {
-				break
-			}
+// evict drops expired keys, then the keys whose last attempt is oldest, down to half the
+// cap. The key being attacked stays: it has the newest attempts.
+func (l *loginLimiter) evict(now time.Time) {
+	type kv struct {
+		k    string
+		last time.Time
+	}
+	var all []kv
+	for k := range l.failures {
+		if r := l.recent(k, now); len(r) > 0 {
+			all = append(all, kv{k, r[len(r)-1]})
 		}
+	}
+	if len(all) <= limiterMaxKeys/2 {
+		return
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].last.Before(all[j].last) })
+	for _, e := range all[:len(all)-limiterMaxKeys/2] {
+		delete(l.failures, e.k)
 	}
 }
 
+// success gives back one attempt reserved by take, for a check that passed or could not
+// be made (a server error is not a wrong password).
+func (l *loginLimiter) success(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if f := l.failures[key]; len(f) > 1 {
+		l.failures[key] = f[:len(f)-1]
+	} else {
+		delete(l.failures, key)
+	}
+}
+
+// count is the number of attempts counted against key in the window.
+func (l *loginLimiter) count(key string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.recent(key, time.Now()))
+}
+
+// reset clears a key after a successful sign-in.
 func (l *loginLimiter) reset(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.failures, key)
+}
+
+// limitIP is the address part of a limiter key. IPv6 addresses count per /64, since one
+// home or host usually gets a whole /64 and can pick any address in it.
+func limitIP(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	a = a.Unmap().WithZone("")
+	if a.Is6() {
+		p, _ := a.Prefix(64)
+		return p.String()
+	}
+	return a.String()
+}
+
+// passwordKey is the limiter key for password checks of a user from a request.
+func (h *Handler) passwordKey(r *http.Request, username string) string {
+	return limitIP(h.clientIP(r)) + "|" + strings.ToLower(strings.TrimSpace(username))
 }
