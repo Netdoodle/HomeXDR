@@ -342,13 +342,29 @@ func TestStorylineRoots(t *testing.T) {
 		f.start("w-child", "w-svchost", `C:\Windows\System32\wbem\WmiPrvSE.exe`, "wmiprvse.exe", 2),
 		// A child whose parent never reported: the parent is a stub, and the root.
 		f.start("w-orphan", "w-gone", `C:\Users\alice\x.exe`, "x.exe", 3),
+		// A Windows service (started by services.exe) that runs for as long as the
+		// machine: each session under it is its own storyline.
+		f.start("w-sshd", "w-services", `C:\Windows\System32\OpenSSH\sshd.exe`, "sshd.exe", 1),
+		f.start("w-sess1", "w-sshd", `C:\Windows\System32\OpenSSH\sshd.exe`, "sshd.exe -y", 2),
+		f.start("w-ps", "w-sess1", `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, "powershell", 3),
+		f.start("w-sess2", "w-sshd", `C:\Windows\System32\OpenSSH\sshd.exe`, "sshd.exe -y", 4),
+		f.start("w-cmd", "w-sess2", `C:\Windows\System32\cmd.exe`, "cmd", 5),
 	)
 
-	g, err := Build(f.ctx, f.src, host, "l-curl", DefaultDepth)
+	g, err := Build(f.ctx, f.src, host, "w-ps", DefaultDepth)
 	if err != nil {
 		t.Fatal(err)
 	}
 	nodes := nodeMap(g)
+	if g.RootEntityID != "w-sess1" || !nodes["w-sshd"].Context || nodes["w-sess2"] != nil || nodes["w-cmd"] != nil {
+		t.Errorf("service child root = %s, edges %v", g.RootEntityID, edgeKeys(g))
+	}
+
+	g, err = Build(f.ctx, f.src, host, "l-curl", DefaultDepth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes = nodeMap(g)
 	if g.RootEntityID != "l-bash" || !nodes["l-sshd2"].Context || nodes["l-sshd2"].Depth != -1 || nodes["l-sshd"] != nil {
 		t.Errorf("linux root = %s, nodes %v", g.RootEntityID, edgeKeys(g))
 	}
