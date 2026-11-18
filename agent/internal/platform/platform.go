@@ -136,11 +136,20 @@ type HostFirewall interface {
 // HostSetup is optionally implemented by a Platform whose sensors depend on host
 // settings that are off by default (Windows process auditing). `install` calls SetupHost
 // and `uninstall` calls RestoreHost, which puts back the settings from before the first
-// install. Both return human-readable lines describing what changed. The running agent
-// never changes host settings.
+// install. Both return human-readable lines describing what changed. Apart from Sysmon
+// management (SysmonManager), the running agent never changes host settings.
 type HostSetup interface {
 	SetupHost() ([]string, error)
 	RestoreHost() ([]string, error)
+}
+
+// SysmonManager is optionally implemented by a Platform that sets up Sysmon for its
+// process sensor (Windows, docs/sysmon.md). The core runs the returned sensor, named
+// "sysmon", whether the host's Sysmon setting is on or off: on, it installs and configures
+// Sysmon where it may; off, it undoes only what HomeXDR changed. It emits no events; its
+// status says what it did.
+type SysmonManager interface {
+	SysmonSensor(enabled bool, env Env) Sensor
 }
 
 // StartupSetup is optionally implemented by a Platform that completes host setup for

@@ -139,9 +139,15 @@ func runningAsSystem() bool {
 }
 
 // RestoreHost implements platform.HostSetup: it restores the audit configuration saved
-// by the first SetupHost, if any, and turns the Task Scheduler log off again when it
-// was off before.
+// by the first SetupHost, if any, turns the Task Scheduler log off again when it was off
+// before, and undoes what Sysmon management changed (sysmon.go).
 func (*Platform) RestoreHost() ([]string, error) {
+	out, err := restoreAudit()
+	lines, serr := restoreSysmon()
+	return append(out, lines...), errors.Join(err, serr)
+}
+
+func restoreAudit() ([]string, error) {
 	path := auditBackupPath()
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {

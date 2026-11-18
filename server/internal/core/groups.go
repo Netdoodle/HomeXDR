@@ -162,6 +162,18 @@ func (c *Core) ResolveDecoys(groupID string, global bool) SettingSource {
 	return SettingSource{Value: global}
 }
 
+// ResolveSysmon works out whether Windows hosts in a group ("" for hosts in no group) set
+// up Sysmon for cross-process events (docs/sysmon.md). global is the agent config's
+// Sysmon.Enabled, passed in for the same reason as in ResolveDecoys.
+func (c *Core) ResolveSysmon(groupID string, global bool) SettingSource {
+	for _, g := range c.groupChain(groupID) {
+		if p := g.Policy.Sysmon.Enabled; p != nil {
+			return SettingSource{Value: *p, GroupID: g.ID, GroupName: g.Name}
+		}
+	}
+	return SettingSource{Value: global}
+}
+
 // avScanners is the antivirus' view of ResolveAV.
 func (c *Core) avScanners(groupID string) av.Scanners {
 	e := c.ResolveAV(groupID)

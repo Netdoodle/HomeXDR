@@ -145,6 +145,10 @@ type HeartbeatResponse struct {
 	// unless the host's group (or its parent group) overrides it. Sent with every
 	// heartbeat; an agent uses Config.Decoys.Enabled when it is missing (older servers).
 	DecoysEnabled *bool `json:"decoys_enabled,omitempty"`
+	// SysmonEnabled is whether Windows agents set up Sysmon for cross-process events:
+	// AgentConfig.Sysmon.Enabled unless the host's group (or its parent group) overrides
+	// it. Sent with every heartbeat like DecoysEnabled; see docs/sysmon.md.
+	SysmonEnabled *bool `json:"sysmon_enabled,omitempty"`
 }
 
 // EventsResponse is the reply to POST /v1/events (body: gzip NDJSON of event.Event,
@@ -164,6 +168,7 @@ type AgentConfig struct {
 	Sensors              SensorsConfig `json:"sensors"`
 	FIM                  FIMConfig     `json:"fim"`
 	Decoys               DecoyConfig   `json:"decoys"`
+	Sysmon               SysmonConfig  `json:"sysmon"`
 	Logs                 []LogSource   `json:"logs,omitempty"`
 	Filters              []EventFilter `json:"filters,omitempty"`
 	SpoolMaxBytes        int64         `json:"spool_max_bytes"`
@@ -220,6 +225,15 @@ type FIMConfig struct {
 	MaxFileSize int64    `json:"max_file_size"` // files larger than this are not hashed
 }
 
+// SysmonConfig controls Sysmon management on Windows agents (docs/sysmon.md). When it is
+// on, an agent turns on the Windows Sysmon feature where Windows has one, installs Sysmon
+// and applies HomeXDR's configuration (process start and exit, remote threads, process
+// access, process tampering), unless Sysmon already has rules someone else wrote. Off
+// undoes only what HomeXDR changed. Other platforms ignore it.
+type SysmonConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
 // LogSource is a log file the agent tails and forwards.
 type LogSource struct {
 	Path    string `json:"path"`              // may contain globs
@@ -240,8 +254,8 @@ func DefaultAgentConfig() AgentConfig {
 	return AgentConfig{
 		// Raise Version whenever these defaults change, so agents running on the
 		// default (no config saved on the server) pick the change up. 2: OpenSSH channel.
-		// 3: decoy files. 4: configurable decoy paths, no Desktop decoys.
-		Version:              4,
+		// 3: decoy files. 4: configurable decoy paths, no Desktop decoys. 5: Sysmon.
+		Version:              5,
 		HeartbeatIntervalSec: 30,
 		InventoryIntervalSec: 6 * 3600,
 		Batch:                BatchConfig{MaxEvents: 500, FlushIntervalMs: 2000},
@@ -273,6 +287,7 @@ func DefaultAgentConfig() AgentConfig {
 			MaxFileSize: 64 << 20,
 		},
 		Decoys:        DecoyConfig{Enabled: true, CheckIntervalSec: DecoyDefaultIntervalSec, Files: DefaultDecoyFiles()},
+		Sysmon:        SysmonConfig{Enabled: true},
 		SpoolMaxBytes: 512 << 20,
 	}
 }
