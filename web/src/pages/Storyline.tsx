@@ -379,6 +379,26 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
     })
   }, [edges])
 
+  // While a new layout runs (a branch opened or closed), keep the last one on screen.
+  const lastShown = useRef<{ nodes: FlowNode[]; edges: Edge<FlowEdgeData>[] }>({ nodes: [], edges: [] })
+  if (ready) lastShown.current = { nodes: flowNodes, edges: flowEdges }
+  const shownNodes = ready ? flowNodes : lastShown.current.nodes
+  const shownEdges = ready ? flowEdges : lastShown.current.edges
+
+  // After a branch opens, bring it into view: the process and its new children.
+  const revealAfterLayout = useRef('')
+  useEffect(() => {
+    const id = revealAfterLayout.current
+    if (!ready || !id) return
+    revealAfterLayout.current = ''
+    const ids = [id, ...edges.filter((e) => e.from === id && isTreeEdge(e) && e.to !== id).map((e) => e.to)]
+    const t = setTimeout(
+      () => void fitView({ nodes: ids.map((x) => ({ id: x })), padding: 0.3, minZoom: MIN_READABLE_ZOOM, maxZoom: Math.max(getZoom(), MIN_READABLE_ZOOM), duration: 250 }),
+      30,
+    )
+    return () => clearTimeout(t)
+  }, [ready, layoutKey, edges, fitView, getZoom])
+
   const selectedItem = items.find((i) => i.id === selected)
   const selectedNode = selectedItem?.members ? undefined : selectedItem?.node ?? data.nodes.find((n) => n.entity_id === selected)
   const nodeAlerts = (id: string) => data.alerts.filter((a) => a.entity_id === id)
@@ -396,6 +416,7 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
       return
     }
     if (hasLoadedChildren(data, id)) {
+      revealAfterLayout.current = id
       setOpen((s) => new Set(s).add(id))
       return
     }
@@ -413,6 +434,7 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
             ? merged
             : { ...merged, nodes: merged.nodes.map((n) => (n.entity_id === id ? { ...n, more: false } : n)) }
         })
+        revealAfterLayout.current = id
         setOpen((s) => new Set(s).add(id))
       })
       .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : String(err)))
@@ -519,10 +541,10 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
             </button>
           </div>
           <div className="sl-canvas">
-            {!ready ? <Loading label="Laying out graph…" compact /> : null}
+            {!ready && shownNodes.length === 0 ? <Loading label="Laying out graph…" compact /> : null}
             <ReactFlow
-              nodes={flowNodes}
-              edges={flowEdges}
+              nodes={shownNodes}
+              edges={shownEdges}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               nodesDraggable={false}
