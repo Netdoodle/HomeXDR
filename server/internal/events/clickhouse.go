@@ -80,29 +80,32 @@ func OpenClickHouse(ctx context.Context, dsn string, retentionDays int) (*ClickH
 	return c, nil
 }
 
+func chType(col *Column) string {
+	switch col.Kind {
+	case KInt:
+		return "Int64"
+	case KTime:
+		return "DateTime64(3, 'UTC')"
+	case KArray:
+		return "Array(LowCardinality(String))"
+	}
+	if lowCardinality[col.Name] {
+		return "LowCardinality(String)"
+	}
+	return "String"
+}
+
 func (c *ClickHouse) migrate(ctx context.Context, db string, days int) error {
 	var cols []string
-	for _, col := range Columns {
-		typ := "String"
-		switch col.Kind {
-		case KInt:
-			typ = "Int64"
-		case KTime:
-			typ = "DateTime64(3, 'UTC')"
-		case KArray:
-			typ = "Array(LowCardinality(String))"
-		default:
-			if lowCardinality[col.Name] {
-				typ = "LowCardinality(String)"
-			}
-		}
-		cols = append(cols, "`"+col.Name+"` "+typ)
+	for i := range Columns {
+		cols = append(cols, "`"+Columns[i].Name+"` "+chType(&Columns[i]))
 	}
 	cols = append(cols, "`raw` String CODEC(ZSTD(3))",
 		"INDEX idx_id id TYPE bloom_filter GRANULARITY 4",
 		"INDEX idx_entity process_entity_id TYPE bloom_filter GRANULARITY 4",
 		"INDEX idx_parent parent_entity_id TYPE bloom_filter GRANULARITY 4",
-		"INDEX idx_cid community_id TYPE bloom_filter GRANULARITY 4")
+		"INDEX idx_cid community_id TYPE bloom_filter GRANULARITY 4",
+		"INDEX "+chAddedIndexes["target_entity_id"])
 	ttl, ttlClause := "", ""
 	if days > 0 {
 		ttl = fmt.Sprintf("toDateTime(ts) + INTERVAL %d DAY", days)
@@ -118,6 +121,9 @@ func (c *ClickHouse) migrate(ctx context.Context, db string, days int) error {
 		if err := c.conn.Exec(ctx, st); err != nil {
 			return fmt.Errorf("events: clickhouse migrate: %w", err)
 		}
+	}
+	if err := c.addColumns(ctx, db); err != nil {
+		return fmt.Errorf("events: clickhouse migrate: %w", err)
 	}
 	// Bring an existing table's TTL in line with the current setting.
 	var create string
@@ -139,6 +145,54 @@ func (c *ClickHouse) migrate(ctx context.Context, db string, days int) error {
 	return nil
 }
 
+// addColumns adds the columns a table made by an older version lacks, each after the
+// column that precedes it in Columns, and their skip indexes. Old parts read the
+// column's default and are not rewritten.
+func (c *ClickHouse) addColumns(ctx context.Context, db string) error {
+	rows, err := c.conn.Query(ctx, "SELECT name FROM system.columns WHERE database = ? AND table = 'events'", db)
+	if err != nil {
+		return err
+	}
+	have := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		have[name] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range Columns {
+		col := &Columns[i]
+		if have[col.Name] {
+			continue
+		}
+		st := "ALTER TABLE " + c.table + " ADD COLUMN IF NOT EXISTS `" + col.Name + "` " + chType(col)
+		if i > 0 {
+			st += " AFTER `" + Columns[i-1].Name + "`"
+		}
+		if err := c.conn.Exec(ctx, st); err != nil {
+			return err
+		}
+		if idx, ok := chAddedIndexes[col.Name]; ok {
+			if err := c.conn.Exec(ctx, "ALTER TABLE "+c.table+" ADD INDEX IF NOT EXISTS "+idx); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// chAddedIndexes are the skip indexes of columns added after the first release, created
+// with the column when an existing table is migrated.
+var chAddedIndexes = map[string]string{
+	"target_entity_id": "idx_target target_entity_id TYPE bloom_filter GRANULARITY 4",
+}
+
 // Close closes the connection.
 func (c *ClickHouse) Close() error { return c.conn.Close() }
 
@@ -150,7 +204,7 @@ func (c *ClickHouse) Insert(ctx context.Context, evs []*event.Event) error {
 	if len(evs) == 0 {
 		return nil
 	}
-	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO "+c.table)
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO "+c.table+" "+chInsertColumns)
 	if err != nil {
 		return err
 	}
@@ -172,6 +226,16 @@ func (c *ClickHouse) Insert(ctx context.Context, evs []*event.Event) error {
 	}
 	return batch.Send()
 }
+
+// chInsertColumns names the columns inserted, so the order of a migrated table's
+// columns does not matter.
+var chInsertColumns = func() string {
+	names := make([]string, 0, len(Columns)+1)
+	for i := range Columns {
+		names = append(names, "`"+Columns[i].Name+"`")
+	}
+	return "(" + strings.Join(append(names, "`raw`"), ", ") + ")"
+}()
 
 type chDialect struct{}
 
@@ -408,7 +472,18 @@ func (c *ClickHouse) ProcessEvents(ctx context.Context, hostID string, entityIDs
 		return []*event.Event{}, nil
 	}
 	return c.queryRaw(ctx, "SELECT raw FROM "+c.table+
-		" WHERE host_id = ? AND process_entity_id IN ? AND has(category, 'process') ORDER BY ts", hostID, entityIDs)
+		" WHERE host_id = ? AND process_entity_id IN ? AND has(category, 'process') AND NOT "+crossProcessCond+
+		" ORDER BY ts", hostID, entityIDs)
+}
+
+// CrossProcess returns cross-process events touching the entities, from either side.
+func (c *ClickHouse) CrossProcess(ctx context.Context, hostID string, entityIDs []string, limit int) ([]*event.Event, error) {
+	if len(entityIDs) == 0 || limit <= 0 {
+		return []*event.Event{}, nil
+	}
+	return c.queryRaw(ctx, "SELECT raw FROM "+c.table+
+		" WHERE host_id = ? AND (process_entity_id IN ? OR target_entity_id IN ?) AND "+crossProcessCond+
+		" ORDER BY ts, id LIMIT ?", hostID, entityIDs, entityIDs, limit)
 }
 
 // Children returns child process start events.

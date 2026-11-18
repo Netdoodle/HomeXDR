@@ -16,6 +16,13 @@ import (
 // filtered separately from other network events.
 const CategoryDNS = "dns"
 
+// crossProcessCond is the SQL condition, valid in both backends, for cross-process events:
+// one process creating a thread in, opening or tampering with another. Agents set
+// event.action; Sysmon records (events 8, 10 and 25) are recognised by code too, in case
+// a producer leaves the action out.
+const crossProcessCond = `(action IN ('` + event.ActionRemoteThread + `', '` + event.ActionProcessAccess + `', '` +
+	event.ActionProcessTampering + `') OR (provider = 'Microsoft-Windows-Sysmon' AND code IN ('8', '10', '25')))`
+
 // ErrNotFound is returned by Get when no event has the ID.
 var ErrNotFound = errors.New("event not found")
 
@@ -31,9 +38,14 @@ type Store interface {
 	// GetMany returns the events with the given IDs (missing IDs are skipped).
 	GetMany(ctx context.Context, ids []string) ([]*event.Event, error)
 	// ProcessEvents returns process start/end events for the given entity IDs on a host.
+	// Cross-process events, which are category process too, are left out.
 	ProcessEvents(ctx context.Context, hostID string, entityIDs []string) ([]*event.Event, error)
 	// Children returns process start events whose parent is one of parentIDs.
 	Children(ctx context.Context, hostID string, parentIDs []string, limit int) ([]*event.Event, error)
+	// CrossProcess returns cross-process events (see crossProcessCond) on a host where
+	// the acting process (process.entity_id) or the acted-on one
+	// (target.process.entity_id) is in entityIDs, oldest first, at most limit.
+	CrossProcess(ctx context.Context, hostID string, entityIDs []string, limit int) ([]*event.Event, error)
 	// EntityCounts returns, per entity ID, event counts by category for non-process events.
 	EntityCounts(ctx context.Context, hostID string, entityIDs []string) (map[string]map[string]int64, error)
 	// Stats returns counts for the dashboard.

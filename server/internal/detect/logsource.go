@@ -48,9 +48,44 @@ func codeIs(codes ...string) func(d *Doc) bool {
 	}
 }
 
+// crossProcessKind returns which cross-process event d is: event.ActionRemoteThread,
+// ActionProcessAccess, ActionProcessTampering, or "" for none. Agents set event.action;
+// Sysmon records (events 8, 10 and 25) are recognised by their code as well.
+func crossProcessKind(d *Doc) string {
+	switch a := d.Event.Event.Action; a {
+	case event.ActionRemoteThread, event.ActionProcessAccess, event.ActionProcessTampering:
+		return a
+	}
+	if !strings.EqualFold(d.Event.Event.Provider, "Microsoft-Windows-Sysmon") {
+		return ""
+	}
+	switch d.Event.Event.Code {
+	case "8":
+		return event.ActionRemoteThread
+	case "10":
+		return event.ActionProcessAccess
+	case "25":
+		return event.ActionProcessTampering
+	}
+	return ""
+}
+
+func crossProcessIs(action string) func(d *Doc) bool {
+	return func(d *Doc) bool { return crossProcessKind(d) == action }
+}
+
 var categoryFilters = map[string]func(d *Doc) bool{
-	"process_creation":    func(d *Doc) bool { return d.has(event.CategoryProcess) && hasType(d, event.TypeStart) },
-	"process_termination": func(d *Doc) bool { return d.has(event.CategoryProcess) && hasType(d, event.TypeEnd) },
+	"process_creation": func(d *Doc) bool {
+		return d.has(event.CategoryProcess) && hasType(d, event.TypeStart) && crossProcessKind(d) == ""
+	},
+	"process_termination": func(d *Doc) bool {
+		return d.has(event.CategoryProcess) && hasType(d, event.TypeEnd) && crossProcessKind(d) == ""
+	},
+	// Cross-process events: Process is the actor (Sysmon's Source*), Target the process
+	// acted on.
+	"create_remote_thread": crossProcessIs(event.ActionRemoteThread),
+	"process_access":       crossProcessIs(event.ActionProcessAccess),
+	"process_tampering":    crossProcessIs(event.ActionProcessTampering),
 	"network_connection": func(d *Doc) bool {
 		return d.has(event.CategoryNetwork) && hasType(d, event.TypeConnection, event.TypeStart)
 	},

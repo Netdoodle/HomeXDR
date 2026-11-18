@@ -54,27 +54,59 @@ func OpenSQLite(path string) (*SQLite, error) {
 	return s, nil
 }
 
+func sqliteType(c *Column) string {
+	switch c.Kind {
+	case KInt, KTime:
+		return "INTEGER NOT NULL DEFAULT 0"
+	case KArray:
+		return "TEXT NOT NULL DEFAULT '[]'"
+	}
+	return "TEXT NOT NULL DEFAULT ''"
+}
+
 func (s *SQLite) migrate() error {
 	var cols []string
-	for _, c := range Columns {
-		typ := "TEXT NOT NULL DEFAULT ''"
-		switch c.Kind {
-		case KInt, KTime:
-			typ = "INTEGER NOT NULL DEFAULT 0"
-		case KArray:
-			typ = "TEXT NOT NULL DEFAULT '[]'"
-		}
-		cols = append(cols, c.Name+" "+typ)
+	for i := range Columns {
+		cols = append(cols, Columns[i].Name+" "+sqliteType(&Columns[i]))
 	}
 	cols = append(cols, "raw TEXT NOT NULL")
+	if _, err := s.w.Exec(`CREATE TABLE IF NOT EXISTS events (` + strings.Join(cols, ", ") + `)`); err != nil {
+		return fmt.Errorf("events: sqlite migrate: %w", err)
+	}
+	// A table made by an older version lacks the columns added since. Every column has a
+	// constant default, so ADD COLUMN is cheap; old rows read the default.
+	have := map[string]bool{}
+	rows, err := s.w.Query(`SELECT name FROM pragma_table_info('events')`)
+	if err != nil {
+		return fmt.Errorf("events: sqlite migrate: %w", err)
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return fmt.Errorf("events: sqlite migrate: %w", err)
+		}
+		have[name] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("events: sqlite migrate: %w", err)
+	}
+	for i := range Columns {
+		if c := &Columns[i]; !have[c.Name] {
+			if _, err := s.w.Exec(`ALTER TABLE events ADD COLUMN ` + c.Name + ` ` + sqliteType(c)); err != nil {
+				return fmt.Errorf("events: sqlite migrate: add %s: %w", c.Name, err)
+			}
+		}
+	}
 	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS events (` + strings.Join(cols, ", ") + `)`,
 		`CREATE INDEX IF NOT EXISTS events_ts ON events(ts)`,
 		`CREATE INDEX IF NOT EXISTS events_host_ts ON events(host_id, ts)`,
 		`CREATE INDEX IF NOT EXISTS events_id ON events(id)`,
 		`CREATE INDEX IF NOT EXISTS events_entity ON events(process_entity_id)`,
 		`CREATE INDEX IF NOT EXISTS events_parent ON events(parent_entity_id)`,
 		`CREATE INDEX IF NOT EXISTS events_cid ON events(community_id) WHERE community_id != ''`,
+		`CREATE INDEX IF NOT EXISTS events_target ON events(target_entity_id) WHERE target_entity_id != ''`,
 	}
 	for _, st := range stmts {
 		if _, err := s.w.Exec(st); err != nil {
@@ -460,8 +492,25 @@ func (s *SQLite) ProcessEvents(ctx context.Context, hostID string, entityIDs []s
 	}
 	return s.queryRaw(ctx,
 		`SELECT raw FROM events WHERE host_id = ? AND process_entity_id IN (`+marks(len(entityIDs))+`)
-		 AND EXISTS (SELECT 1 FROM json_each(events.category) WHERE value = 'process') ORDER BY ts`,
+		 AND EXISTS (SELECT 1 FROM json_each(events.category) WHERE value = 'process')
+		 AND NOT `+crossProcessCond+` ORDER BY ts`,
 		append([]any{hostID}, anys(entityIDs)...)...)
+}
+
+// CrossProcess returns cross-process events touching the entities, from either side.
+func (s *SQLite) CrossProcess(ctx context.Context, hostID string, entityIDs []string, limit int) ([]*event.Event, error) {
+	if len(entityIDs) == 0 || limit <= 0 {
+		return []*event.Event{}, nil
+	}
+	m := marks(len(entityIDs))
+	// The UNION lets each side use its own index (the target one is partial); the unary
+	// + keeps the planner off the host index, which would scan the host's every event.
+	return s.queryRaw(ctx,
+		`SELECT raw FROM events WHERE rowid IN (
+		   SELECT rowid FROM events WHERE process_entity_id IN (`+m+`)
+		   UNION SELECT rowid FROM events WHERE target_entity_id != '' AND target_entity_id IN (`+m+`))
+		 AND +host_id = ? AND `+crossProcessCond+` ORDER BY ts, id LIMIT ?`,
+		append(append(anys(entityIDs), anys(entityIDs)...), hostID, limit)...)
 }
 
 // Children returns child process start events.
