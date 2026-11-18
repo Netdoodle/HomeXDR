@@ -1186,6 +1186,8 @@ export interface AgentConfig {
     /** where decoys go, per platform; each agent uses the entries for its own OS */
     files?: DecoyFile[];
   };
+  /** Sysmon set up by Windows agents for cross-process events (docs/sysmon.md); the Global switch */
+  sysmon?: { enabled: boolean };
   logs?: { path: string; format?: string; dataset?: string }[];
   filters?: { category?: string; field: string; op: string; value: string }[];
   spool_max_bytes: number;

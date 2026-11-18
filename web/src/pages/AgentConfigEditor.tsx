@@ -259,6 +259,19 @@ export function AgentConfigEditor() {
               </span>
               <DecoyFileList files={decoyFiles} readOnly={ro} onChange={(files) => set((d) => (d.decoys = { ...dc, files }))} />
             </Section>
+            <Section title="Sysmon events" hint="Windows: remote threads, process access and process tampering">
+              <SensorToggle
+                label="Set up Sysmon"
+                checked={c.sysmon?.enabled ?? true}
+                disabled={ro}
+                onChange={(v) => set((d) => (d.sysmon = { enabled: v }))}
+              />
+              <span className="xsmall muted">
+                This is the Global switch: host groups can override it under <Link to="/settings/groups">Settings → Groups</Link>. Windows agents turn on the Windows Sysmon feature
+                where Windows has one, install Sysmon and apply HomeXDR&apos;s configuration, unless Sysmon already has someone else&apos;s rules. Turning it off undoes only what
+                HomeXDR changed. See docs/sysmon.md.
+              </span>
+            </Section>
             <Section title="Log files" hint="tailed and forwarded as events">
               {(c.logs ?? []).length === 0 ? <span className="muted small">No log files configured.</span> : null}
               {(c.logs ?? []).map((l, i) => (

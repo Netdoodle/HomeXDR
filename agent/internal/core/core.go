@@ -411,6 +411,11 @@ func (a *Agent) applySensors(ctx context.Context, cfg api.AgentConfig) {
 	// switch is the host's (from its group) when the server sent one.
 	dc := decoyConfig(cfg.Decoys, a.st.DecoysEnabled())
 	specs = append(specs, supervisor.Spec{Sensor: a.newDecoy(dc), Key: fingerprint(dc)})
+	// Sysmon management (Windows) likewise runs on and off: off undoes HomeXDR's changes.
+	if sm, ok := a.plat.(platform.SysmonManager); ok {
+		on := sysmonEnabled(cfg.Sysmon, a.st.SysmonEnabled())
+		specs = append(specs, supervisor.Spec{Sensor: sm.SysmonSensor(on, a.env), Key: fingerprint(on)})
+	}
 	if len(cfg.Logs) > 0 {
 		specs = append(specs, supervisor.Spec{Sensor: logtail.New(cfg.Logs, a.dataDir, a.log), Key: fingerprint(cfg.Logs)})
 	}
@@ -460,6 +465,32 @@ func (a *Agent) applyDecoysEnabled(ctx context.Context, v *bool) {
 	cfg := a.st.Config()
 	a.applySensors(ctx, cfg)
 	a.log.Info("decoy files switched for this host", "enabled", decoyConfig(cfg.Decoys, v).Enabled)
+}
+
+// sysmonEnabled is the Sysmon setting with the per-host switch from the server applied.
+func sysmonEnabled(c api.SysmonConfig, hostEnabled *bool) bool {
+	if hostEnabled != nil {
+		return *hostEnabled
+	}
+	return c.Enabled
+}
+
+// applySysmonEnabled takes the per-host Sysmon switch from a heartbeat. A change restarts
+// the sysmon sensor (on: it sets Sysmon up; off: it undoes what HomeXDR changed). A
+// server that sends none (older servers) leaves Config.Sysmon.Enabled in charge.
+func (a *Agent) applySysmonEnabled(ctx context.Context, v *bool) {
+	a.cfgMu.Lock()
+	defer a.cfgMu.Unlock()
+	changed, err := a.st.SetSysmonEnabled(v)
+	if err != nil {
+		a.log.Warn("cannot persist the Sysmon switch", "err", err)
+	}
+	if !changed {
+		return
+	}
+	cfg := a.st.Config()
+	a.applySensors(ctx, cfg)
+	a.log.Info("Sysmon management switched for this host", "enabled", sysmonEnabled(cfg.Sysmon, v))
 }
 
 // applyConfig stores and applies a new central config. Local policy is not affected.
@@ -702,6 +733,7 @@ func (a *Agent) heartbeatLoop(ctx context.Context) {
 			a.applyConfig(ctx, *resp.Config)
 		}
 		a.applyDecoysEnabled(ctx, resp.DecoysEnabled)
+		a.applySysmonEnabled(ctx, resp.SysmonEnabled)
 		a.afterHeartbeat(ctx, resp.Update)
 		if resp.CommandsPending {
 			select {

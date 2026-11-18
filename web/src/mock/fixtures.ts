@@ -465,6 +465,7 @@ export const agentConfig: AgentConfig = {
     check_interval_sec: 60,
     files: [...decoyDefaultFiles(), { os: 'windows', path: 'D:\\Shares\\Finance\\logins.csv', hidden: true }],
   },
+  sysmon: { enabled: true },
   logs: [{ path: '/var/log/nginx/access.log', format: 'raw', dataset: 'nginx.access' }],
   filters: [{ category: 'network', field: 'process.executable', op: 'suffix', value: '\\steam.exe' }],
   spool_max_bytes: 512 << 20,

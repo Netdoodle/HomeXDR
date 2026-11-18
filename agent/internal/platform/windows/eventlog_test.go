@@ -120,7 +120,7 @@ func TestChannelQuery(t *testing.T) {
 	if q := channelQuery("Security", false); strings.Contains(q, "4688") {
 		t.Errorf("without the process sensor 4688 must be read: %q", q)
 	}
-	if q := channelQuery(sysmonChannel, true); q != "*[System[(EventID!=1 and EventID!=5)]]" {
+	if q := channelQuery(sysmonChannel, true); q != "*[System[(EventID!=1 and EventID!=5 and EventID!=8 and EventID!=10 and EventID!=25)]]" {
 		t.Errorf("Sysmon: %q", q)
 	}
 	if got := normalizeChannels([]string{" System", "system", "", "Security"}); len(got) != 2 || got[0] != "System" {

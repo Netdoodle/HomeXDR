@@ -40,6 +40,14 @@ type GroupPolicy struct {
 	Firewall FirewallGroupPolicy `json:"firewall"`
 	// Decoys: whether the group's hosts place decoy files (docs/decoys.md).
 	Decoys DecoysGroupPolicy `json:"decoys"`
+	// Sysmon: whether the group's Windows hosts set up Sysmon (docs/sysmon.md).
+	Sysmon SysmonGroupPolicy `json:"sysmon"`
+}
+
+// SysmonGroupPolicy switches Sysmon management for a group. Global is the agent config's
+// Sysmon.Enabled.
+type SysmonGroupPolicy struct {
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // DecoysGroupPolicy switches decoy files for a group. Global is the agent config's

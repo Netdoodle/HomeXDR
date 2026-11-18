@@ -1,0 +1,72 @@
+<!--
+  HomeXDR Sysmon configuration (docs/sysmon.md). The HomeXDR agent writes and applies
+  this file, and puts it back when it changes. To stop HomeXDR from managing Sysmon,
+  turn "Sysmon events" off for the host's group in the console.
+
+  Logged: process start and exit (1, 5, unfiltered), remote threads (8), process access
+  that matters (10: anything opening lsass, and other processes opened with access that
+  can write code into them), process tampering (25). Everything else stays off.
+-->
+<Sysmon schemaversion="{{schemaversion}}">
+  <HashAlgorithms>SHA256,IMPHASH</HashAlgorithms>
+  <EventFiltering>
+    <RuleGroup name="" groupRelation="or">
+      <ProcessCreate onmatch="exclude"/>
+    </RuleGroup>
+    <RuleGroup name="" groupRelation="or">
+      <ProcessTerminate onmatch="exclude"/>
+    </RuleGroup>
+    <RuleGroup name="" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude">
+        <!-- Console control handlers (Ctrl+C) and session start. -->
+        <SourceImage condition="is">{{windir}}\System32\csrss.exe</SourceImage>
+        <SourceImage condition="is">{{windir}}\System32\wininit.exe</SourceImage>
+        <SourceImage condition="begin with">{{programdata}}\Microsoft\Windows Defender\Platform\</SourceImage>
+        <SourceImage condition="is">{{agent}}</SourceImage>
+      </CreateRemoteThread>
+    </RuleGroup>
+    <RuleGroup name="" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <TargetImage name="lsass" condition="is">{{windir}}\System32\lsass.exe</TargetImage>
+        <!-- Access masks that allow writing into the process (PROCESS_VM_WRITE with
+             PROCESS_VM_OPERATION), as injection tools request them. PROCESS_ALL_ACCESS
+             (0x1fffff) is left out: Windows gives it to every parent on the child it
+             creates. Sysmon writes masks without leading zeros. -->
+        <GrantedAccess name="write access" condition="is">0x1F0FFF</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x1F1FFF</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x1F2FFF</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x1F3FFF</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x143A</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x1438</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x103A</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x102A</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x1028</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x43A</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x438</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x3A</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x2A</GrantedAccess>
+        <GrantedAccess name="write access" condition="is">0x28</GrantedAccess>
+      </ProcessAccess>
+    </RuleGroup>
+    <RuleGroup name="" groupRelation="or">
+      <ProcessAccess onmatch="exclude">
+        <!-- Query-only access, which cannot read or write memory. -->
+        <GrantedAccess condition="is">0x1000</GrantedAccess>
+        <GrantedAccess condition="is">0x1400</GrantedAccess>
+        <GrantedAccess condition="is">0x3000</GrantedAccess>
+        <GrantedAccess condition="is">0x100000</GrantedAccess>
+        <GrantedAccess condition="is">0x101000</GrantedAccess>
+        <GrantedAccess condition="is">0x101400</GrantedAccess>
+        <!-- Windows itself, Microsoft Defender and the HomeXDR agent. -->
+        <SourceImage condition="is">{{windir}}\System32\csrss.exe</SourceImage>
+        <SourceImage condition="is">{{windir}}\System32\wininit.exe</SourceImage>
+        <SourceImage condition="begin with">{{programdata}}\Microsoft\Windows Defender\Platform\</SourceImage>
+        <SourceImage condition="begin with">{{programfiles}}\Windows Defender\</SourceImage>
+        <SourceImage condition="is">{{agent}}</SourceImage>
+      </ProcessAccess>
+    </RuleGroup>
+    <RuleGroup name="" groupRelation="or">
+      <ProcessTampering onmatch="exclude"/>
+    </RuleGroup>
+  </EventFiltering>
+</Sysmon>

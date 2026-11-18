@@ -2697,6 +2697,7 @@ route(
       });
       b.decoys.files = files;
     } else b.decoys = agentConfig.decoys;
+    if (!b.sysmon) b.sysmon = agentConfig.sysmon;
     Object.assign(agentConfig, b, { version: agentConfig.version + 1 });
     logAudit(user, "agent_config.update", "default", {
       version: agentConfig.version,
