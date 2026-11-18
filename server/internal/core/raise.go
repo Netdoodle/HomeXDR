@@ -12,6 +12,9 @@ import (
 // whole, which belong to no registered host.
 const ServerHostID = "homexdr-server"
 
+// ServerHostname is the host name shown on those alerts when they name no device.
+const ServerHostname = "HomeXDR"
+
 // Finding is something the server worked out itself, as opposed to a rule matching one
 // event: a silent data source, a new device, a beaconing pattern.
 type Finding struct {
@@ -23,7 +26,9 @@ type Finding struct {
 	Tags        []string
 	// Entity is what repeats have in common; repeats fold into one open alert.
 	Entity string
-	// HostID and Hostname name a registered host; empty means the server itself.
+	// HostID and Hostname name a registered host. An empty HostID files the alert under
+	// the server (ServerHostID); Hostname then names what it is about, such as a device's
+	// address, and defaults to "HomeXDR".
 	HostID, Hostname string
 	// Dataset is the event's event.dataset, such as "homexdr.health".
 	Dataset string
@@ -42,7 +47,10 @@ func (c *Core) RaiseFinding(ctx context.Context, f Finding) error {
 	now := time.Now().UTC()
 	hostID, hostname := f.HostID, f.Hostname
 	if hostID == "" {
-		hostID, hostname = ServerHostID, "HomeXDR"
+		hostID = ServerHostID
+		if hostname == "" {
+			hostname = ServerHostname
+		}
 	}
 	ev := &event.Event{
 		ID:        event.NewID(),

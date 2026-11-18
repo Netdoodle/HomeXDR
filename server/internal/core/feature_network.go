@@ -92,8 +92,33 @@ func (c *Core) raiseBehavior(ctx context.Context, f behavior.Finding) error {
 	return c.RaiseFinding(ctx, Finding{
 		RuleID: f.Rule, Title: f.Title, Description: f.Description, Severity: f.Severity,
 		Tags: []string{"network", "behavior"}, Entity: f.Entity, Dataset: "homexdr.behavior", Message: f.Description,
-		Source: f.Source, Destination: f.Destination, Data: f.Data,
+		Hostname: c.homeDevice(f.Source, f.Destination),
+		Source:   f.Source, Destination: f.Destination, Data: f.Data,
 	})
+}
+
+// homeDevice returns the address of the home device a network finding is about, the
+// first endpoint that is on the home network, or "" when neither is.
+func (c *Core) homeDevice(eps ...*event.Endpoint) string {
+	var scope interface{ Home(netip.Addr) bool }
+	if c.Inventory != nil {
+		if s := c.Inventory.Scope(); s != nil {
+			scope = s
+		}
+	}
+	for _, ep := range eps {
+		if ep == nil || ep.IP == "" {
+			continue
+		}
+		a, err := netip.ParseAddr(ep.IP)
+		if err != nil {
+			continue
+		}
+		if scope != nil && scope.Home(a) || scope == nil && a.IsPrivate() {
+			return a.Unmap().String()
+		}
+	}
+	return ""
 }
 
 // runNetwork is the background loop of those features.

@@ -847,7 +847,8 @@ func newDeviceFinding(d *store.Device) Finding {
 	return Finding{
 		RuleID: RuleNewDevice, Title: title, Description: desc, Severity: store.SevLow,
 		Tags: []string{"network", "inventory"}, Entity: d.ID, Dataset: "homexdr.network", Message: desc,
-		Source: &event.Endpoint{IP: d.IP, MAC: d.MAC, Domain: d.Hostname}, Data: data,
+		Hostname: d.IP,
+		Source:   &event.Endpoint{IP: d.IP, MAC: d.MAC, Domain: d.Hostname}, Data: data,
 	}
 }
 

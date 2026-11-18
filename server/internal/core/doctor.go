@@ -163,7 +163,7 @@ func checkEventStore(ctx context.Context, c *Core) CheckResult {
 	ev := &event.Event{
 		ID: event.NewID(), Timestamp: now,
 		Agent:   event.Agent{ID: ServerHostID, Type: event.AgentTypeIntegration},
-		Host:    event.Host{ID: ServerHostID, Name: "HomeXDR"},
+		Host:    event.Host{ID: ServerHostID, Name: ServerHostname},
 		Event:   event.Meta{Kind: event.KindState, Module: event.ModuleHomeXDR, Dataset: "homexdr.doctor", Ingested: &now},
 		Message: "doctor write check",
 	}
