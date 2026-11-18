@@ -23,6 +23,9 @@ type Event struct {
 	Labels  map[string]string `json:"labels,omitempty"`
 
 	Process *Process `json:"process,omitempty"`
+	// Target is the other process in a cross-process event: one process creating a
+	// thread in, opening or tampering with another. Process is the actor.
+	Target *Target `json:"target,omitempty"`
 	// Container is the container the event's process runs in, if any. It is unset for
 	// processes on the host itself.
 	Container   *Container     `json:"container,omitempty"`
@@ -343,4 +346,21 @@ type Package struct {
 	InstallPath  string     `json:"install_path,omitempty"`
 	Installed    *time.Time `json:"installed,omitempty"`
 	Type         string     `json:"type,omitempty"` // deb, rpm, msi, winget, brew
+}
+
+// Target describes the process acted on in a cross-process event (event.action
+// ActionRemoteThread, ActionProcessAccess or ActionProcessTampering). Process.EntityID is
+// set when the agent knows the target process, so the event links two process nodes.
+type Target struct {
+	Process *Process `json:"process,omitempty"`
+	// GrantedAccess is the access mask granted on the target process, in hex ("0x1fffff").
+	GrantedAccess string `json:"granted_access,omitempty"`
+	// CallTrace is the stack of modules that made the call (Sysmon's CallTrace).
+	CallTrace string `json:"call_trace,omitempty"`
+	// StartAddress, StartModule and StartFunction describe a remote thread's entry point.
+	StartAddress  string `json:"start_address,omitempty"`
+	StartModule   string `json:"start_module,omitempty"`
+	StartFunction string `json:"start_function,omitempty"`
+	// Tampering is the kind of process tampering seen ("Image is replaced", ...).
+	Tampering string `json:"tampering,omitempty"`
 }
