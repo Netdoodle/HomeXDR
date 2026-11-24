@@ -36,8 +36,6 @@ resolvers) were reviewed in November 2026 and the quick fixes are in. Found and 
   hide a write to a system path. Limit per tree and never drop system paths.
 - **Network paths on Windows.** File details for a program started from a network share
   are read on the event reader, which a slow share can stall.
-- **Backup import.** Check each archive against the hash recorded when it was made, reject
-  events outside the day being imported, and cap the decompressed size.
 - **Links in tailed and integrity-monitored paths**, which only matters when an
   administrator points them at a folder a user can write.
 
@@ -171,7 +169,10 @@ agents at the MagicDNS name; the spool covers the gaps.
   SHA-256 before running it; sign-in and two-factor limits hold under parallel requests,
   count IPv6 per /64 and cap wrong codes per account with an alert; syslog messages no
   longer rename named network devices; expired agent certificates renew only within 180
-  days of expiry.
+  days of expiry; backup import checks each archive against the hash and size recorded
+  when it was made (or its manifest, on a server without the record), rejects events
+  outside the day and caps the decompressed size, and inserts nothing unless every event
+  passes ([retention.md](retention.md)).
 - Security fixes: getting files from hosts is admin only, quarantine refuses
   operating-system files, AI keys from the environment only go to approved endpoints,
   enrollment tokens expire and are single-use by default, and CI checks Go dependencies

@@ -3,6 +3,8 @@ package backup
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/Netdoodle/homexdr/server/internal/events"
 	"github.com/Netdoodle/homexdr/server/internal/store"
@@ -165,12 +169,14 @@ func TestArchiveAndImport(t *testing.T) {
 	fs := &fakeStore{days: map[string][]string{}, modules: map[string]string{}}
 	for d := 7; d <= 9; d++ {
 		day := fmt.Sprintf("2026-11-%02d", d)
+		start := time.Date(2026, 11, d, 0, 0, 0, 0, time.UTC)
 		for i := 0; i < 50; i++ {
 			mod := "eventlog"
 			if i%10 == 0 {
 				mod = "netflow"
 			}
-			b, _ := json.Marshal(event.Event{ID: fmt.Sprintf("%s-%d", day, i), Message: strings.Repeat("x", 100), Event: event.Meta{Module: mod}})
+			b, _ := json.Marshal(event.Event{ID: fmt.Sprintf("%s-%d", day, i), Timestamp: start.Add(time.Duration(i) * 29 * time.Minute),
+				Message: strings.Repeat("x", 100), Event: event.Meta{Module: mod}})
 			fs.days[day] = append(fs.days[day], string(b))
 			fs.modules[string(b)] = mod
 		}
@@ -321,5 +327,236 @@ func TestSigV4AWSExample(t *testing.T) {
 	want := "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=date;host;x-amz-content-sha256;x-amz-date;x-amz-storage-class, Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd"
 	if got != want {
 		t.Fatalf("authorization\n got %s\nwant %s", got, want)
+	}
+}
+
+const importDay7 = "2026-11-07"
+
+var importKey7 = "homelab/events/2026/11/07/homexdr-events-20261107.ndjson.zst"
+
+func testEvent(id string, ts time.Time) string {
+	b, _ := json.Marshal(event.Event{ID: id, Timestamp: ts, Message: "m", Event: event.Meta{Module: "eventlog"}})
+	return string(b)
+}
+
+// importSetup archives 2026-11-07 and 2026-11-08 (45 events each) into a fake bucket and
+// drops 2026-11-07 from the store, so it can be imported.
+func importSetup(t *testing.T) (*fakeS3, *fakeStore, *Service) {
+	t.Helper()
+	f, srv := newFakeS3(t)
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	fs := &fakeStore{days: map[string][]string{}, modules: map[string]string{}}
+	for d := 7; d <= 9; d++ {
+		start := time.Date(2026, 11, d, 0, 0, 0, 0, time.UTC)
+		for i := 0; i < 45; i++ {
+			day := start.Format("2006-01-02")
+			fs.days[day] = append(fs.days[day], testEvent(fmt.Sprintf("%s-%d", day, i), start.Add(time.Duration(i)*30*time.Minute)))
+		}
+	}
+	s := New(Deps{State: st, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Usage: fs.usage, Export: fs.export, Insert: fs.insert})
+	s.now = func() time.Time { return time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC) }
+	ctx := context.Background()
+	in := Input{Settings: Settings{Enabled: true, Endpoint: srv.URL, Bucket: "bkt", Prefix: "homelab", AccessKeyID: "AKID", Secret: "shh",
+		PathStyle: true, Backfill: true}}
+	if _, err := s.Save(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	s.runOnce(ctx, true)
+	if v := s.View(ctx); v.ArchivedDays != 2 || v.LastError != "" {
+		t.Fatalf("after run: %+v", v)
+	}
+	fs.mu.Lock()
+	delete(fs.days, importDay7)
+	fs.mu.Unlock()
+	return f, fs, s
+}
+
+// runImport imports a day, waits for it and returns the import error ("" on success).
+func runImport(t *testing.T, s *Service, day string) string {
+	t.Helper()
+	s.mu.Lock()
+	s.st.LastError = ""
+	s.mu.Unlock()
+	if err := s.Import(context.Background(), day); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		s.mu.Lock()
+		busy, msg := s.busy, s.st.LastError
+		s.mu.Unlock()
+		if !busy {
+			return msg
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("import did not finish")
+		}
+	}
+}
+
+func (f *fakeS3) edit(key string, fn func([]byte) []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if fn == nil {
+		delete(f.objs, key)
+		return
+	}
+	f.objs[key] = fn(append([]byte(nil), f.objs[key]...))
+}
+
+func (s *fakeStore) inserted() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.got)
+}
+
+// putArchive replaces the 2026-11-07 archive with lines and records its true hash, size
+// and event count locally, as archiveDay would have.
+func putArchive(t *testing.T, f *fakeS3, s *Service, lines []string) {
+	t.Helper()
+	var buf bytes.Buffer
+	zw, err := zstd.NewWriter(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range lines {
+		io.WriteString(zw, l+"\n")
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.edit(importKey7, func([]byte) []byte { return buf.Bytes() })
+	sum := sha256.Sum256(buf.Bytes())
+	s.mu.Lock()
+	s.st.Days[importDay7] = DayRecord{Day: importDay7, Key: importKey7, Events: int64(len(lines)), Bytes: int64(buf.Len()), SHA256: hex.EncodeToString(sum[:])}
+	s.mu.Unlock()
+}
+
+func TestImportRejectsTamperedArchive(t *testing.T) {
+	for name, tamper := range map[string]func([]byte) []byte{
+		"flipped byte": func(b []byte) []byte { b[len(b)/2] ^= 0x01; return b },
+		"appended":     func(b []byte) []byte { return append(b, 0) },
+		"truncated":    func(b []byte) []byte { return b[:len(b)-1] },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, fs, s := importSetup(t)
+			f.edit(importKey7, tamper)
+			msg := runImport(t, s, importDay7)
+			if !strings.Contains(msg, "tampered") || fs.inserted() != 0 {
+				t.Fatalf("error %q, %d inserted", msg, fs.inserted())
+			}
+		})
+	}
+}
+
+func TestImportRejectsBadEvents(t *testing.T) {
+	day := time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC)
+	// More than one insert batch of good events, so a late bad line would have left a
+	// partial import behind.
+	good := make([]string, 0, 2*importBatch+10)
+	for i := 0; i < cap(good); i++ {
+		good = append(good, testEvent(fmt.Sprint("ok-", i), day.Add(time.Duration(i)*time.Second)))
+	}
+	with := func(last ...string) []string { return append(append([]string(nil), good...), last...) }
+	for _, tc := range []struct {
+		name    string
+		lines   []string
+		events  int64 // recorded count; 0 keeps the true count
+		wantErr string
+	}{
+		{"day boundaries", with(testEvent("first", day), testEvent("last", day.Add(24*time.Hour-time.Nanosecond))), 0, ""},
+		{"next midnight", with(testEvent("late", day.Add(24*time.Hour))), 0, "outside 2026-11-07"},
+		{"day before", with(testEvent("early", day.Add(-time.Millisecond))), 0, "outside 2026-11-07"},
+		{"no timestamp", with(`{"id":"none"}`), 0, "outside 2026-11-07"},
+		{"other zone", with(`{"id":"tz","@timestamp":"2026-11-07T23:30:00-02:00"}`), 0, "outside 2026-11-07"},
+		{"bad json", with(`{"id":`), 0, "line 4011"},
+		{"more than recorded", good, int64(len(good) - 1), "more than the 4009 events recorded"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, fs, s := importSetup(t)
+			putArchive(t, f, s, tc.lines)
+			if tc.events != 0 {
+				s.mu.Lock()
+				r := s.st.Days[importDay7]
+				r.Events = tc.events
+				s.st.Days[importDay7] = r
+				s.mu.Unlock()
+			}
+			msg := runImport(t, s, importDay7)
+			if tc.wantErr == "" {
+				if msg != "" || fs.inserted() != len(tc.lines) {
+					t.Fatalf("error %q, %d of %d inserted", msg, fs.inserted(), len(tc.lines))
+				}
+				return
+			}
+			if !strings.Contains(msg, tc.wantErr) || fs.inserted() != 0 {
+				t.Fatalf("error %q (want %q), %d inserted", msg, tc.wantErr, fs.inserted())
+			}
+		})
+	}
+}
+
+func TestImportSizeCaps(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		v    *int64
+		max  int64
+	}{{"decompressed", &maxImportDecompressed, 1000}, {"archive", &maxImportArchive, 50}} {
+		v := tc.v
+		t.Run(tc.name, func(t *testing.T) {
+			_, fs, s := importSetup(t)
+			old := *v
+			*v = tc.max
+			t.Cleanup(func() { *v = old })
+			msg := runImport(t, s, importDay7)
+			if !strings.Contains(msg, "import limit") || fs.inserted() != 0 {
+				t.Fatalf("error %q, %d inserted", msg, fs.inserted())
+			}
+		})
+	}
+}
+
+func TestImportFallsBackToManifest(t *testing.T) {
+	f, fs, s := importSetup(t)
+	s.mu.Lock()
+	delete(s.st.Days, importDay7) // a reinstalled server
+	s.mu.Unlock()
+	if msg := runImport(t, s, importDay7); msg != "" || fs.inserted() != 45 {
+		t.Fatalf("error %q, %d inserted", msg, fs.inserted())
+	}
+	// The manifest's hash is still checked.
+	fs.mu.Lock()
+	fs.got = nil
+	fs.mu.Unlock()
+	f.edit(importKey7, func(b []byte) []byte { b[len(b)/2] ^= 0x01; return b })
+	if msg := runImport(t, s, importDay7); !strings.Contains(msg, "does not match the manifest") || fs.inserted() != 0 {
+		t.Fatalf("error %q, %d inserted", msg, fs.inserted())
+	}
+}
+
+func TestImportRefusedWithoutRecordOrManifest(t *testing.T) {
+	for name, manifest := range map[string]func([]byte) []byte{
+		"missing": nil,
+		"invalid": func([]byte) []byte {
+			return []byte(`{"format":"homexdr-events-v1","day":"2026-11-07","sha256":"nothex"}`)
+		},
+		"wrong day": func(b []byte) []byte {
+			return bytes.Replace(b, []byte(`"day": "2026-11-07"`), []byte(`"day": "2026-11-08"`), 1)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, fs, s := importSetup(t)
+			s.mu.Lock()
+			delete(s.st.Days, importDay7)
+			s.mu.Unlock()
+			f.edit(importKey7+".manifest.json", manifest)
+			msg := runImport(t, s, importDay7)
+			if !strings.Contains(msg, "cannot be verified") || fs.inserted() != 0 {
+				t.Fatalf("error %q, %d inserted", msg, fs.inserted())
+			}
+		})
 	}
 }

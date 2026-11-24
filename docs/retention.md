@@ -93,6 +93,15 @@ process trees and investigations see them. Import rules:
 - A day the store still has events for can't be imported (no duplicates).
 - A day older than the time limit is refused, because it would be purged again.
 - Imported days count against the size cap.
+- The archive must match the SHA-256 and size this server recorded when it uploaded it.
+  A server without that record (a reinstall, say) checks against the day's manifest
+  instead; with neither, the import is refused. The manifest sits in the same bucket, so
+  it only catches corruption, not someone who can rewrite both files.
+- Every event must fall within the day being imported, and an archive may not hold more
+  events than recorded or decompress to more than 16 GiB. The whole archive is checked
+  before anything is inserted, so a bad archive adds nothing.
+- The archive is downloaded to the system temporary folder first, so that folder needs
+  room for it.
 
 The archive format is plain NDJSON, so it can also be read without HomeXDR:
 `zstd -dc homexdr-events-20261108.ndjson.zst | jq`.

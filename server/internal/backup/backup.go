@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -544,25 +545,206 @@ func (s *Service) Import(ctx context.Context, day string) error {
 	return nil
 }
 
-func (s *Service) importDay(ctx context.Context, set Settings, day time.Time) (int64, error) {
-	r, err := set.client().Get(ctx, set.dayKey(day))
+// Import limits; variables so tests can lower them.
+var (
+	// maxImportArchive caps the compressed archive, whatever its record or manifest says.
+	maxImportArchive int64 = 4 << 30
+	// maxImportDecompressed caps the NDJSON one archive decompresses to.
+	maxImportDecompressed int64 = 16 << 30
+)
+
+const (
+	// importMaxWindow bounds the zstd window (and so the decoder's memory); archiveDay
+	// writes 8 MiB windows.
+	importMaxWindow = 32 << 20
+	importMaxLine   = 16 << 20
+	maxManifest     = 64 << 10
+	importBatch     = 2000
+)
+
+// archiveCheck is what a downloaded archive must match before anything is imported.
+type archiveCheck struct {
+	SHA256 string
+	Bytes  int64  // compressed
+	Events int64  // -1 when unknown
+	Source string // where the values came from, for error messages
+}
+
+var sha256Re = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// expectedArchive returns the hash, size and event count the day's archive must have.
+// The local state record is trusted: this server wrote it when it uploaded the archive.
+// Without one (a reinstalled server, say) it falls back to the manifest next to the
+// archive. That is weaker: the manifest lives in the same bucket, so whoever can replace
+// the archive can usually replace the manifest too; it still catches corruption and
+// tampering with the archive alone. With neither, the import is refused.
+func (s *Service) expectedArchive(ctx context.Context, set Settings, day time.Time) (archiveCheck, error) {
+	label := day.Format("2006-01-02")
+	s.mu.Lock()
+	rec, ok := s.st.Days[label]
+	s.mu.Unlock()
+	if ok && sha256Re.MatchString(strings.ToLower(rec.SHA256)) && rec.Bytes >= 0 {
+		return archiveCheck{SHA256: strings.ToLower(rec.SHA256), Bytes: rec.Bytes, Events: rec.Events, Source: "this server's backup record"}, nil
+	}
+	r, err := set.client().Get(ctx, set.dayKey(day)+".manifest.json")
+	if err != nil {
+		return archiveCheck{}, fmt.Errorf("this server has no record of the archive and its manifest could not be read (%v); refusing to import an archive that cannot be verified", err)
+	}
+	defer r.Close()
+	raw, err := io.ReadAll(io.LimitReader(r, maxManifest+1))
+	if err != nil {
+		return archiveCheck{}, fmt.Errorf("read the manifest: %w", err)
+	}
+	var m struct {
+		Format string `json:"format"`
+		Day    string `json:"day"`
+		Events *int64 `json:"events"`
+		Bytes  int64  `json:"bytes"`
+		SHA256 string `json:"sha256"`
+	}
+	if len(raw) > maxManifest || json.Unmarshal(raw, &m) != nil || m.Format != Format || m.Day != label ||
+		!sha256Re.MatchString(strings.ToLower(m.SHA256)) || m.Bytes < 0 {
+		return archiveCheck{}, errors.New("this server has no record of the archive and its manifest is not a valid " + Format + " manifest for " + label + "; refusing to import an archive that cannot be verified")
+	}
+	c := archiveCheck{SHA256: strings.ToLower(m.SHA256), Bytes: m.Bytes, Events: -1, Source: "the manifest in the bucket"}
+	if m.Events != nil && *m.Events >= 0 {
+		c.Events = *m.Events
+	}
+	return c, nil
+}
+
+// download copies the archive to a temp file, hashing it on the way, and checks its size
+// and hash against want. It never reads more than want.Bytes+1 bytes. The caller closes
+// and removes the file.
+func download(ctx context.Context, c *S3, key string, want archiveCheck) (*os.File, error) {
+	if want.Bytes > maxImportArchive {
+		return nil, fmt.Errorf("the archive is %d bytes according to %s, over the %d byte import limit", want.Bytes, want.Source, maxImportArchive)
+	}
+	r, err := c.Get(ctx, key)
 	if err != nil {
 		var se *S3Error
 		if errors.As(err, &se) && se.Code == "InvalidObjectState" {
-			return 0, fmt.Errorf("the archive is in a cold storage class that must be restored in your provider's console before it can be read: %w", err)
+			return nil, fmt.Errorf("the archive is in a cold storage class that must be restored in your provider's console before it can be read: %w", err)
 		}
-		return 0, err
+		return nil, err
 	}
 	defer r.Close()
-	zr, err := zstd.NewReader(r)
+	f, err := os.CreateTemp("", "homexdr-import-*.ndjson.zst")
+	if err != nil {
+		return nil, fmt.Errorf("create a temporary file: %w", err)
+	}
+	fail := func(err error) (*os.File, error) {
+		f.Close()
+		os.Remove(f.Name())
+		return nil, err
+	}
+	h := sha256.New()
+	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(r, want.Bytes+1))
+	if err != nil {
+		return fail(fmt.Errorf("download the archive: %w", err))
+	}
+	if n != want.Bytes {
+		return fail(fmt.Errorf("the archive is not the %d bytes recorded in %s (got %d); it may have been tampered with or truncated", want.Bytes, want.Source, n))
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); got != want.SHA256 {
+		return fail(fmt.Errorf("the archive's SHA-256 (%s) does not match %s (%s); it may have been tampered with or corrupted", got, want.Source, want.SHA256))
+	}
+	return f, nil
+}
+
+// capReader fails once more than max bytes have been read through it.
+type capReader struct {
+	r      io.Reader
+	n, max int64
+}
+
+func (c *capReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	if c.n > c.max {
+		return n, fmt.Errorf("the archive decompresses to more than the %d byte import limit", c.max)
+	}
+	return n, err
+}
+
+// readArchive decompresses the archive in f and calls fn (if not nil) for each event in
+// order. It fails on the first line that is not event JSON or whose event lies outside
+// the UTC day, once there are more than maxEvents events (when maxEvents >= 0), and past
+// maxImportDecompressed bytes of NDJSON.
+func readArchive(ctx context.Context, f *os.File, day time.Time, maxEvents int64, fn func(*event.Event) error) error {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	zr, err := zstd.NewReader(f, zstd.WithDecoderMaxWindow(importMaxWindow), zstd.WithDecoderMaxMemory(2*importMaxWindow))
+	if err != nil {
+		return err
+	}
+	defer zr.Close()
+	sc := bufio.NewScanner(&capReader{r: zr, max: maxImportDecompressed})
+	sc.Buffer(make([]byte, 1<<20), importMaxLine)
+	from, to := day, day.AddDate(0, 0, 1)
+	var line int64
+	for sc.Scan() {
+		line++
+		if line%importBatch == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		var e event.Event
+		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
+			return fmt.Errorf("line %d: %w", line, err)
+		}
+		if e.Timestamp.Before(from) || !e.Timestamp.Before(to) {
+			return fmt.Errorf("line %d: the event time %s is outside %s (UTC)", line, e.Timestamp.UTC().Format(time.RFC3339Nano), from.Format("2006-01-02"))
+		}
+		if maxEvents >= 0 && line > maxEvents {
+			return fmt.Errorf("the archive holds more than the %d events recorded", maxEvents)
+		}
+		if fn != nil {
+			if err := fn(&e); err != nil {
+				return err
+			}
+		}
+	}
+	if err := sc.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return fmt.Errorf("line %d is longer than %d MiB", line+1, importMaxLine>>20)
+		}
+		return fmt.Errorf("read the archive: %w", err)
+	}
+	return nil
+}
+
+// importDay verifies the day's archive against its expected hash and size, checks every
+// event in it, and only then inserts them, so a bad archive leaves nothing behind.
+func (s *Service) importDay(ctx context.Context, set Settings, day time.Time) (int64, error) {
+	label := day.Format("2006-01-02")
+	activity := func(a string) {
+		s.mu.Lock()
+		s.activity = "importing " + label + ": " + a
+		s.mu.Unlock()
+	}
+	want, err := s.expectedArchive(ctx, set, day)
 	if err != nil {
 		return 0, err
 	}
-	defer zr.Close()
-	sc := bufio.NewScanner(zr)
-	sc.Buffer(make([]byte, 1<<20), 16<<20)
+	activity("downloading")
+	f, err := download(ctx, set.client(), set.dayKey(day), want)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		f.Close()
+		os.Remove(f.Name())
+	}()
+	// First pass: inserts are batched, so check the whole archive (a local file now)
+	// before inserting anything.
+	activity("checking")
+	if err := readArchive(ctx, f, day, want.Events, nil); err != nil {
+		return 0, err
+	}
+	// Second pass: insert the file just hashed and checked.
 	var n int64
-	batch := make([]*event.Event, 0, 2000)
+	batch := make([]*event.Event, 0, importBatch)
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
@@ -572,24 +754,17 @@ func (s *Service) importDay(ctx context.Context, set Settings, day time.Time) (i
 		}
 		n += int64(len(batch))
 		batch = batch[:0]
-		s.mu.Lock()
-		s.activity = fmt.Sprintf("importing %s: %d events", day.Format("2006-01-02"), n)
-		s.mu.Unlock()
+		activity(fmt.Sprintf("%d events", n))
 		return nil
 	}
-	for sc.Scan() {
-		var e event.Event
-		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
-			return n, fmt.Errorf("line %d: %w", n+int64(len(batch))+1, err)
-		}
-		batch = append(batch, &e)
+	err = readArchive(ctx, f, day, want.Events, func(e *event.Event) error {
+		batch = append(batch, e)
 		if len(batch) == cap(batch) {
-			if err := flush(); err != nil {
-				return n, err
-			}
+			return flush()
 		}
-	}
-	if err := sc.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return n, err
 	}
 	return n, flush()
