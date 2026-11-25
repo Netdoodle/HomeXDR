@@ -1,9 +1,10 @@
 // Data health: which data sources are arriving, and how far to trust a quiet console.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router'
 import { errorMessage } from '../api/client'
-import { getFeeds, getRefused, healthKeys, patchFeed, type FeedPatch, type FeedReport, type FeedView } from '../api/health'
+import { getFeeds, getRefused, healthKeys, patchFeed, putOfflineLabels, type FeedPatch, type FeedReport, type FeedView, type OfflineLabelRule } from '../api/health'
 import { useCan } from '../components/Auth'
 import { PageHeader } from '../components/Layout'
 import { LinkTabs, RelTime, Toggle, type TabDef } from '../components/Misc'
@@ -48,8 +49,65 @@ function SourcesTab() {
       <section className="panel">
         <QueryView query={q}>{(d) => <SourcesTable report={d} />}</QueryView>
       </section>
+      {q.data ? <OfflineLabelsSection rules={q.data.offline_labels ?? []} /> : null}
       <RefusedSection />
     </div>
+  )
+}
+
+/** Fixed offline allowances by host label, in place of the learned pattern. */
+function OfflineLabelsSection({ rules }: { rules: OfflineLabelRule[] }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const canChange = useCan('admin')
+  const [draft, setDraft] = useState<OfflineLabelRule[]>(rules)
+  const saved = JSON.stringify(rules)
+  useEffect(() => setDraft(JSON.parse(saved) as OfflineLabelRule[]), [saved])
+  const save = useMutation({
+    mutationFn: () => putOfflineLabels(draft),
+    onSuccess: (r) => {
+      qc.setQueryData(healthKeys.feeds, r)
+      toast.success('Offline alert times saved')
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+  const set = (i: number, p: Partial<OfflineLabelRule>) => setDraft(draft.map((r, j) => (j === i ? { ...r, ...p } : r)))
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <h2>Offline alerts by host label</h2>
+        <span className="hint">replaces the learned pattern for whole hosts</span>
+      </div>
+      <div className="panel-body stack">
+        <p className="small muted" style={{ margin: 0 }}>
+          A host with one of these labels raises its “stopped sending data” alert after exactly this long offline, even before HomeXDR has learned its pattern. If a host has several of these labels, the longest time wins.
+          Individual data sources on the host still use their learned pattern.
+        </p>
+        {draft.length === 0 ? <span className="muted small">No label rules. Every host uses its learned pattern.</span> : null}
+        {draft.map((r, i) => (
+          <div key={i} className="row" style={{ gap: 8, alignItems: 'center' }}>
+            <input className="input" aria-label="Host label" placeholder="label" value={r.label} disabled={!canChange} onChange={(e) => set(i, { label: e.target.value })} />
+            <input className="input" aria-label={`Hours offline before ${r.label || 'this label'} alerts`} type="number" min={1} max={8760} style={{ width: 100 }} value={r.hours} disabled={!canChange} onChange={(e) => set(i, { hours: Number(e.target.value) })} />
+            <span className="small muted">hours{r.hours >= 48 && r.hours % 24 === 0 ? ` (${r.hours / 24} days)` : ''}</span>
+            {canChange ? (
+              <button className="btn" type="button" onClick={() => setDraft(draft.filter((_, j) => j !== i))}>
+                Remove
+              </button>
+            ) : null}
+          </div>
+        ))}
+        {canChange ? (
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn" type="button" onClick={() => setDraft([...draft, { label: '', hours: 24 }])}>
+              Add label
+            </button>
+            <button className="btn primary" type="button" disabled={save.isPending || JSON.stringify(draft) === saved} onClick={() => save.mutate()}>
+              Save
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </section>
   )
 }
 

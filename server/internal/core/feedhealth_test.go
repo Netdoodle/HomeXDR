@@ -544,3 +544,58 @@ func BenchmarkObserve(b *testing.B) {
 		f.observe(host, evs)
 	}
 }
+
+func TestOfflineLabelRules(t *testing.T) {
+	r := newFeedRig(t)
+	ctx := context.Background()
+	if _, err := r.c.State.SetLabels(ctx, r.host.ID, []string{"Server"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.f.SetOfflineLabels(ctx, []OfflineLabelRule{{Label: " server ", Hours: 24}, {Label: "dts", Hours: 168}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.f.SetOfflineLabels(ctx, []OfflineLabelRule{{Label: "x", Hours: 0}}); err == nil {
+		t.Fatal("0 hours accepted")
+	}
+	// A busy host whose learned allowance would be 15 minutes.
+	r.run(26*time.Hour, time.Minute, "m", "a")
+	if v := r.status("", ""); v.AllowanceSec != 24*3600 || v.Label != "server" || !v.CanAlert {
+		t.Fatalf("host row %+v", v)
+	}
+	offline := func(d time.Duration) {
+		for i := time.Duration(0); i < d; i += time.Minute {
+			r.now = r.now.Add(time.Minute)
+			r.f.Tick(ctx)
+		}
+	}
+	offline(23 * time.Hour)
+	if n := r.openAlerts(); n != 0 {
+		t.Fatalf("alert before 24 hours: %+v", r.alerts())
+	}
+	offline(90 * time.Minute)
+	if n := r.openAlerts(); n != 1 {
+		t.Fatalf("%d alerts after 24 hours", n)
+	}
+	// Moving the host to a 7-day label resolves the alert, since it has not been away that long.
+	if _, err := r.c.State.SetLabels(ctx, r.host.ID, []string{"dts"}); err != nil {
+		t.Fatal(err)
+	}
+	offline(time.Minute)
+	if n := r.openAlerts(); n != 0 {
+		t.Fatalf("%d alerts open after relabel", n)
+	}
+	offline(5 * 24 * time.Hour) // about 6 days away in all
+	if n := r.openAlerts(); n != 0 {
+		t.Fatalf("dts host alerted before 7 days")
+	}
+	offline(24 * time.Hour)
+	if n := r.openAlerts(); n != 1 {
+		t.Fatalf("%d alerts after 7 days", n)
+	}
+	// A restart keeps the rules.
+	r.f.Flush(ctx)
+	r.restart()
+	if v := r.status("", ""); v.AllowanceSec != 168*3600 {
+		t.Fatalf("after restart %+v", v)
+	}
+}

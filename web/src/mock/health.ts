@@ -1,7 +1,7 @@
 // Mock data health: the owner's real shape of problem (a Slackware host with no software
 // list, a Suricata feed that went quiet) with made-up names and numbers.
 
-import type { FeedPatch, FeedReport, FeedView } from '../api/health'
+import type { FeedPatch, FeedReport, FeedView, OfflineLabelRule } from '../api/health'
 import type { User, Role } from '../api/types'
 
 export interface MockCtx {
@@ -33,12 +33,23 @@ const feeds: FeedView[] = [
   { ...base, host_id: 'h-fw', hostname: 'opnsense', module: 'syslog', dataset: 'syslog.cron', status: 'muted', explanation: 'Muted: this source never raises an alert.', muted: true, can_alert: false, last_seen: ago(70), usual_gap_sec: HOUR, allowance_sec: 3 * HOUR, silent_sec: 70 * 60 },
 ]
 
+let offlineLabels: OfflineLabelRule[] = [{ label: 'server', hours: 24 }]
+
 function report(): FeedReport {
-  return { sources: feeds, bootstrapped: true }
+  return { sources: feeds, bootstrapped: true, offline_labels: offlineLabels }
 }
 
 export function registerHealthMocks(route: MockRoute) {
   route('GET', '/api/health/feeds', () => report())
+  route(
+    'PUT',
+    '/api/health/offline-labels',
+    ({ body }) => {
+      offlineLabels = (body as { rules: OfflineLabelRule[] }).rules.map((r) => ({ label: r.label.trim().toLowerCase(), hours: r.hours }))
+      return report()
+    },
+    { role: 'admin' },
+  )
   route('GET', '/api/health/external', () => ({ enabled: true, this_hour: 3, previous_hour: 12, last_24h: 187, top_sources: [{ ip: '198.51.100.23', count: 90 }, { ip: '203.0.113.77', count: 41 }] }))
   route(
     'PATCH',

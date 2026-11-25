@@ -22,6 +22,14 @@ export interface FeedView {
   muted: boolean
   expected: boolean
   can_alert: boolean
+  /** the host label whose rule sets this host's offline allowance */
+  label?: string
+}
+
+/** A fixed offline allowance for every host with this label. */
+export interface OfflineLabelRule {
+  label: string
+  hours: number
 }
 
 export interface FeedReport {
@@ -29,6 +37,7 @@ export interface FeedReport {
   bootstrapped: boolean
   grace_until?: string
   note?: string
+  offline_labels: OfflineLabelRule[]
 }
 
 export interface FeedPatch {
@@ -60,6 +69,7 @@ export const getRefused = () => http.get<RefusedReport>('/api/health/external')
 
 export const getFeeds = () => http.get<FeedReport>('/api/health/feeds')
 export const patchFeed = (p: FeedPatch) => http.patch<FeedReport>('/api/health/feeds', p)
+export const putOfflineLabels = (rules: OfflineLabelRule[]) => http.put<FeedReport>('/api/health/offline-labels', { rules })
 
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip'
 

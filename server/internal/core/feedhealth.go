@@ -10,8 +10,10 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,6 +42,8 @@ const (
 	feedBootstrapDays = 30
 	feedBootstrapKey  = "feed_health_bootstrapped"
 	feedLastTickKey   = "feed_health_last_tick"
+	feedLabelRulesKey = "feed_health_offline_labels"
+	maxLabelRuleHours = 365 * 24
 	feedNoteAuthor    = "HomeXDR"
 )
 
@@ -91,6 +95,15 @@ type FeedHealth struct {
 	lastTick   time.Time
 	bootDone   bool
 	full       bool // feedMaxSources reached
+	// labels are fixed offline allowances for hosts by label, replacing the learned one.
+	labels []OfflineLabelRule
+}
+
+// OfflineLabelRule gives every host with this label a fixed offline allowance: its
+// "stopped sending data" alert is raised after exactly this long, whatever its pattern.
+type OfflineLabelRule struct {
+	Label string `json:"label"`
+	Hours int    `json:"hours"`
 }
 
 func newFeedHealth(c *Core, now func() time.Time) *FeedHealth {
@@ -110,9 +123,14 @@ func (f *FeedHealth) load(ctx context.Context) error {
 	_ = f.c.State.GetKV(ctx, feedLastTickKey, &last)
 	var done bool
 	_ = f.c.State.GetKV(ctx, feedBootstrapKey, &done)
+	var labels []OfflineLabelRule
+	if err := f.c.State.GetKV(ctx, feedLabelRulesKey, &labels); err != nil && !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.bootDone = done
+	f.labels = labels
 	f.graceUntil = now.Add(feedGrace)
 	f.lastTick = now
 	for i := range list {
@@ -275,6 +293,33 @@ func hostOffline(h *store.Host, now time.Time) bool {
 	return h.LastSeen == nil || now.Sub(*h.LastSeen) >= window
 }
 
+// hostLimit is how long a host may be offline before it alerts. A host carrying a label
+// with a rule gets that rule's allowance (the longest, if several match) instead of the
+// learned one, and may alert without a learned pattern. Call with f.mu held.
+func (f *FeedHealth) hostLimit(st *feedState, h *store.Host, now time.Time) (time.Duration, string) {
+	var best time.Duration
+	var label string
+	for _, r := range f.labels {
+		for _, l := range h.Labels {
+			if strings.EqualFold(l, r.Label) && time.Duration(r.Hours)*time.Hour > best {
+				best, label = time.Duration(r.Hours)*time.Hour, r.Label
+			}
+		}
+	}
+	if label == "" {
+		return st.limit(now), ""
+	}
+	return best, label
+}
+
+// hostCanAlert is canAlert for the row about a host as a whole.
+func (f *FeedHealth) hostCanAlert(st *feedState, label string, now time.Time) bool {
+	if label != "" {
+		return !st.Muted
+	}
+	return st.canAlert(now)
+}
+
 type feedAction struct {
 	key   feedKey
 	raise *Finding
@@ -372,12 +417,16 @@ func (f *FeedHealth) evaluate(hosts []*store.Host, now time.Time, elapsed time.D
 		}
 		off := hostOffline(h, now)
 		offline[h.ID] = off
+		lim, label := f.hostLimit(st, h, now)
 		switch {
 		case !off && !st.SilentSince.IsZero():
 			resolve(k, st, fmt.Sprintf("%s is sending data again, after %s. HomeXDR resolved this alert itself.", h.Hostname, plainDuration(now.Sub(st.SilentSince))))
-		case off && st.SilentSince.IsZero() && !inGrace && st.canAlert(now) && now.Sub(st.Clock) > st.limit(now):
+		case off && !st.SilentSince.IsZero() && label != "" && now.Sub(st.Clock) <= lim:
+			// A label rule now allows longer than the host has been away.
+			resolve(k, st, fmt.Sprintf("Hosts labelled %s may now be offline for %s, and %s has been away for %s. HomeXDR resolved this alert itself.", label, plainDuration(lim), h.Hostname, plainDuration(now.Sub(st.Clock))))
+		case off && st.SilentSince.IsZero() && !inGrace && f.hostCanAlert(st, label, now) && now.Sub(st.Clock) > lim:
 			st.SilentSince, st.dirty = now, true
-			out = append(out, feedAction{key: k, raise: hostFinding(h, st, now)})
+			out = append(out, feedAction{key: k, raise: hostFinding(h, st, lim, label)})
 		}
 	}
 
@@ -446,16 +495,20 @@ func feedFinding(h *store.Host, k feedKey, st *feedState, now time.Time) *Findin
 	}
 }
 
-func hostFinding(h *store.Host, st *feedState, now time.Time) *Finding {
+func hostFinding(h *store.Host, st *feedState, lim time.Duration, label string) *Finding {
 	entity := feedEntity(feedKey{host: h.ID})
+	why := "longer than its usual pattern allows"
+	if label != "" {
+		why = "the time allowed for hosts labelled " + label
+	}
 	return &Finding{
 		RuleID: RuleFeedSilent, Severity: store.SevMedium, Tags: []string{"homexdr", "health"},
 		Title:       h.Hostname + " stopped sending data",
 		Description: "A host that used to send data has gone quiet, so nothing on it is being watched.",
-		Message: fmt.Sprintf("%s has not been heard from for over %s, longer than its usual pattern allows. Last seen %s.",
-			h.Hostname, plainDuration(st.limit(now)), st.LastSeen.UTC().Format(time.RFC1123)),
+		Message: fmt.Sprintf("%s has not been heard from for over %s, %s. Last seen %s.",
+			h.Hostname, plainDuration(lim), why, st.LastSeen.UTC().Format(time.RFC1123)),
 		Entity: entity, HostID: h.ID, Hostname: h.Hostname, Dataset: "homexdr.health",
-		Data: map[string]any{"entity": entity, "allowance_sec": int64(st.limit(now) / time.Second)},
+		Data: map[string]any{"entity": entity, "allowance_sec": int64(lim / time.Second), "label": label},
 	}
 }
 
@@ -631,6 +684,8 @@ type FeedView struct {
 	Muted        bool       `json:"muted"`
 	Expected     bool       `json:"expected"`
 	CanAlert     bool       `json:"can_alert"`
+	// Label is the host label whose rule sets this host's offline allowance, if any.
+	Label string `json:"label,omitempty"`
 }
 
 // FeedReport is the Data health page.
@@ -638,6 +693,8 @@ type FeedReport struct {
 	Sources      []FeedView `json:"sources"`
 	Bootstrapped bool       `json:"bootstrapped"`
 	GraceUntil   *time.Time `json:"grace_until,omitempty"`
+	// OfflineLabels are the fixed offline allowances by host label.
+	OfflineLabels []OfflineLabelRule `json:"offline_labels"`
 	// Note says when a limit means some sources are not tracked.
 	Note string `json:"note,omitempty"`
 }
@@ -649,13 +706,18 @@ func timePtr(t time.Time) *time.Time {
 	return &t
 }
 
-func viewOf(st *feedState, h *store.Host, off bool, now time.Time) FeedView {
+func (f *FeedHealth) viewOf(st *feedState, h *store.Host, off bool, now time.Time) FeedView {
+	lim, canAlert, label := st.limit(now), st.canAlert(now), ""
+	if st.Module == "" && st.Dataset == "" {
+		lim, label = f.hostLimit(st, h, now)
+		canAlert = f.hostCanAlert(st, label, now)
+	}
 	v := FeedView{
 		HostID: st.HostID, Hostname: h.Hostname, Module: st.Module, Dataset: st.Dataset,
 		FirstSeen: timePtr(st.FirstSeen), LastSeen: timePtr(st.LastSeen), Arrivals: st.Arrivals,
 		UsualGapSec:  int64(usualGap(st.Gaps, now) / time.Second),
-		AllowanceSec: int64(st.limit(now) / time.Second),
-		Muted:        st.Muted, Expected: st.Expected, CanAlert: st.canAlert(now),
+		AllowanceSec: int64(lim / time.Second), Label: label,
+		Muted: st.Muted, Expected: st.Expected, CanAlert: canAlert,
 	}
 	if !st.Clock.IsZero() {
 		v.SilentSec = int64(max(now.Sub(st.Clock), 0) / time.Second)
@@ -673,13 +735,16 @@ func viewOf(st *feedState, h *store.Host, off bool, now time.Time) FeedView {
 		v.Status, v.Explanation = FeedSilent, "This source has stopped sending data, for longer than its usual pattern allows."
 	case quietFeed(st.Module) && !st.Expected:
 		v.Status, v.Explanation = FeedQuiet, "Alert-only feed: it only has rows when something matched, so a quiet IDS may just mean nothing matched. It does not raise a silence alert unless you mark it expected."
-	case !st.canAlert(now):
+	case !canAlert:
 		v.Status, v.Explanation = FeedLearning, "Still learning its pattern. A source must be seen for a day and arrive at least 20 times before it can alert."
 	default:
 		v.Status = FeedOK
 	}
 	if host && v.Status == FeedOK && off {
 		v.Explanation = h.Hostname + " is offline, but not for longer than usual yet."
+		if label != "" {
+			v.Explanation = h.Hostname + " is offline, but not for longer than hosts labelled " + label + " are allowed yet."
+		}
 	}
 	return v
 }
@@ -694,7 +759,7 @@ func (f *FeedHealth) Report(ctx context.Context) (*FeedReport, error) {
 	now := f.now()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	rep := &FeedReport{Sources: []FeedView{}, Bootstrapped: f.bootDone}
+	rep := &FeedReport{Sources: []FeedView{}, Bootstrapped: f.bootDone, OfflineLabels: append([]OfflineLabelRule{}, f.labels...)}
 	if now.Before(f.graceUntil) {
 		rep.GraceUntil = timePtr(f.graceUntil)
 	}
@@ -709,7 +774,7 @@ func (f *FeedHealth) Report(ctx context.Context) (*FeedReport, error) {
 		for k, st := range f.src {
 			// A row with no data and no choice left on it is only a known feed, if anything.
 			if k.host == h.ID && (!st.FirstSeen.IsZero() || st.Muted || st.Expected) {
-				rep.Sources = append(rep.Sources, viewOf(st, h, off, now))
+				rep.Sources = append(rep.Sources, f.viewOf(st, h, off, now))
 			}
 		}
 		for _, kf := range knownFeeds {
@@ -795,6 +860,36 @@ func (f *FeedHealth) SetChoice(ctx context.Context, hostID, module, dataset stri
 		f.apply(ctx, *action)
 	}
 	f.Flush(ctx)
+	return nil
+}
+
+// SetOfflineLabels replaces the offline allowances by host label. Labels are matched
+// without regard to case; a label listed twice keeps its last value. The next tick raises
+// or resolves host alerts against the new allowances.
+func (f *FeedHealth) SetOfflineLabels(ctx context.Context, rules []OfflineLabelRule) error {
+	clean := []OfflineLabelRule{}
+	at := map[string]int{}
+	for _, r := range rules {
+		r.Label = strings.ToLower(strings.TrimSpace(r.Label))
+		if r.Label == "" {
+			return invalid("every rule needs a label")
+		}
+		if r.Hours < 1 || r.Hours > maxLabelRuleHours {
+			return invalid("hours for %q must be between 1 and %d", r.Label, maxLabelRuleHours)
+		}
+		if i, ok := at[r.Label]; ok {
+			clean[i] = r
+			continue
+		}
+		at[r.Label] = len(clean)
+		clean = append(clean, r)
+	}
+	if err := f.c.State.SetKV(ctx, feedLabelRulesKey, clean); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	f.labels = clean
+	f.mu.Unlock()
 	return nil
 }
 
