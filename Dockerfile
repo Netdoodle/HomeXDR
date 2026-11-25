@@ -12,6 +12,16 @@ RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
+# quill signs the macOS agents on Linux. The patch pins the signing certificate in the
+# signature's requirement (see deploy/macsign/README.md); upstream writes only the identifier.
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS quill
+ENV CGO_ENABLED=0
+COPY deploy/macsign/quill-pin-leaf.patch /tmp/
+RUN apk add --no-cache patch >/dev/null && \
+    d=$(go mod download -json github.com/anchore/quill@v0.7.1 | sed -n 's/.*"Dir": "\(.*\)",/\1/p') && \
+    cp -r "$d" /tmp/quill && chmod -R u+w /tmp/quill && cd /tmp/quill && \
+    patch -p1 </tmp/quill-pin-leaf.patch && go build -trimpath -o /out/quill ./cmd/quill
+
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 ENV CGO_ENABLED=0
@@ -38,7 +48,14 @@ RUN V=github.com/Netdoodle/homexdr/shared/version && \
       os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe; \
       GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$LDFLAGS" \
         -o /out/downloads/homexdr-agent-$os-$arch$ext ./cmd/homexdr-agent || exit 1; \
-    done && \
+    done
+# Sign the macOS agents when the build has a certificate (BuildKit secrets macsign_p12 and
+# macsign_pass); otherwise they keep the linker's ad-hoc signature. Signing comes before the
+# checksums and the release manifest, which cover the signed files.
+COPY --from=quill /out/quill /usr/local/bin/quill
+COPY deploy/macsign/sign.sh /usr/local/bin/macsign
+RUN --mount=type=secret,id=macsign_p12 --mount=type=secret,id=macsign_pass \
+    macsign com.homexdr.agent /out/downloads/homexdr-agent-darwin-amd64 /out/downloads/homexdr-agent-darwin-arm64 && \
     cd /out/downloads && sha256sum homexdr-agent-* > SHA256SUMS && \
     /tmp/homexdr-server-native release-manifest /out/downloads
 

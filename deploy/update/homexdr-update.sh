@@ -53,6 +53,9 @@ load_conf() {
   SRC_DIR="${SRC_DIR:-$COMPOSE_DIR/src}"
   SIGNING_KEY="${SIGNING_KEY:-$(dirname "$CONF")/release-signing.key}"
   SIGNATURES_DIR="${SIGNATURES_DIR:-$COMPOSE_DIR/signatures}"
+  # Certificate that signs the macOS agents (macsign.p12 and macsign.pass), created on first use.
+  MACSIGN_DIR="${MACSIGN_DIR:-$(dirname "$CONF")}"
+  MACSIGN="${MACSIGN:-1}"
   KEEP_IMAGES="${KEEP_IMAGES:-3}"
   HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-300}"
   STATE_DIR="${STATE_DIR:-$COMPOSE_DIR/update}"
@@ -94,6 +97,18 @@ ensure_key() {
   mkdir -p "$(dirname "$SIGNING_KEY")"
   (umask 077 && openssl genpkey -algorithm ed25519 -out "$SIGNING_KEY") || return 1
   log "created release signing key $SIGNING_KEY; back it up, agents trust only this key"
+}
+
+# ensure_macsign makes the macOS agent signing certificate if there is none. A fixed
+# certificate gives the agent a stable code identity, so macOS keeps its Full Disk Access
+# across updates (builds without one are ad-hoc signed and lose it every time).
+ensure_macsign() {
+  [ "$MACSIGN" = 1 ] || return 1
+  if [ ! -s "$MACSIGN_DIR/macsign.p12" ]; then
+    sh "$SRC_DIR/deploy/macsign/make-cert.sh" "$MACSIGN_DIR" || { log "could not create the macOS signing certificate"; return 1; }
+    log "created macOS agent signing certificate $MACSIGN_DIR/macsign.p12; back it up, replacing it makes each Mac ask for Full Disk Access again"
+  fi
+  [ -s "$MACSIGN_DIR/macsign.p12" ]
 }
 
 public_key() {
@@ -199,7 +214,9 @@ main() {
     version="0.0.0-$(date -u -d "@$commit_time" +%Y%m%d%H%M%S).${commit:0:7}"
 
   log "building $IMAGE:$commit ($version), currently deployed: ${deployed:-none}"
-  if ! docker build --pull --progress=plain -t "$IMAGE:$commit" \
+  local secrets=()
+  ensure_macsign && secrets=(--secret "id=macsign_p12,src=$MACSIGN_DIR/macsign.p12" --secret "id=macsign_pass,src=$MACSIGN_DIR/macsign.pass")
+  if ! DOCKER_BUILDKIT=1 docker build --pull --progress=plain -t "$IMAGE:$commit" ${secrets[@]+"${secrets[@]}"} \
     --build-arg VERSION="$version" --build-arg COMMIT="$commit" --build-arg COMMIT_TIME="$commit_time" \
     "$SRC_DIR" >"$STATE_DIR/build.log" 2>&1; then
     echo "$commit" >"$STATE_DIR/failed"

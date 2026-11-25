@@ -90,11 +90,15 @@ Endpoint Security reports too), so polled and streamed events of one process joi
 the Apple-granted entitlement a custom client needs. It prints JSON that the agent decodes
 (`internal/platform/darwin/eslog.go`); the environment of executed processes is never
 recorded. Without Full Disk Access `eslogger` refuses to start and the sensors fall back,
-showing the reason in the host's sensor status. **On Apple silicon, grant Full Disk Access
-again after each automatic update:** arm64 binaries must be (ad-hoc) signed, and macOS ties
-the grant to that exact build. Intel builds are unsigned, so macOS keys the grant on the
-path and it survives updates (seen on macOS 15.7). A Developer ID signature would keep the
-grant on both; see the roadmap.
+showing the reason in the host's sensor status. **Full Disk Access survives updates only
+when the build is signed with a certificate** (`deploy/macsign`, see
+[macOS signing](../deploy/macsign/README.md)): the server image signs the macOS agents
+with one fixed certificate and the identifier `com.homexdr.agent`, so every update is the
+same program to macOS. Without a certificate, arm64 builds are ad-hoc signed and macOS ties
+the grant to that exact build, so **grant Full Disk Access again after each update**.
+Intel builds without a certificate are unsigned, so macOS keys the grant on the path and
+it survives updates (seen on macOS 15.7). Moving a Mac from ad-hoc to certificate-signed
+builds, or to a different certificate, needs one new grant.
 
 Isolation loads pf rules (same allow list as Linux) into the anchor
 `com.apple/000.HomeXDR`, which the stock `/etc/pf.conf` evaluates through
@@ -265,7 +269,8 @@ GOOS=darwin GOARCH=arm64 go build -o homexdr-agent-darwin-arm64 ./cmd/homexdr-ag
 ```
 
 The Go linker ad-hoc signs darwin/arm64 binaries, which Apple silicon requires; Intel
-binaries run unsigned.
+binaries run unsigned. The server image replaces that with a certificate signature when
+the build has one ([deploy/macsign](../deploy/macsign/README.md)).
 
 Set the version with
 `-ldflags "-X github.com/Netdoodle/homexdr/shared/version.Version=v0.1.0"`.
@@ -422,8 +427,9 @@ restarting without reaching the server (more than three starts), the agent puts 
 previous binary back and skips that version for a day. `homexdr-agent status` shows
 whether automatic updates are on and whether an update is waiting for confirmation.
 Details: [docs/protocol.md](../docs/protocol.md#agent-updates). Windows agents do not
-update themselves yet. On Apple silicon Macs, grant Full Disk Access again after an
-update (see [macOS platform](#macos-platform)).
+update themselves yet. Full Disk Access is kept across updates when the release is
+certificate-signed; otherwise grant it again after an update on Apple silicon (see
+[macOS platform](#macos-platform)).
 
 ## Uninstall
 
