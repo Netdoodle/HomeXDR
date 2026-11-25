@@ -147,12 +147,15 @@ export function importantNodes(data: Pick<Storyline, 'nodes' | 'edges'>): Set<st
  *   item;
  * - more than GROUP_THRESHOLD remaining siblings sharing a name (and a parent) become one
  *   item. Only leaf processes without alerts that are not the focus or root are grouped.
- * Groups listed in `expanded` are left as individual nodes.
+ * Groups listed in `expanded` are left as individual nodes. `sameName` false skips the
+ * same-name groups: with paging on, a "+" item already caps each branch, and grouping
+ * would fold the children a click just revealed back into one node.
  */
 export function groupSiblings(
   data: GraphData,
   expanded: ReadonlySet<string> = new Set(),
   keep?: ReadonlySet<string>,
+  sameName = true,
 ): { items: GraphItem[]; edges: StorylineEdge[] } {
   const hasOut = new Set(data.edges.map((e) => e.from))
   const crossIn = new Set(data.edges.filter((e) => e.kind !== 'parent').map((e) => e.to))
@@ -183,7 +186,7 @@ export function groupSiblings(
   }
 
   const buckets = new Map<string, StorylineNode[]>()
-  for (const n of data.nodes) {
+  for (const n of sameName ? data.nodes : []) {
     if (memberOf.has(n.entity_id)) continue
     if (n.alert_count > 0 || n.focus || n.root || !n.parent_entity_id) continue
     if (hasOut.has(n.entity_id) || crossIn.has(n.entity_id)) continue

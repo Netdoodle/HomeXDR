@@ -314,7 +314,8 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
     if (view === 'process') g = processView(g, data.focus_entity_id)
     if (!cross) g = withoutCrossProcess(g)
     const c = collapsedView(g, open, important ? { keep: important, more } : undefined)
-    const grouped = groupSiblings(c, expanded)
+    // Same-name groups only under Expand all: with paging, they would swallow each new page.
+    const grouped = groupSiblings(c, expanded, undefined, !important)
     // The "+" items: one beneath each open branch that holds back quiet children.
     const byId = new Map(c.nodes.map((n) => [n.entity_id, n]))
     const pagers: GraphItem[] = []
@@ -597,7 +598,7 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
                 const it = (nd.data as FlowNodeData).item
                 if (it.pager) {
                   const parent = it.pager.parent
-                  revealAfterLayout.current = parent
+                  // Keep the viewport where it is: no centering or zoom change.
                   setMore((m) => new Map(m).set(parent, (m.get(parent) ?? 0) + PAGE_SIZE))
                 } else if (it.members) {
                   setExpanded((s) => new Set(s).add(it.id))

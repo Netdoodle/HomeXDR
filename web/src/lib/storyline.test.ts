@@ -244,4 +244,13 @@ describe('collapsedView paging', () => {
   it('shows everything without paging options', () => {
     expect(collapsedView(data, open).nodes.length).toBe(22)
   })
+
+  it('keeps each revealed page visible when the children share a name', () => {
+    const same = { ...data, nodes: data.nodes.map((n) => (n.entity_id.startsWith('k') ? { ...n, name: 'git.exe' } : n)) }
+    const v = collapsedView(same, open, { keep, more: new Map([['r', PAGE_SIZE]]) })
+    expect(v.nodes.length).toBe(1 + 1 + 10)
+    // Same-name grouping would fold the ten git.exe children into one node.
+    expect(groupSiblings(v).items.length).toBeLessThan(v.nodes.length)
+    expect(groupSiblings(v, new Set(), undefined, false).items.length).toBe(v.nodes.length)
+  })
 })
