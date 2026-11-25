@@ -59,6 +59,13 @@ again until the source has come back and gone quiet again.
 - **Mute** a source: it never alerts, and any open alert about it is resolved.
 - **Expected** a source: it may alert even without a learned pattern. A never-seen feed then alerts
   after 24 hours; a quiet feed such as Suricata after 7 days.
+- **Offline alerts by host label:** give every host with a label a fixed offline allowance, such
+  as `server` = 24 hours and `dts` = 7 days. The host's "stopped sending data" alert is then
+  raised after exactly that long, in place of its learned pattern and even before it has one. A
+  host with several such labels uses the longest. Labels match regardless of case. Raising an
+  allowance resolves an open host alert that is now within it. The data sources on the host keep
+  their learned patterns. Set them on the Data health page, or with
+  `PUT /api/health/offline-labels` and `{"rules":[{"label":"server","hours":24}]}` (admin).
 
 ### Known collector feeds
 

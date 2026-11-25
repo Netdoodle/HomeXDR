@@ -1,6 +1,7 @@
 package console
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 func (h *Handler) routesHealth(viewer, analyst, admin string) {
 	h.route("GET /api/health/feeds", viewer, h.getFeeds)
 	h.route("PATCH /api/health/feeds", admin, h.patchFeed)
+	h.route("PUT /api/health/offline-labels", admin, h.putOfflineLabels)
 	h.route("GET /api/health/external", viewer, h.getRefused)
 	h.route("GET /api/doctor", admin, h.getDoctor)
 	h.route("GET /api/selfcheck", admin, h.getSelfCheck)
@@ -72,6 +74,31 @@ func (h *Handler) patchFeed(w http.ResponseWriter, r *http.Request, u *store.Use
 		}
 	}
 	h.c.Audit(r.Context(), u.Username, "feed.change", req.HostID, details)
+	rep, err := h.c.Health.Feeds.Report(r.Context())
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
+}
+
+// putOfflineLabels replaces the fixed offline allowances by host label.
+func (h *Handler) putOfflineLabels(w http.ResponseWriter, r *http.Request, u *store.User) {
+	var req struct {
+		Rules []core.OfflineLabelRule `json:"rules"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if err := h.c.Health.Feeds.SetOfflineLabels(r.Context(), req.Rules); err != nil {
+		h.fail(w, err)
+		return
+	}
+	parts := make([]string, 0, len(req.Rules))
+	for _, x := range req.Rules {
+		parts = append(parts, fmt.Sprintf("%s=%dh", strings.ToLower(strings.TrimSpace(x.Label)), x.Hours))
+	}
+	h.c.Audit(r.Context(), u.Username, "feed.offline_labels", "", strings.Join(parts, " "))
 	rep, err := h.c.Health.Feeds.Report(r.Context())
 	if err != nil {
 		h.fail(w, err)
