@@ -175,7 +175,7 @@ export const artifacts: ArtifactDef[] = [
   {
     name: 'persistence.autoruns',
     description:
-      'Autostart locations: Run/RunOnce keys, services, scheduled tasks and startup folders on Windows; cron, systemd units, rc.local, shell profiles, ld.so.preload and authorized_keys on Linux; LaunchAgents/LaunchDaemons on macOS.',
+      'Autostart locations: Run/RunOnce keys, services, scheduled tasks and startup folders on Windows; cron, systemd units, rc.local, shell profiles, ld.so.preload and authorized_keys on Linux; LaunchAgents/LaunchDaemons, login items and background tasks on macOS.',
     platforms: allPlatforms,
     columns: ['type', 'location', 'name', 'command', 'user', 'enabled', 'sha256', 'signed'],
   },
