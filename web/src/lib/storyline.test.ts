@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { StorylineEdge, StorylineNode } from '../api/types'
-import { buildElkGraph, collapsedView, groupId, groupSiblings, hasLoadedChildren, importantNodes, initialOpen, isDimmed, mergeStoryline, othersId, processView, tacticLabel, tacticList, withoutCrossProcess } from './storyline'
+import { buildElkGraph, collapsedView, groupId, groupSiblings, hasLoadedChildren, importantNodes, initialOpen, isDimmed, mergeStoryline, othersId, PAGE_SIZE, processView, tacticLabel, tacticList, withoutCrossProcess } from './storyline'
 import type { Storyline } from '../api/types'
 
 function node(id: string, parent = '', extra: Partial<StorylineNode> = {}): StorylineNode {
@@ -214,5 +214,34 @@ describe('folding quiet children', () => {
   it('leaves a parent with few children alone', () => {
     const few = { nodes: nodes.slice(0, 4), edges: edges.slice(0, 3) }
     expect(groupSiblings(few, new Set(), new Set(['root'])).items.some((i) => i.others)).toBe(false)
+  })
+})
+
+describe('collapsedView paging', () => {
+  const kids = Array.from({ length: 20 }, (_, i) => `k${i}`)
+  const data = {
+    nodes: [node('r', '', { root: true }), ...kids.map((k) => node(k, 'r')), ...[node('a', 'r', { alert_count: 1 })]],
+    edges: [...kids.map((k) => edge('r', k)), edge('r', 'a')],
+  }
+  const open = new Set(['r'])
+  const keep = new Set(['r', 'a'])
+
+  it('shows the alert child and one page of quiet children', () => {
+    const v = collapsedView(data, open, { keep, more: new Map() })
+    expect(v.nodes.map((n) => n.entity_id).sort()).toEqual(['a', 'k0', 'k1', 'k2', 'k3', 'k4', 'r'])
+    expect(v.paged.get('r')).toBe(20 - PAGE_SIZE)
+  })
+
+  it('shows another page per click and stops when little is left', () => {
+    const v = collapsedView(data, open, { keep, more: new Map([['r', 10]]) })
+    expect(v.nodes.length).toBe(1 + 1 + 15)
+    expect(v.paged.get('r')).toBe(5)
+    const all = collapsedView(data, open, { keep, more: new Map([['r', 15]]) })
+    expect(all.nodes.length).toBe(22)
+    expect(all.paged.size).toBe(0)
+  })
+
+  it('shows everything without paging options', () => {
+    expect(collapsedView(data, open).nodes.length).toBe(22)
   })
 })

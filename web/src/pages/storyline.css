@@ -269,3 +269,9 @@
 .sl-node {
   cursor: pointer;
 }
+
+/* The "+" item under an open branch that shows the next few child processes. */
+.sl-node.pager { cursor: pointer; }
+.sl-node.pager .sl-circle { border-style: dashed; }
+.sl-node.pager .sl-plus { font-size: 26px; font-weight: 600; line-height: 1; color: var(--accent); }
+.sl-node.pager:hover .sl-circle { border-color: var(--accent); }

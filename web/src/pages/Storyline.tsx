@@ -51,6 +51,8 @@ import {
   initialOpen,
   isTreeEdge,
   mergeStoryline,
+  pagerId,
+  PAGE_SIZE,
   isDimmed,
   NODE_HEIGHT,
   NODE_WIDTH,
@@ -110,6 +112,19 @@ function ProcNode({ data }: NodeProps<FlowNode>) {
   const { item, selected, highlighted, dimmed, selfTips, hidden, more, open, loading } = data
   const n = item.node
   const group = item.members?.length
+  if (item.pager) {
+    const next = Math.min(PAGE_SIZE, item.pager.remaining)
+    return (
+      <div className="sl-node pager" title={`${item.pager.remaining} more child processes with no alert below them: click to show ${next} more`}>
+        <Handle type="target" position={Position.Left} className="sl-handle" isConnectable={false} />
+        <div className="sl-circle">
+          <span className="sl-plus" aria-hidden="true">+</span>
+        </div>
+        <div className="sl-name">Show {next} more</div>
+        <div className="sl-pid">{item.pager.remaining} not shown</div>
+      </div>
+    )
+  }
   const cls = [
     'sl-node',
     n.alert_count > 0 ? 'alerted' : '',
@@ -270,6 +285,8 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
   const allSlugs = useMemo(() => tactics.map((t) => t.slug), [tactics])
   const [selTactics, setSelTactics] = useState<Set<string>>(() => new Set(allSlugs))
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Extra quiet children revealed per open process, a page per click on its "+" item.
+  const [more, setMore] = useState<Map<string, number>>(new Map())
   const [selected, setSelected] = useState<string>(data.focus_entity_id)
   const [highlight, setHighlight] = useState<string>('')
   const [drawer, setDrawer] = useState(true)
@@ -278,6 +295,7 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
   useEffect(() => {
     setSelected(initial.focus_entity_id)
     setExpanded(new Set())
+    setMore(new Map())
   }, [initial])
   // Tactics that appear (a new storyline, or a branch loaded with new alerts) start selected.
   const knownSlugs = useRef<Set<string>>(new Set())
@@ -295,9 +313,20 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
     let g = { nodes: data.nodes, edges: data.edges }
     if (view === 'process') g = processView(g, data.focus_entity_id)
     if (!cross) g = withoutCrossProcess(g)
-    const c = collapsedView(g, open)
-    return { ...groupSiblings(c, expanded, important), hidden: c.hidden }
-  }, [data, view, cross, expanded, open, important])
+    const c = collapsedView(g, open, important ? { keep: important, more } : undefined)
+    const grouped = groupSiblings(c, expanded)
+    // The "+" items: one beneath each open branch that holds back quiet children.
+    const byId = new Map(c.nodes.map((n) => [n.entity_id, n]))
+    const pagers: GraphItem[] = []
+    for (const [parent, remaining] of c.paged) {
+      const p = byId.get(parent)
+      if (!p) continue
+      const id = pagerId(parent)
+      pagers.push({ id, node: { ...p, entity_id: id, alert_count: 0, focus: false, root: false, context: false, more: false, tactics: [] }, pager: { parent, remaining } })
+      grouped.edges.push({ from: parent, to: id, kind: 'parent', at: null, event_id: '', detail: '' })
+    }
+    return { items: [...grouped.items, ...pagers], edges: grouped.edges, hidden: c.hidden }
+  }, [data, view, cross, expanded, open, important, more])
 
   const layoutKey = useMemo(() => items.map((i) => i.id).join(',') + '|' + edges.map((e) => `${e.from}>${e.to}`).join(','), [items, edges])
 
@@ -354,7 +383,7 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
         item: it,
         selected: it.id === selected,
         highlighted: it.id === highlight,
-        dimmed: isDimmed(it.node, selTactics, allSlugs),
+        dimmed: !it.pager && isDimmed(it.node, selTactics, allSlugs),
         selfTips: edges.filter((e) => e.from === it.id && e.to === it.id).map(edgeTip),
         hidden: hidden.get(it.id) ?? 0,
         more: !!it.node.more && !hasLoadedChildren(data, it.id),
@@ -541,6 +570,7 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
               onClick={() => {
                 setFold(true)
                 setExpanded(new Set())
+                setMore(new Map())
                 setOpen(new Set(data.nodes.filter((n) => n.context || n.root).map((n) => n.entity_id)))
               }}
               title="Show only the root process and its children"
@@ -565,7 +595,11 @@ function StorylineView({ data: initial, host }: { data: Storyline; host?: Host }
               proOptions={{ hideAttribution: true }}
               onNodeClick={(_, nd) => {
                 const it = (nd.data as FlowNodeData).item
-                if (it.members) {
+                if (it.pager) {
+                  const parent = it.pager.parent
+                  revealAfterLayout.current = parent
+                  setMore((m) => new Map(m).set(parent, (m.get(parent) ?? 0) + PAGE_SIZE))
+                } else if (it.members) {
                   setExpanded((s) => new Set(s).add(it.id))
                 } else {
                   setSelected(nd.id)

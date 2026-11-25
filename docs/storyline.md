@@ -50,9 +50,11 @@ children; clicking an open one closes its branch. A branch past what the server 
 `more` process, shown with a plain "+") is loaded from the server when it is opened.
 Processes started through a task, service or WMI count as children of the process that set
 them up. A process linked only by a cross-process event is shown while the process it is
-linked to is. When an open process has more than six children, the ones with no alert and no
-focus below them fold into one "N other processes" node; click it to show them. **Expand all** opens every loaded branch and unfolds the other processes, **Collapse
-all** goes back to the root and its children, and picking an alert in the list opens the branches above it.
+linked to is. When an open process has more than six children, it shows the ones with an alert or the
+focus below them plus five of the rest; a "+" item beneath the list ("Show 5 more", with the
+number left) reveals five more per click. **Expand all** opens every loaded branch with no
+limit, **Collapse all** goes back to the root and its children, and picking an alert in the
+list opens the branches above it.
 
 ## How the root is chosen
 

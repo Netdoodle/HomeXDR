@@ -103,6 +103,8 @@ export interface GraphItem {
   members?: StorylineNode[]
   /** a group of a parent's other children (not one name) */
   others?: boolean
+  /** the "+" item under an open branch: shows the next page of its children */
+  pager?: { parent: string; remaining: number }
 }
 
 export function groupId(parent: string, name: string): string {
@@ -112,6 +114,13 @@ export function groupId(parent: string, name: string): string {
 export function othersId(parent: string): string {
   return `others:${parent}`
 }
+
+export function pagerId(parent: string): string {
+  return `page:${parent}`
+}
+
+/** An open branch with more quiet children than this shows this many at a time. */
+export const PAGE_SIZE = 5
 
 /** An open process shows at most this many children before the quiet ones fold away. */
 export const MAX_CHILDREN = 6
@@ -229,6 +238,8 @@ export function buildElkGraph(items: GraphItem[], edges: StorylineEdge[]): ElkIn
     id: 'root',
     layoutOptions: {
       'elk.algorithm': 'layered',
+      // Keep the order of the items, so a "+" item stays beneath the list it extends.
+      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
       'elk.direction': 'RIGHT',
       'elk.edgeRouting': 'ORTHOGONAL',
       'elk.spacing.nodeNode': '28',
@@ -289,6 +300,18 @@ export function initialOpen(data: Pick<Storyline, 'nodes' | 'edges' | 'focus_ent
 export interface CollapsedGraph extends GraphData {
   /** Per shown process, how many loaded processes are hidden below it (closed branch). */
   hidden: Map<string, number>
+  /** Per open process, how many quiet children are held back for the "+" item. */
+  paged: Map<string, number>
+}
+
+/**
+ * Paging of big branches: an open process with more than MAX_CHILDREN children shows its
+ * important children (focus, alerts, anything leading to them, cross-process links) and
+ * PAGE_SIZE quiet ones, plus PAGE_SIZE for each click on its "+" item (`more`).
+ */
+export interface PageOptions {
+  keep: ReadonlySet<string>
+  more: ReadonlyMap<string, number>
 }
 
 /**
@@ -296,18 +319,36 @@ export interface CollapsedGraph extends GraphData {
  * A process reached only through a cross-process event (outside) is shown when the
  * process it is linked to is.
  */
-export function collapsedView(data: GraphData, open: ReadonlySet<string>): CollapsedGraph {
+export function collapsedView(data: GraphData, open: ReadonlySet<string>, page?: PageOptions): CollapsedGraph {
   const kids = treeChildren(data.edges)
   const byId = new Map(data.nodes.map((n) => [n.entity_id, n]))
   const hasParent = new Set<string>()
   for (const list of kids.values()) for (const k of list) hasParent.add(k)
+  const crossIn = new Set(data.edges.filter((e) => !isTreeEdge(e)).map((e) => e.to))
+  const quiet = (id: string) => {
+    const n = byId.get(id)
+    return !!n && !page?.keep.has(id) && !n.focus && !n.root && n.alert_count === 0 && !crossIn.has(id)
+  }
+  const paged = new Map<string, number>()
   const visible = new Set<string>()
   const stack = data.nodes.filter((n) => !n.outside && !hasParent.has(n.entity_id)).map((n) => n.entity_id)
   while (stack.length) {
     const id = stack.pop() as string
     if (visible.has(id)) continue
     visible.add(id)
-    if (open.has(id)) for (const k of kids.get(id) ?? []) if (byId.has(k)) stack.push(k)
+    if (!open.has(id)) continue
+    let list = (kids.get(id) ?? []).filter((k) => byId.has(k))
+    if (page && list.length > MAX_CHILDREN) {
+      const q = list.filter(quiet)
+      const limit = PAGE_SIZE + (page.more.get(id) ?? 0)
+      // A single child left over would only swap for the "+" item.
+      if (q.length - limit >= 2) {
+        const allow = new Set(q.slice(0, limit))
+        list = list.filter((k) => !quiet(k) || allow.has(k))
+        paged.set(id, q.length - limit)
+      }
+    }
+    for (const k of list) stack.push(k)
   }
   for (const e of data.edges) {
     if (isTreeEdge(e)) continue
@@ -328,7 +369,7 @@ export function collapsedView(data: GraphData, open: ReadonlySet<string>): Colla
     if (seen.size > 0) hidden.set(id, seen.size)
   }
   const nodes = data.nodes.filter((n) => visible.has(n.entity_id))
-  return { nodes, edges: pruneEdges(nodes, data.edges), hidden }
+  return { nodes, edges: pruneEdges(nodes, data.edges), hidden, paged }
 }
 
 /** True when the process has loaded children (open or closed). */
