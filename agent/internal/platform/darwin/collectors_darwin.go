@@ -300,6 +300,30 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 	for _, n := range names {
 		launchd("launch_agent", filepath.Join(hs[n], "Library/LaunchAgents"), n)
 	}
+	// Login items and background tasks from Background Task Management (macOS 13+).
+	// sfltool can take half a minute when the BTM daemon is busy, so it gets more time.
+	btmCtx, btmCancel := context.WithTimeout(ctx, 3*time.Minute)
+	btmOut, btmErr := exec.CommandContext(btmCtx, "/usr/bin/sfltool", "dumpbtm").Output()
+	btmCancel()
+	if out, err := btmOut, btmErr; err == nil {
+		names := map[int]string{0: "root"}
+		us, _ := directoryUsers(ctx)
+		for _, u := range us {
+			if n, err := strconv.Atoi(u.UID); err == nil {
+				names[n] = u.Name
+			}
+		}
+		userName := func(uid int) string {
+			if n, ok := names[uid]; ok {
+				return n
+			}
+			return strconv.Itoa(uid)
+		}
+		for _, r := range btmAutoruns(parseBTM(out), rows, userName) {
+			cmd, _ := r["command"].(string)
+			add(r, commandBinary(cmd))
+		}
+	}
 	// Legacy startup items (ignored since 10.10, but still a place malware drops files).
 	if ents, err := os.ReadDir("/Library/StartupItems"); err == nil {
 		for _, e := range ents {

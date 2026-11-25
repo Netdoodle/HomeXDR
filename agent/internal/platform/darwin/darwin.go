@@ -38,8 +38,9 @@ func (*Platform) Paths() platform.Paths {
 // HostInfo returns host details.
 func (*Platform) HostInfo(ctx context.Context) api.HostInfo { return hostInfo(ctx) }
 
-// Sensors returns the macOS sensors for the enabled kinds. DNS and library-load
-// telemetry are not implemented yet; the core reports them as unavailable.
+// Sensors returns the macOS sensors for the enabled kinds. DNS comes from a BPF capture
+// of port 53 (root), without process attribution. Library-load telemetry is not
+// implemented yet; the core reports it as unavailable.
 func (p *Platform) Sensors(cfg api.SensorsConfig, env platform.Env) []platform.Sensor {
 	var out []platform.Sensor
 	if cfg.Process.Enabled {
@@ -53,6 +54,9 @@ func (p *Platform) Sensors(cfg api.SensorsConfig, env platform.Env) []platform.S
 	}
 	if cfg.Auth.Enabled {
 		out = append(out, newAuthSensor(env))
+	}
+	if cfg.DNS.Enabled {
+		out = append(out, newDNSSensor(env))
 	}
 	return out
 }

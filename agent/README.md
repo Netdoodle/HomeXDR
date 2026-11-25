@@ -75,7 +75,8 @@ agent with `sudo launchctl kickstart -k system/com.homexdr.agent`).
 | network | `lsof -i` polling every 5 s (`lsof`): new TCP connections with PID, direction from the listening ports | |
 | file | `eslogger` `create`, `rename`, `unlink` and `close` after a write, with the process | none (FIM still runs) |
 | auth | `eslogger`: SSH and console logins/logouts, screen lock/unlock, Screen Sharing, Open Directory/Touch ID authentications; on 14+ also `sudo`, `su` and account and group changes | `log stream` for sshd and sudo messages (`unifiedlog`), parsed like the Linux auth log |
-| dns, library | not implemented on macOS yet (reported as unavailable) | |
+| dns | BPF capture of port 53 on the en, bridge, utun, ppp and lo interfaces (needs root), the shared DNS parser; no process attribution, reported as `degraded`. A Mac that upgrades to encrypted DNS (DoH/DoT, for example when the router advertises it) sends nothing on port 53, so its own lookups are not seen; traffic of other hosts routed or shared through it still is | |
+| library | not implemented on macOS yet (reported as unavailable) | |
 
 The process sensor's `eslogger` client also reports the low-volume security events
 macOS has no other sensor for: launch items added or removed (`launch_item_added`, with
@@ -85,6 +86,14 @@ the plist and program; the usual persistence), XProtect detections and remediati
 (`eslogger --list-events`). The agent's own child processes (`lsof`, `launchctl`) are not
 reported. Process entity IDs use the start time in microseconds (`p_starttime`, which
 Endpoint Security reports too), so polled and streamed events of one process join.
+
+The `persistence.autoruns` artifact lists launch daemons and agents (system and each
+user's), legacy startup items, cron jobs, shell start-up files and `authorized_keys`, and on
+macOS 13+ the Background Task Management database behind System Settings › General › Login
+Items (`sfltool dumpbtm`): login items, apps' background tasks, and launch agents and daemons
+registered from inside an app bundle (`source: btm`, with the developer, team ID and parent
+app). A launchd job switched off under Login Items is reported with `enabled: false` and
+`login_items_allowed: false`.
 
 `eslogger` is Apple's own Endpoint Security client: it gives the agent ES events without
 the Apple-granted entitlement a custom client needs. It prints JSON that the agent decodes
@@ -305,6 +314,7 @@ sudo HOMEXDR_NETNS_TEST=1 go test -run NFTRulesetInNetns ./internal/platform/lin
 go test -fuzz FuzzParseDNS -fuzztime 1m ./internal/platform/linux/
 go test ./internal/platform/windows/                    # on Windows: Event Log parsing, process mapping and live Application log tests
 go test ./internal/platform/darwin/                     # on macOS: also the live process table, lsof, plist, collector and eslogger tests
+sudo go test -run TestLiveDNSCapture ./internal/platform/darwin/   # live BPF DNS capture (skipped without root)
 ```
 
 The macOS parsers and the eslogger event mapping are tested on every OS; CI runs the live
