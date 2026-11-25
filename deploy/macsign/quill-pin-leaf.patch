@@ -1,0 +1,30 @@
+diff --git a/quill/sign/requirements.go b/quill/sign/requirements.go
+index 74d2c56..d970efc 100644
+--- a/quill/sign/requirements.go
++++ b/quill/sign/requirements.go
+@@ -1,6 +1,7 @@
+ package sign
+ 
+ import (
++	"crypto/sha1" //nolint:gosec // code signing requirements identify certificates by SHA-1
+ 	"encoding/asn1"
+ 	"fmt"
+ 	"hash"
+@@ -169,6 +170,17 @@ func buildRequirementStatements(id string, signingMaterial pki.SigningMaterial)
+ 		statements = append(statements, ops)
+ 	}
+ 
++	// add on "certificate leaf = H"<sha1>"" when the signer is not Apple: without an Apple
++	// anchor nothing else ties the requirement to the certificate, and an identifier-only
++	// requirement is met by any code (even ad-hoc signed) that claims the identifier
++	if leafCert != nil && !signingMaterial.HasCertWithOrg("Apple Inc.") {
++		sum := sha1.Sum(leafCert.Raw)
++		ops := []uint32{opAnchorHash, leafCertIndex}
++		ops = append(ops, encodeBytes(sum[:])...)
++
++		statements = append(statements, ops)
++	}
++
+ 	// note: must be the latest operand added
+ 	if len(statements) == 0 {
+ 		// this is an empty requirements set

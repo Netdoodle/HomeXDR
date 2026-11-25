@@ -27,6 +27,15 @@ The script creates an Ed25519 key on first use (`SIGNING_KEY`, default
 back it up: agents trust only releases signed with it. If you lose it, create a new one and
 update `update_key` in each agent's config.
 
+## The macOS signing certificate
+
+The script also creates a self-signed code signing certificate on first use (`MACSIGN_DIR`,
+default next to `update.conf`: `macsign.p12` and `macsign.pass`) and passes it to the image
+build as a BuildKit secret, so the macOS agents are signed with the same identity in every
+release and macOS keeps their Full Disk Access across updates. Back it up with the release
+key; a new certificate makes each Mac ask for Full Disk Access once more. `MACSIGN=0` skips
+signing. Details: [deploy/macsign](../macsign/README.md).
+
 Anyone who can push to the tracked branch can get code onto the server and, through
 signed releases, onto agents with automatic updates. Protect the branch accordingly.
 

@@ -27,6 +27,12 @@ BRANCH=main
 # Default: release-signing.key next to this file.
 #SIGNING_KEY=
 
+# Folder with the certificate that signs the macOS agents (macsign.p12, macsign.pass),
+# created on first use. Keep it outside the server's volumes and back it up, like the key
+# above. Default: next to this file. MACSIGN=0 leaves the macOS agents ad-hoc signed.
+#MACSIGN_DIR=
+#MACSIGN=1
+
 # Folder mounted read-only into the server as /usr/share/homexdr/signatures
 # (default: $COMPOSE_DIR/signatures).
 #SIGNATURES_DIR=
