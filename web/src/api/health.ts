@@ -32,12 +32,27 @@ export interface OfflineLabelRule {
   hours: number
 }
 
+/** A source HomeXDR reads from on a timer, such as a DNS resolver's query log. Not a host. */
+export interface PulledSource {
+  id: string
+  name: string
+  address: string
+  dataset: string
+  status: 'online' | 'offline' | 'waiting'
+  explanation?: string
+  last_poll?: string
+  last_success?: string
+  interval_sec: number
+  settings_path: string
+}
+
 export interface FeedReport {
   sources: FeedView[]
   bootstrapped: boolean
   grace_until?: string
   note?: string
   offline_labels: OfflineLabelRule[]
+  pulled?: PulledSource[]
 }
 
 export interface FeedPatch {

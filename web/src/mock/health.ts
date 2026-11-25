@@ -36,7 +36,14 @@ const feeds: FeedView[] = [
 let offlineLabels: OfflineLabelRule[] = [{ label: 'server', hours: 24 }]
 
 function report(): FeedReport {
-  return { sources: feeds, bootstrapped: true, offline_labels: offlineLabels }
+  return {
+    sources: feeds,
+    bootstrapped: true,
+    offline_labels: offlineLabels,
+    pulled: [
+      { id: 'dns_query_log', name: 'AdGuard Home query log', address: 'https://dns.example.lan', dataset: 'dns.adguard', status: 'online', explanation: 'The last read of the query log worked.', last_poll: ago(0.2), last_success: ago(0.2), interval_sec: 30, settings_path: '/settings/network' },
+    ],
+  }
 }
 
 export function registerHealthMocks(route: MockRoute) {

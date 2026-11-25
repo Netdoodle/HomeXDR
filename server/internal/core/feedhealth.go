@@ -695,6 +695,8 @@ type FeedReport struct {
 	GraceUntil   *time.Time `json:"grace_until,omitempty"`
 	// OfflineLabels are the fixed offline allowances by host label.
 	OfflineLabels []OfflineLabelRule `json:"offline_labels"`
+	// Pulled are the sources HomeXDR reads from on a timer, such as a DNS query log.
+	Pulled []PulledSource `json:"pulled"`
 	// Note says when a limit means some sources are not tracked.
 	Note string `json:"note,omitempty"`
 }
@@ -757,9 +759,10 @@ func (f *FeedHealth) Report(ctx context.Context) (*FeedReport, error) {
 		return nil, err
 	}
 	now := f.now()
+	pulled := f.c.pulledSources()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	rep := &FeedReport{Sources: []FeedView{}, Bootstrapped: f.bootDone, OfflineLabels: append([]OfflineLabelRule{}, f.labels...)}
+	rep := &FeedReport{Sources: []FeedView{}, Bootstrapped: f.bootDone, OfflineLabels: append([]OfflineLabelRule{}, f.labels...), Pulled: pulled}
 	if now.Before(f.graceUntil) {
 		rep.GraceUntil = timePtr(f.graceUntil)
 	}

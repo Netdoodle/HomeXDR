@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"sync"
@@ -69,11 +71,9 @@ func (c *Core) adguardHost(ctx context.Context, evs []*event.Event) (*store.Host
 	if err != nil {
 		return nil, err
 	}
-	addr := u.Hostname()
-	if _, err := netip.ParseAddr(addr); err != nil {
-		if ips, err := net.DefaultResolver.LookupHost(ctx, addr); err == nil && len(ips) > 0 {
-			addr = ips[0]
-		}
+	addr, err := c.adguardAddr(ctx, u.Hostname())
+	if err != nil {
+		return nil, err
 	}
 	host, err := c.State.EnsureNetworkHost(ctx, addr, "", "")
 	if err != nil {
@@ -85,6 +85,31 @@ func (c *Core) adguardHost(ctx context.Context, evs []*event.Event) (*store.Host
 		}
 	}
 	return host, nil
+}
+
+// adguardIPs remembers the last address each resolver name resolved to.
+var adguardIPs sync.Map
+
+// adguardAddr is the IP address of the resolver's host. A name that does not resolve right
+// now (often because the resolver itself is restarting) falls back to its last address; one
+// that never resolved is an error, so the batch is retried on the next poll instead of
+// being filed under a host named after the hostname.
+func (c *Core) adguardAddr(ctx context.Context, name string) (string, error) {
+	if _, err := netip.ParseAddr(name); err == nil {
+		return name, nil
+	}
+	ips, err := net.DefaultResolver.LookupHost(ctx, name)
+	if err == nil && len(ips) > 0 {
+		adguardIPs.Store(name, ips[0])
+		return ips[0], nil
+	}
+	if ip, ok := adguardIPs.Load(name); ok {
+		return ip.(string), nil
+	}
+	if err == nil {
+		err = errors.New("no addresses")
+	}
+	return "", fmt.Errorf("look up %s: %w", name, err)
 }
 
 // raiseBehavior turns a detector's finding into an alert.

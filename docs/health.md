@@ -67,6 +67,16 @@ again until the source has come back and gone quiet again.
   their learned patterns. Set them on the Data health page, or with
   `PUT /api/health/offline-labels` and `{"rules":[{"label":"server","hours":24}]}` (admin).
 
+### Sources HomeXDR reads from
+
+A DNS resolver's query log (AdGuard Home, Pi-hole or Technitium) is read by HomeXDR on a timer
+rather than sent to it, so it is a source, not a host. The Data health page lists it with its
+address, the last good read, and its status: online while the last read worked, offline with the
+error when it failed. Its lookups are filed under the host the resolver runs on, found by looking
+up the resolver's name. When that lookup fails (often because the resolver is the one restarting)
+the last address it had is used; a name that has never resolved leaves the batch to be read again
+on the next poll, instead of creating a host named after the resolver.
+
 ### Known collector feeds
 
 `inventory.software.list` and `inventory.services.list` on every agent, and `suricata.alert` on any

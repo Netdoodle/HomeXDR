@@ -2,9 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 import { errorMessage } from '../api/client'
-import { getFeeds, getRefused, healthKeys, patchFeed, putOfflineLabels, type FeedPatch, type FeedReport, type FeedView, type OfflineLabelRule } from '../api/health'
+import { getFeeds, getRefused, healthKeys, patchFeed, putOfflineLabels, type FeedPatch, type FeedReport, type FeedView, type OfflineLabelRule, type PulledSource } from '../api/health'
 import { useCan } from '../components/Auth'
 import { PageHeader } from '../components/Layout'
 import { LinkTabs, RelTime, Toggle, type TabDef } from '../components/Misc'
@@ -46,12 +46,61 @@ function SourcesTab() {
         HomeXDR learns how often each source normally sends data. It raises an alert when a source stays quiet for three times its usual longest gap (15 minutes at least, 7 days at most), and
         resolves the alert itself when the source returns. Time the server or the host was away does not count as silence.
       </p>
+      {q.data?.pulled?.length ? <PulledSection sources={q.data.pulled} /> : null}
       <section className="panel">
         <QueryView query={q}>{(d) => <SourcesTable report={d} />}</QueryView>
       </section>
       {q.data ? <OfflineLabelsSection rules={q.data.offline_labels ?? []} /> : null}
       <RefusedSection />
     </div>
+  )
+}
+
+const PULLED_BADGE: Record<PulledSource['status'], string> = { online: 'resolved', offline: 'new', waiting: 'in_progress' }
+const PULLED_LABEL: Record<PulledSource['status'], string> = { online: 'Online', offline: 'Offline', waiting: 'Waiting' }
+
+/** Sources HomeXDR reads from, such as a DNS query log: online while the last read worked. */
+function PulledSection({ sources }: { sources: PulledSource[] }) {
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <h2>Sources HomeXDR reads from</h2>
+        <span className="hint">online while the last read worked</span>
+      </div>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Address</th>
+              <th>Last good read</th>
+              <th>Checked every</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sources.map((p) => (
+              <tr key={p.id}>
+                <td>
+                  <Link to={p.settings_path}>{p.name}</Link>
+                  {p.explanation ? (
+                    <div className="xsmall muted" style={{ maxWidth: 560, whiteSpace: 'normal' }}>
+                      {p.explanation}
+                    </div>
+                  ) : null}
+                </td>
+                <td className="mono small">{p.address}</td>
+                <td>{p.last_success ? <RelTime iso={p.last_success} /> : <span className="empty-cell">Never</span>}</td>
+                <td className="nowrap">{p.interval_sec < 60 ? `${p.interval_sec} s` : formatGap(p.interval_sec)}</td>
+                <td>
+                  <span className={`badge status ${PULLED_BADGE[p.status]}`}>{PULLED_LABEL[p.status]}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }
 
