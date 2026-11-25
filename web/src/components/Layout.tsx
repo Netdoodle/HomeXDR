@@ -28,7 +28,7 @@ const NAV2: { to: string; label: string; icon: IconName }[] = [
 
 function BrandMark() {
   return (
-    <img className="brand-mark" src="/favicon.svg" width={28} height={28} alt="" aria-hidden="true" />
+    <img className="brand-mark" src="/favicon.svg?v=2" width={28} height={28} alt="" aria-hidden="true" />
   )
 }
 

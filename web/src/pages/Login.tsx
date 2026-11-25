@@ -14,7 +14,7 @@ function safeNext(next: string | null): string {
 function Brand() {
   return (
     <div className="brand-line">
-      <img src="/favicon.svg" width={40} height={40} alt="" aria-hidden="true" />
+      <img src="/favicon.svg?v=2" width={40} height={40} alt="" aria-hidden="true" />
       HomeXDR
     </div>
   )
