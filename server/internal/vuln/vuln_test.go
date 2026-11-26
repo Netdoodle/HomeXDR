@@ -452,6 +452,7 @@ func TestOSVEcosystems(t *testing.T) {
 	for _, c := range []struct{ name, version, want string }{
 		{"Debian GNU/Linux", "12", "Debian:12"},
 		{"Raspbian GNU/Linux", "12", "Debian:12"},
+		{"Kali GNU/Linux", "2025.4", "Debian:14"},
 		{"Ubuntu", "24.04", "Ubuntu:24.04:LTS"},
 		{"Alpine Linux", "3.20.3", "Alpine:v3.20"},
 		{"Rocky Linux", "9.4", "Rocky Linux:9"},

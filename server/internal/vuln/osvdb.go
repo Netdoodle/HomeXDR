@@ -70,6 +70,9 @@ func hostEcosystem(os event.OS) (eco string, d *distro, ok bool) {
 			return "", nil, false
 		}
 		return "Debian:" + major, distroByName("Debian"), true
+	case strings.Contains(name, "kali"):
+		// Kali Rolling follows Debian testing.
+		return "Debian:14", distroByName("Debian"), true
 	case strings.Contains(name, "alpine"):
 		e := osvEcosystem(os, "apk")
 		return e, distroByName("Alpine"), e != ""
