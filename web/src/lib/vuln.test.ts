@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { VulnFinding, VulnHost } from '../api/vuln'
 import {
-  bandFor, defaultFilters, epssText, exposureCounts, filterFindings, hostsByRisk, newFindings, packageLabel, scoreText, sortFindings, sourceProblems, weeklyHistory,
+  activeTile, bandFor, defaultFilters, parseVulnQuery, tileFilters, epssText, exposureCounts, filterFindings, hostsByRisk, newFindings, packageLabel, scoreText, sortFindings, sourceProblems, weeklyHistory,
 } from './vuln'
 
 const NOW = Date.parse('2026-11-25T12:00:00Z')
@@ -125,5 +125,72 @@ describe('sourceProblems', () => {
     expect(sourceProblems([{ ...ok, error: 'Could not look up www.cisa.gov.' }], [host])[0]).toContain('www.cisa.gov')
     expect(sourceProblems([ok], [])[0]).toContain('No agents')
     expect(sourceProblems([ok], [{ ...host, packages: 0, note: 'no package database' }])[0]).toContain('no package database')
+  })
+})
+
+describe('summary tiles', () => {
+  const list = [
+    f({ id: '1', band: 'critical', kev: true, exposure: 'internet', fixed_version: '', first_seen: day(2) }),
+    f({ id: '2', band: 'high', first_seen: day(20) }),
+    f({ id: '3', band: 'critical', status: 'accepted', first_seen: day(3) }),
+    f({ id: '4', status: 'fixed', fixed_at: day(1), first_seen: day(30) }),
+    f({ id: '5', status: 'fixed', fixed_at: day(20), first_seen: day(40) }),
+  ]
+  const ids = (k: Parameters<typeof tileFilters>[0]) => filterFindings(list, tileFilters(k), { now: NOW }).map((x) => x.id).join('')
+  it('list exactly what each tile counts', () => {
+    expect(ids('open')).toBe('12')
+    expect(ids('critical')).toBe('1')
+    expect(ids('high')).toBe('2')
+    expect(ids('internet')).toBe('1')
+    expect(ids('kev')).toBe('1')
+    expect(ids('nofix')).toBe('1')
+    expect(ids('new7d')).toBe('13')
+    expect(ids('fixed7d')).toBe('4')
+  })
+  it('knows which tile is active, whatever the search text', () => {
+    expect(activeTile(defaultFilters)).toBe('open')
+    expect(activeTile({ ...tileFilters('kev'), text: 'openssl' })).toBe('kev')
+    expect(activeTile({ ...tileFilters('critical'), host: 'h' })).toBeNull()
+  })
+})
+
+describe('findings search', () => {
+  const list = [
+    f({ id: 'a', cve: 'CVE-2024-6387', package: 'openssh-server', title: 'regreSSHion race', cvss: 8.1, risk: 7.2, epss: 0.62, host_id: 'w', hostname: 'web01' }),
+    f({ id: 'b', cve: 'CVE-2024-4577', package: 'php8.2-cgi', title: 'PHP-CGI argument injection', summary: 'remote code execution', cvss: 9.8, risk: 9.1, epss: 0.97, host_id: 'p', hostname: 'pihole' }),
+    f({ id: 'c', cve: 'CVE-2025-6018', package: 'Unraid OS', package_type: 'os', title: 'web UI auth bypass', cvss: null, risk: 4, epss: null, host_id: 't', hostname: 'tower' }),
+  ]
+  const hostOS = { w: 'Debian 12', p: 'Raspberry Pi OS 12', t: 'Unraid 7.1' }
+  const ids = (text: string) => filterFindings(list, { ...defaultFilters, text }, { hostOS }).map((x) => x.id).join('')
+  it('matches words anywhere, including the OS and summary', () => {
+    expect(ids('openssh')).toBe('a')
+    expect(ids('debian')).toBe('a')
+    expect(ids('remote code')).toBe('b')
+    expect(ids('"remote code"')).toBe('b')
+    expect(ids('unraid')).toBe('c')
+    expect(ids('-php')).toBe('ac')
+  })
+  it('narrows by field', () => {
+    expect(ids('app:php')).toBe('b')
+    expect(ids('os:raspberry')).toBe('b')
+    expect(ids('host:tower')).toBe('c')
+    expect(ids('type:os')).toBe('c')
+    expect(ids('cve:2024')).toBe('ab')
+    expect(ids('title:"argument injection"')).toBe('b')
+  })
+  it('compares numbers', () => {
+    expect(ids('cvss>=9')).toBe('b')
+    expect(ids('cvss:8')).toBe('a')
+    expect(ids('cvss=9.8')).toBe('b')
+    expect(ids('cvss<9')).toBe('a') // unknown CVSS never matches a comparison
+    expect(ids('risk>5')).toBe('ab')
+    expect(ids('epss>90%')).toBe('b')
+    expect(ids('epss>0.5')).toBe('ab')
+    expect(ids('cvss>8 host:web01')).toBe('a')
+  })
+  it('treats unknown fields and bad numbers as text', () => {
+    expect(parseVulnQuery('foo:bar').terms).toEqual(['foo:bar'])
+    expect(parseVulnQuery('cvss>high').terms).toEqual(['cvss>high'])
+    expect(ids('cvss>high')).toBe('')
   })
 })

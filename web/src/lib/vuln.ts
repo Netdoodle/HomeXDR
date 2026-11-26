@@ -63,13 +63,142 @@ export interface VulnFilters {
   exposure: Exposure | ''
   kevOnly: boolean
   hasFix: boolean
+  /** only findings with no patched version released */
+  noFix: boolean
+  /** first seen (new7d) or fixed (fixed7d) in the last 7 days */
+  since: '' | 'new7d' | 'fixed7d'
+  /** the search box: words, "phrases", field:value and numeric comparisons (see parseVulnQuery) */
   text: string
 }
 
-export const defaultFilters: VulnFilters = { status: 'open', band: '', host: '', exposure: '', kevOnly: false, hasFix: false, text: '' }
+export const defaultFilters: VulnFilters = { status: 'open', band: '', host: '', exposure: '', kevOnly: false, hasFix: false, noFix: false, since: '', text: '' }
 
-export function filterFindings(list: VulnFinding[], f: VulnFilters): VulnFinding[] {
-  const terms = f.text.toLowerCase().split(/\s+/).filter(Boolean)
+/** The summary tiles, each a shortcut to the filters that list exactly what it counts. */
+export type TileKey = 'open' | 'critical' | 'high' | 'internet' | 'kev' | 'nofix' | 'new7d' | 'fixed7d'
+
+export function tileFilters(k: TileKey): VulnFilters {
+  const open = { ...defaultFilters, status: 'open' as const }
+  switch (k) {
+    case 'open': return open
+    case 'critical': return { ...open, band: 'critical' }
+    case 'high': return { ...open, band: 'high' }
+    case 'internet': return { ...open, exposure: 'internet' }
+    case 'kev': return { ...open, kevOnly: true }
+    case 'nofix': return { ...open, noFix: true }
+    case 'new7d': return { ...defaultFilters, status: 'all', since: 'new7d' }
+    case 'fixed7d': return { ...defaultFilters, status: 'all', since: 'fixed7d' }
+  }
+}
+
+/** Which tile the filters stand for, if any (the search text is ignored). */
+export function activeTile(f: VulnFilters): TileKey | null {
+  const keys: TileKey[] = ['critical', 'high', 'internet', 'kev', 'nofix', 'new7d', 'fixed7d', 'open']
+  return keys.find((k) => {
+    const t = tileFilters(k)
+    return (Object.keys(t) as (keyof VulnFilters)[]).every((x) => x === 'text' || t[x] === f[x])
+  }) ?? null
+}
+
+type NumField = 'cvss' | 'risk' | 'epss' | 'likelihood'
+type TextField = 'cve' | 'host' | 'app' | 'os' | 'title' | 'type'
+type Op = '>' | '>=' | '<' | '<=' | '='
+
+export interface VulnQuery {
+  /** plain words and phrases, matched anywhere (all must match) */
+  terms: string[]
+  /** words and phrases that must not match */
+  not: string[]
+  fields: { field: TextField; value: string }[]
+  nums: { field: NumField; op: Op; value: number; /** "cvss:9" matches 9.0 to 9.9 */ whole: boolean }[]
+}
+
+const NUM_FIELDS: Record<string, NumField> = { cvss: 'cvss', score: 'cvss', risk: 'risk', epss: 'epss', likelihood: 'likelihood' }
+const TEXT_FIELDS: Record<string, TextField> = {
+  cve: 'cve', host: 'host', hostname: 'host', app: 'app', pkg: 'app', package: 'app', software: 'app', os: 'os', title: 'title', type: 'type',
+}
+
+/**
+ * Parses the findings search: plain words and "quoted phrases" match the CVE, software, version,
+ * host, OS, title and summary; -word excludes; field:value narrows to one field (cve, host, app
+ * or pkg, os, title, type); cvss, risk, epss and likelihood take >, >=, <, <=, = or : with a
+ * number (epss as 0.5 or 50%).
+ */
+export function parseVulnQuery(text: string): VulnQuery {
+  const q: VulnQuery = { terms: [], not: [], fields: [], nums: [] }
+  const unquote = (v: string) => v.replace(/^"(.*)"?$/, '$1').replace(/"$/, '').toLowerCase()
+  for (const m of text.matchAll(/(-?)([a-z]+)(>=|<=|>|<|=|:)("[^"]*"?|\S+)|(-?)("[^"]*"?|\S+)/gi)) {
+    if (m[2] !== undefined) {
+      const name = m[2].toLowerCase()
+      const raw = unquote(m[4])
+      const num = NUM_FIELDS[name]
+      if (num && !m[1]) {
+        const pct = raw.endsWith('%')
+        let n = Number(pct ? raw.slice(0, -1) : raw)
+        if (Number.isFinite(n) && raw !== '') {
+          if (num === 'epss' && (pct || n > 1)) n /= 100
+          const op = (m[3] === ':' ? '=' : m[3]) as Op
+          q.nums.push({ field: num, op, value: n, whole: op === '=' && !raw.includes('.') && num !== 'epss' })
+          continue
+        }
+      }
+      const tf = TEXT_FIELDS[name]
+      if (tf && (m[3] === ':' || m[3] === '=') && raw) {
+        if (m[1]) q.not.push(raw)
+        else q.fields.push({ field: tf, value: raw })
+        continue
+      }
+      // Not a known field: search for the text as typed.
+      const whole = (m[2] + m[3] + raw).toLowerCase()
+      ;(m[1] ? q.not : q.terms).push(whole)
+      continue
+    }
+    const v = unquote(m[6])
+    if (!v) continue
+    if (m[5] && v) q.not.push(v)
+    else q.terms.push(v)
+  }
+  return q
+}
+
+function numValue(x: VulnFinding, f: NumField): number | null {
+  return f === 'cvss' ? x.cvss : f === 'epss' ? x.epss : f === 'risk' ? x.risk : x.likelihood
+}
+
+function fieldText(x: VulnFinding, f: TextField, os: string): string {
+  switch (f) {
+    case 'cve': return x.cve
+    case 'host': return x.hostname
+    case 'app': return `${x.package} ${x.source_package}`
+    case 'os': return os
+    case 'title': return `${x.title} ${x.summary}`
+    case 'type': return `${x.package_type} ${x.package_type === 'os' ? 'operating system' : ''}`
+  }
+}
+
+/** Whether a finding matches a parsed search. hostOS is the host's OS ("Debian 12"). */
+export function matchesQuery(x: VulnFinding, q: VulnQuery, hostOS = ''): boolean {
+  for (const n of q.nums) {
+    const v = numValue(x, n.field)
+    if (v === null) return false
+    const r = Math.round(v * 1000) / 1000
+    const ok = n.op === '>' ? r > n.value : n.op === '>=' ? r >= n.value : n.op === '<' ? r < n.value : n.op === '<=' ? r <= n.value
+      : n.whole ? r >= n.value && r < n.value + 1 : Math.abs(r - n.value) < 0.05
+    if (!ok) return false
+  }
+  for (const f of q.fields) {
+    if (!fieldText(x, f.field, hostOS).toLowerCase().includes(f.value)) return false
+  }
+  if (q.terms.length || q.not.length) {
+    const hay = [x.cve, x.package, x.source_package, x.version, x.fixed_version, x.package_type, x.hostname, hostOS, x.title, x.summary].join(' ').toLowerCase()
+    if (!q.terms.every((t) => hay.includes(t))) return false
+    if (q.not.some((t) => hay.includes(t))) return false
+  }
+  return true
+}
+
+export function filterFindings(list: VulnFinding[], f: VulnFilters, opts: { now?: number; hostOS?: Record<string, string> } = {}): VulnFinding[] {
+  const q = parseVulnQuery(f.text)
+  const week = (opts.now ?? Date.now()) - 7 * 86400_000
   return list.filter((x) => {
     if (f.status !== 'all' && x.status !== f.status) return false
     if (f.band && x.band !== f.band) return false
@@ -77,11 +206,10 @@ export function filterFindings(list: VulnFinding[], f: VulnFilters): VulnFinding
     if (f.exposure && x.exposure !== f.exposure) return false
     if (f.kevOnly && !x.kev) return false
     if (f.hasFix && !x.fixed_version) return false
-    if (terms.length) {
-      const hay = `${x.cve} ${x.package} ${x.hostname} ${x.title}`.toLowerCase()
-      if (!terms.every((t) => hay.includes(t))) return false
-    }
-    return true
+    if (f.noFix && x.fixed_version) return false
+    if (f.since === 'new7d' && !(Date.parse(x.first_seen) > week)) return false
+    if (f.since === 'fixed7d' && !(x.fixed_at && Date.parse(x.fixed_at) > week)) return false
+    return matchesQuery(x, q, opts.hostOS?.[x.host_id] ?? '')
   })
 }
 

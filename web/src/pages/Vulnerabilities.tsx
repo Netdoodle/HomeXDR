@@ -19,8 +19,8 @@ import { formatNumber, plural } from '../lib/format'
 import { useDocumentTitle } from '../lib/hooks'
 import { formatDate } from '../lib/time'
 import {
-  BANDS, BAND_LABEL, coverageText, defaultFilters, epssText, exposureCounts, filterFindings, hostsByRisk, newFindings, packageLabel, scoreText, sortFindings, sourceProblems, weeklyHistory,
-  type SortDir, type SortKey, type VulnFilters,
+  activeTile, BANDS, BAND_LABEL, coverageText, defaultFilters, tileFilters, epssText, exposureCounts, filterFindings, hostsByRisk, newFindings, packageLabel, scoreText, sortFindings, sourceProblems, weeklyHistory,
+  type SortDir, type SortKey, type TileKey, type VulnFilters,
 } from '../lib/vuln'
 
 const PAGE = 100
@@ -81,7 +81,8 @@ function Body({ report: r, isAdmin, problems }: { report: VulnReport; isAdmin: b
     setOffset(0)
   }
   const fresh = useMemo(() => newFindings(r.findings), [r.findings])
-  const rows = useMemo(() => sortFindings(filterFindings(r.findings, filters), sort.key, sort.dir), [r.findings, filters, sort])
+  const hostOS = useMemo(() => Object.fromEntries(r.hosts.map((h) => [h.host_id, h.os])), [r.hosts])
+  const rows = useMemo(() => sortFindings(filterFindings(r.findings, filters, { hostOS }), sort.key, sort.dir), [r.findings, filters, sort, hostOS])
   const page = rows.slice(offset, offset + PAGE)
   const s = r.summary
 
@@ -91,6 +92,15 @@ function Body({ report: r, isAdmin, problems }: { report: VulnReport; isAdmin: b
     setOpenId(f.id)
     requestAnimationFrame(() => document.getElementById('vuln-table')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
+  const tile = activeTile(filters)
+  // A tile lists what it counts; clicking the active one again clears it. The search text stays.
+  const pickTile = (k: TileKey) => {
+    setFilters((f) => ({ ...(tile === k && k !== 'open' ? defaultFilters : tileFilters(k)), text: f.text }))
+    setOffset(0)
+    setOpenId(null)
+    requestAnimationFrame(() => document.getElementById('vuln-table')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
+  const tileProps = (k: TileKey) => ({ active: tile === k, onClick: () => pickTile(k) })
   const sortBy = (key: SortKey) => {
     setSort((c) => (c.key === key ? { key, dir: c.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: key === 'host' ? 'asc' : 'desc' }))
     setOffset(0)
@@ -117,13 +127,24 @@ function Body({ report: r, isAdmin, problems }: { report: VulnReport; isAdmin: b
       ) : null}
 
       <div className="stats">
-        <Tile label="Open" value={s.open} />
-        <Tile label="Critical" value={s.critical} color="var(--sev-critical)" />
-        <Tile label="High" value={s.high} color="var(--sev-high)" />
-        <Tile label="Internet-exposed" value={s.internet_exposed} sub="on hosts reachable from the internet" />
-        <Tile label="Actively exploited" value={s.kev} sub="on CISA’s known-exploited list" />
-        <Tile label="No fix yet" value={s.no_fix} sub="no patched version released" />
-        <Tile label="New / fixed this week" value={`${formatNumber(s.new_7d)} / ${formatNumber(s.fixed_7d)}`} />
+        <Tile label="Open" value={s.open} {...tileProps('open')} />
+        <Tile label="Critical" value={s.critical} color="var(--sev-critical)" {...tileProps('critical')} />
+        <Tile label="High" value={s.high} color="var(--sev-high)" {...tileProps('high')} />
+        <Tile label="Internet-exposed" value={s.internet_exposed} sub="on hosts reachable from the internet" {...tileProps('internet')} />
+        <Tile label="Actively exploited" value={s.kev} sub="on CISA’s known-exploited list" {...tileProps('kev')} />
+        <Tile label="No fix yet" value={s.no_fix} sub="no patched version released" {...tileProps('nofix')} />
+        <div className="stat">
+          <span className="label">New / fixed this week</span>
+          <span className="value">
+            <button type="button" className="stat-link" aria-pressed={tile === 'new7d'} title="Show findings first seen this week" onClick={() => pickTile('new7d')}>
+              {formatNumber(s.new_7d)}
+            </button>
+            {' / '}
+            <button type="button" className="stat-link" aria-pressed={tile === 'fixed7d'} title="Show findings fixed this week" onClick={() => pickTile('fixed7d')}>
+              {formatNumber(s.fixed_7d)}
+            </button>
+          </span>
+        </div>
       </div>
 
       <section className="panel">
@@ -165,11 +186,31 @@ function Body({ report: r, isAdmin, problems }: { report: VulnReport; isAdmin: b
       <section className="panel" id="vuln-table">
         <div className="panel-header">
           <h2>Findings</h2>
-          <span className="small muted">{formatNumber(rows.length)} matching</span>
+          <span className="small muted">
+            {formatNumber(rows.length)} matching
+            {filters.since ? ` · ${filters.since === 'new7d' ? 'first seen' : 'fixed'} in the last 7 days` : ''}
+            {filters.since || filters.noFix ? (
+              <>
+                {' '}
+                <button type="button" className="btn small ghost" onClick={() => patch({ since: '', noFix: false })}>
+                  Clear
+                </button>
+              </>
+            ) : null}
+          </span>
         </div>
         <div className="panel-body" style={{ paddingBottom: 0 }}>
           <div className="filters" style={{ marginBottom: 0 }}>
-            <input type="search" className="input" placeholder="CVE, package, host, title…" value={filters.text} onChange={(e) => patch({ text: e.target.value })} aria-label="Search findings" />
+            <input
+              type="search"
+              className="input"
+              style={{ minWidth: 300 }}
+              placeholder="Search: CVE, app, OS, title, cvss>=7…"
+              title={SEARCH_HELP}
+              value={filters.text}
+              onChange={(e) => patch({ text: e.target.value })}
+              aria-label="Search findings"
+            />
             <select className="select" value={filters.status} onChange={(e) => patch({ status: e.target.value as VulnFilters['status'] })} aria-label="Status">
               <option value="open">Open</option>
               <option value="accepted">Accepted</option>
@@ -201,10 +242,18 @@ function Body({ report: r, isAdmin, problems }: { report: VulnReport; isAdmin: b
               <button type="button" className="chip" aria-pressed={filters.kevOnly} onClick={() => patch({ kevOnly: !filters.kevOnly })}>
                 KEV only
               </button>
-              <button type="button" className="chip" aria-pressed={filters.hasFix} onClick={() => patch({ hasFix: !filters.hasFix })}>
+              <button type="button" className="chip" aria-pressed={filters.hasFix} onClick={() => patch({ hasFix: !filters.hasFix, noFix: false })}>
                 Has fix
               </button>
+              <button type="button" className="chip" aria-pressed={filters.noFix} onClick={() => patch({ noFix: !filters.noFix, hasFix: false })}>
+                No fix yet
+              </button>
             </div>
+          </div>
+          <div className="xsmall muted" style={{ marginTop: 6 }}>
+            Words match the CVE, software, version, host, OS and title. Narrow with <span className="mono">app:openssl</span>, <span className="mono">os:debian</span>,{' '}
+            <span className="mono">host:web01</span>, <span className="mono">title:"remote code"</span>, <span className="mono">cvss&gt;=9</span>, <span className="mono">risk&gt;7</span>,{' '}
+            <span className="mono">epss&gt;10%</span>; put <span className="mono">-</span> before a word to leave it out.
           </div>
         </div>
         {rows.length ? (
@@ -279,15 +328,19 @@ function Body({ report: r, isAdmin, problems }: { report: VulnReport; isAdmin: b
   )
 }
 
-function Tile({ label, value, sub, color }: { label: string; value: number | string; sub?: string; color?: string }) {
+const SEARCH_HELP =
+  'Words match the CVE, software, version, host, OS and title. Fields: app:, os:, host:, cve:, title:, type:. Numbers: cvss>=9, risk>7, epss>10%, likelihood<3. -word leaves it out.'
+
+/** A summary tile that filters the findings table to what it counts. */
+function Tile({ label, value, sub, color, active, onClick }: { label: string; value: number; sub?: string; color?: string; active: boolean; onClick: () => void }) {
   return (
-    <div className="stat">
+    <button type="button" className="stat stat-button" aria-pressed={active} title={`Show these findings: ${label.toLowerCase()}`} onClick={onClick}>
       <span className="label">{label}</span>
       <span className="value" style={color ? { color } : undefined}>
-        {typeof value === 'number' ? formatNumber(value) : value}
+        {formatNumber(value)}
       </span>
       {sub ? <span className="sub">{sub}</span> : null}
-    </div>
+    </button>
   )
 }
 
