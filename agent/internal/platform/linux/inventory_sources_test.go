@@ -203,3 +203,52 @@ func TestCollectNoSystemdInitd(t *testing.T) {
 		t.Fatalf("%v", names)
 	}
 }
+
+func TestParseDpkgStatusSource(t *testing.T) {
+	in := "Package: libssl3\nStatus: install ok installed\nVersion: 3.0.11-1\nArchitecture: amd64\nSource: openssl\n\n" +
+		"Package: libgcc-s1\nStatus: install ok installed\nVersion: 12.2.0-14\nSource: gcc-12 (12.2.0-14)\n\n" +
+		"Package: bash\nStatus: install ok installed\nVersion: 5.2\nSource: bash\n\n" +
+		"Package: curl\nStatus: install ok installed\nVersion: 7.88\n\n"
+	got := map[string]string{}
+	for _, p := range parseDpkgStatus([]byte(in)) {
+		got[p.Name] = p.Source
+	}
+	want := map[string]string{"libssl3": "openssl", "libgcc-s1": "gcc-12", "bash": "", "curl": ""}
+	for k, v := range want {
+		if g, ok := got[k]; !ok || g != v {
+			t.Errorf("%s source = %q (present %v), want %q", k, g, ok, v)
+		}
+	}
+}
+
+func TestParseAPKSource(t *testing.T) {
+	in := "P:libssl3\nV:3.1.4-r5\nA:x86_64\no:openssl\n\nP:busybox\nV:1.36-r0\no:busybox\n\nP:nothing\nV:1\n\n"
+	got := map[string]string{}
+	for _, p := range parseAPK([]byte(in)) {
+		got[p.Name] = p.Source
+	}
+	if got["libssl3"] != "openssl" || got["busybox"] != "" || got["nothing"] != "" {
+		t.Fatalf("got %v", got)
+	}
+	if r := (pkg{Name: "a", Source: "b"}).row(); r["source"] != "b" {
+		t.Fatalf("row %v", r)
+	}
+	if r := (pkg{Name: "a"}).row(); r["source"] != nil {
+		t.Fatalf("row %v", r)
+	}
+}
+
+func TestRPMSourceName(t *testing.T) {
+	for in, want := range map[string]string{
+		"openssl-3.0.7-27.el9.src.rpm":        "openssl",
+		"kernel-5.14.0-362.8.1.el9_3.src.rpm": "kernel",
+		"python-dateutil-2.8.1-6.el9.src.rpm": "python-dateutil",
+		"(none)":                              "",
+		"":                                    "",
+		"garbage.src.rpm":                     "",
+	} {
+		if got := rpmSourceName(in); got != want {
+			t.Errorf("rpmSourceName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

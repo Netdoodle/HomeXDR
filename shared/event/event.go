@@ -346,6 +346,9 @@ type Package struct {
 	InstallPath  string     `json:"install_path,omitempty"`
 	Installed    *time.Time `json:"installed,omitempty"`
 	Type         string     `json:"type,omitempty"` // deb, rpm, msi, winget, brew
+	// Source is the source package name, when the package manager records one (dpkg
+	// Source:, apk origin, the source RPM's name). Distro advisories name source packages.
+	Source string `json:"source,omitempty"`
 }
 
 // Target describes the process acted on in a cross-process event (event.action

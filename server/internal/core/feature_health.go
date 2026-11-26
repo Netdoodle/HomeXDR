@@ -35,7 +35,8 @@ func (c *Core) initHealth(ctx context.Context) {
 	}
 	c.Enrich = c.Health.Lists
 	c.Intel.SetOffline(c.Health.Lists)
-	c.Health.Vuln = vuln.New(c.State, c.Events, c.Health.Lists, vulnNotifier{c}, c.Log)
+	c.Health.Vuln = vuln.New(c.State, c.Events, c.Health.Lists, c.Log)
+	c.Health.Vuln.Exposure = vulnExposure{c}
 	if err := c.Health.Feeds.load(ctx); err != nil {
 		c.Log.Warn("feed health: load", "err", err)
 	}
@@ -44,6 +45,7 @@ func (c *Core) initHealth(ctx context.Context) {
 // runHealth is the background loop of those features.
 func (c *Core) runHealth(ctx context.Context) {
 	c.Health.serving.Store(true)
+	c.retireVulnAlerts(ctx)
 	var wg sync.WaitGroup
 	for _, run := range []func(context.Context){c.Health.Feeds.Run, c.Health.Lists.Run, c.Health.Vuln.Run, c.runRefused} {
 		wg.Add(1)

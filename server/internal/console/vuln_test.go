@@ -12,13 +12,15 @@ func TestVulnRoutes(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("viewer read = %d", code)
 	}
-	if m, ok := body["matches"].([]any); !ok || len(m) != 0 {
-		t.Fatalf("matches should be an empty list: %v", body)
+	if m, ok := body["findings"].([]any); !ok || len(m) != 0 {
+		t.Fatalf("findings should be an empty list: %v", body)
 	}
-	if kev := body["kev"].(map[string]any); kev["enabled"] != true {
-		t.Fatalf("catalog should be on by default: %v", kev)
+	for _, src := range body["sources"].([]any) {
+		if src.(map[string]any)["enabled"] != true {
+			t.Fatalf("sources should be on by default: %v", src)
+		}
 	}
-	if osv := body["osv"].(map[string]any); osv["enabled"] != false {
+	if osv := body["osv_api"].(map[string]any); osv["enabled"] != false {
 		t.Fatalf("OSV must be off by default: %v", osv)
 	}
 	if code, _ := viewer.do("POST", "/api/vulnerabilities/refresh", nil, true); code != http.StatusForbidden {
@@ -31,8 +33,18 @@ func TestVulnRoutes(t *testing.T) {
 		t.Fatalf("no value = %d", code)
 	}
 	code, body = admin.do("PUT", "/api/settings/vuln", map[string]any{"osv": true}, true)
-	if code != 200 || body["osv"].(map[string]any)["enabled"] != true {
+	if code != 200 || body["osv_api"].(map[string]any)["enabled"] != true {
 		t.Fatalf("settings = %d %v", code, body)
+	}
+	accept := map[string]any{"host_id": "h1", "package": "exim", "cve": "CVE-2010-4344", "accepted": true, "note": "lab box"}
+	if code, _ := viewer.do("PUT", "/api/vulnerabilities/accept", accept, true); code != http.StatusForbidden {
+		t.Fatalf("viewer accept = %d", code)
+	}
+	if code, _ := admin.do("PUT", "/api/vulnerabilities/accept", accept, true); code != http.StatusNotFound {
+		t.Fatalf("accept unknown = %d", code)
+	}
+	if code, _ := admin.do("PUT", "/api/vulnerabilities/accept", map[string]any{"accepted": true}, true); code != http.StatusBadRequest {
+		t.Fatalf("accept empty = %d", code)
 	}
 	if code, _ := admin.do("POST", "/api/vulnerabilities/refresh", nil, true); code != 200 {
 		t.Fatalf("refresh = %d", code)

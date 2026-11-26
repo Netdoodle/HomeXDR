@@ -89,7 +89,7 @@ For Unraid hosts, see [deploy/unraid](deploy/unraid/README.md).
 - [Network visibility](docs/network-visibility.md), [device inventory](docs/devices.md) and [behaviour detection](docs/behavior.md)
 - [Data health, doctor and self-check](docs/health.md)
 - [Offline lists](docs/lists.md)
-- [Known-exploited software](docs/vulnerabilities.md)
+- [Vulnerabilities and risk scores](docs/vulnerabilities.md)
 - [Decoy files](docs/decoys.md)
 - [Sysmon on Windows agents](docs/sysmon.md)
 

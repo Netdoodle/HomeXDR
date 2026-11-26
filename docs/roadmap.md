@@ -70,6 +70,12 @@ network-wide block that also covers devices without the agent.
 
 A scanner in the style of commercial vulnerability management tools, in four steps.
 
+Shipped 2026-11-26: Linux distro packages matched against OSV's distro advisories (Debian,
+Ubuntu, Alpine, Rocky, AlmaLinux), a risk score from CVSS × likelihood (internet exposure from the
+firewall log, attack vector, EPSS, CISA KEV), and the Vulnerabilities page with its own charts
+instead of alerts. See [vulnerabilities.md](vulnerabilities.md). Still open below: Windows,
+Docker image contents, the network scanner, per-port exposure, and configuration checks.
+
 1. **On-host (agent).** Windows software inventory (registry, Store apps, build and patch
    level). Linux packages already work; add the kernel and distro release. Matching:
    - Linux packages: OSV.dev and the distros' security trackers (aware of backported fixes)

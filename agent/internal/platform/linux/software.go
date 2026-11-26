@@ -38,11 +38,17 @@ var errNoPackageDB = errors.New("no supported package database found (looked for
 
 type pkg struct {
 	Name, Version, Vendor, Type, Arch string
-	Installed                         time.Time
+	// Source is the source package name; empty when the package manager records none or it
+	// equals the binary name.
+	Source    string
+	Installed time.Time
 }
 
 func (p pkg) row() platform.Row {
 	r := platform.Row{"name": p.Name, "version": p.Version, "vendor": p.Vendor, "type": p.Type, "arch": p.Arch}
+	if p.Source != "" {
+		r["source"] = p.Source
+	}
 	if !p.Installed.IsZero() {
 		r["install_date"] = rfc3339(p.Installed)
 	}
@@ -72,7 +78,14 @@ func parseDpkgStatus(b []byte) []pkg {
 		if i := strings.Index(vendor, " <"); i > 0 {
 			vendor = vendor[:i]
 		}
-		out = append(out, pkg{Name: f["Package"], Version: f["Version"], Vendor: vendor, Type: "deb", Arch: f["Architecture"]})
+		src := f["Source"]
+		if i := strings.IndexAny(src, " ("); i >= 0 {
+			src = src[:i] // "name (version)" when the source version differs
+		}
+		if src == f["Package"] {
+			src = ""
+		}
+		out = append(out, pkg{Name: f["Package"], Version: f["Version"], Vendor: vendor, Type: "deb", Arch: f["Architecture"], Source: src})
 	}
 	return out
 }
@@ -105,6 +118,8 @@ func parseAPK(b []byte) []pkg {
 				p.Version = v
 			case 'A':
 				p.Arch = v
+			case 'o':
+				p.Source = v
 			case 'm':
 				p.Vendor = v
 			case 't':
@@ -114,11 +129,34 @@ func parseAPK(b []byte) []pkg {
 			}
 		}
 		if p.Name != "" {
+			if p.Source == p.Name {
+				p.Source = ""
+			}
 			p.Type = "apk"
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// rpmSourceName turns a %{SOURCERPM} value, name-version-release.src.rpm, into the source
+// package name. "(none)" and anything unparsable give "".
+func rpmSourceName(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "(none)" {
+		return ""
+	}
+	s = strings.TrimSuffix(s, ".rpm")
+	s = strings.TrimSuffix(s, ".src")
+	// Strip release then version: the last two dashes.
+	for i := 0; i < 2; i++ {
+		j := strings.LastIndex(s, "-")
+		if j <= 0 {
+			return ""
+		}
+		s = s[:j]
+	}
+	return s
 }
 
 // parsePacmanDesc parses one /var/lib/pacman/local/<pkg>/desc file.
@@ -264,7 +302,7 @@ func collectSoftware(ctx context.Context, _ map[string]string, emit func(platfor
 	}
 	if rpm, err := exec.LookPath("rpm"); err == nil {
 		found = true
-		out, err := exec.CommandContext(ctx, rpm, "-qa", "--qf", `%{NAME}\t%{VERSION}-%{RELEASE}\t%{VENDOR}\t%{INSTALLTIME}\t%{ARCH}\n`).Output()
+		out, err := exec.CommandContext(ctx, rpm, "-qa", "--qf", `%{NAME}\t%{VERSION}-%{RELEASE}\t%{VENDOR}\t%{INSTALLTIME}\t%{ARCH}\t%{SOURCERPM}\n`).Output()
 		if err == nil && len(out) > 0 {
 			sc := bufio.NewScanner(bytes.NewReader(out))
 			for sc.Scan() {
@@ -273,6 +311,12 @@ func collectSoftware(ctx context.Context, _ map[string]string, emit func(platfor
 					continue
 				}
 				p := pkg{Name: f[0], Version: f[1], Vendor: strings.TrimPrefix(f[2], "(none)"), Type: "rpm", Arch: f[4]}
+				if len(f) > 5 {
+					p.Source = rpmSourceName(f[5])
+					if p.Source == p.Name {
+						p.Source = ""
+					}
+				}
 				if s, err := strconv.ParseInt(f[3], 10, 64); err == nil {
 					p.Installed = time.Unix(s, 0)
 				}

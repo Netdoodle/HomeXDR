@@ -3,40 +3,84 @@ package core
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"time"
 
+	"github.com/Netdoodle/homexdr/server/internal/events"
 	"github.com/Netdoodle/homexdr/server/internal/store"
 )
 
-// RuleVulnKEV is the alert raised for software with a confirmed known-exploited vulnerability.
+// RuleVulnKEV is the alert older versions raised for a confirmed known-exploited vulnerability.
+// Vulnerabilities now live on the Vulnerabilities page and raise no alerts; open ones of these
+// are resolved at start.
 const RuleVulnKEV = "vuln:kev"
 
-// vulnNotifier turns the vulnerability service's decisions into alerts.
-type vulnNotifier struct{ c *Core }
+const vulnRetiredNote = "Vulnerabilities no longer raise alerts. This one, with its risk score, is on the Vulnerabilities page. HomeXDR resolved this alert itself."
 
-func vulnEntity(hostID, cve string) string { return hostID + "/" + cve }
-
-// RaiseVuln raises one finding per host and CVE.
-func (n vulnNotifier) RaiseVuln(ctx context.Context, m store.VulnMatch) error {
-	entity := vulnEntity(m.HostID, m.CVE)
-	msg := fmt.Sprintf("%s runs %s %s, which has %s, a vulnerability CISA knows is being exploited. %s", m.Hostname, m.Package, m.Version, m.CVE, m.Reason)
-	if m.Ransomware {
-		msg += " It is known to be used in ransomware campaigns."
+// retireVulnAlerts resolves the alerts older versions raised for vulnerabilities.
+func (c *Core) retireVulnAlerts(ctx context.Context) {
+	n, err := c.State.ResolveRuleAlerts(ctx, RuleVulnKEV, feedNoteAuthor, vulnRetiredNote)
+	if err != nil {
+		c.Log.Warn("vulnerabilities: resolve old alerts", "err", err)
+		return
 	}
-	return n.c.RaiseFinding(ctx, Finding{
-		RuleID: RuleVulnKEV, Severity: store.SevHigh, Tags: []string{"homexdr", "vulnerability", "kev"},
-		Title:       "Known-exploited vulnerability on " + m.Hostname + ": " + m.CVE,
-		Description: m.Title,
-		Message:     msg,
-		Entity:      entity, HostID: m.HostID, Hostname: m.Hostname, Dataset: "homexdr.vulnerability",
-		Data: map[string]any{
-			"entity": entity, "cve": m.CVE, "package": m.Package, "version": m.Version,
-			"kev_date": m.KEVDate, "due_date": m.DueDate, "ransomware": m.Ransomware,
-		},
-	})
+	if n > 0 {
+		c.Log.Info("vulnerabilities: resolved old alerts, which moved to the Vulnerabilities page", "count", n)
+	}
 }
 
-// ResolveVuln resolves a host and CVE's alert, with a note.
-func (n vulnNotifier) ResolveVuln(ctx context.Context, hostID, cve, note string) error {
-	_, err := n.c.State.ResolveFinding(ctx, RuleVulnKEV, hostID, vulnEntity(hostID, cve), feedNoteAuthor, note)
-	return err
+// exposureDays is how far back the firewall log is read to see what the internet reaches.
+const exposureDays = 7
+
+// vulnExposure answers which hosts take connections from the internet: those the firewall
+// passed connections to from public addresses in the last week (port forwards and other open
+// inbound rules), with the ports.
+type vulnExposure struct{ c *Core }
+
+func (e vulnExposure) InternetExposure(ctx context.Context) (map[string][]int, error) {
+	hosts, err := e.c.State.ListHosts(ctx, store.HostFilter{Kind: store.HostEndpoint})
+	if err != nil {
+		return nil, err
+	}
+	byIP := map[string]string{}
+	for _, h := range hosts {
+		if h.Revoked {
+			continue
+		}
+		for _, ip := range h.IPs {
+			byIP[ip] = h.ID
+		}
+		if h.LastIP != "" && !h.LastExternal {
+			byIP[h.LastIP] = h.ID
+		}
+	}
+	out := map[string][]int{}
+	if len(byIP) == 0 {
+		return out, nil
+	}
+	res, err := e.c.Events.Search(ctx, events.SearchQuery{From: time.Now().UTC().AddDate(0, 0, -exposureDays),
+		Query: inboundBase + ` event.action:pass ` + notPrivateSource + ` | stats count by destination.ip, destination.port | head 5000`})
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, row := range res.Rows {
+		if len(row) < 2 {
+			continue
+		}
+		hostID, ok := byIP[fmt.Sprint(row[0])]
+		if !ok {
+			continue
+		}
+		port, err := strconv.Atoi(fmt.Sprint(row[1]))
+		if err != nil || port <= 0 {
+			continue
+		}
+		k := hostID + ":" + strconv.Itoa(port)
+		if !seen[k] {
+			seen[k] = true
+			out[hostID] = append(out[hostID], port)
+		}
+	}
+	return out, nil
 }

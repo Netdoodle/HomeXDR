@@ -1,7 +1,8 @@
-// Package vuln compares the software agents report with CISA's catalog of known exploited
-// vulnerabilities. The catalog has no version ranges, so matching is by name and conservative:
-// a result is a "possible match" unless a version check confirms it, and only confirmed matches
-// raise an alert. See docs/vulnerabilities.md.
+// Package vuln finds known vulnerabilities in the software agents report, and scores each by
+// real risk: how bad it is (CVSS) times how likely it is to be used against that host. Distro
+// packages are checked against OSV's distro advisories, downloaded in advance; other software
+// is matched by name against CISA's catalog of known exploited vulnerabilities. Findings live on
+// the Vulnerabilities page and raise no alerts. See docs/vulnerabilities.md.
 package vuln
 
 import (
@@ -13,8 +14,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -54,82 +57,119 @@ type Settings struct {
 	OSV bool `json:"osv"`
 }
 
-// Notifier raises and resolves alerts. Core implements it, so this package need not know how.
-type Notifier interface {
-	RaiseVuln(ctx context.Context, m store.VulnMatch) error
-	ResolveVuln(ctx context.Context, hostID, cve, note string) error
+// ExposureSource says which hosts take connections from the internet, and on which ports.
+// Core implements it from the firewall log.
+type ExposureSource interface {
+	InternetExposure(ctx context.Context) (map[string][]int, error)
 }
 
-// HostInventory says what software data a host has given.
-type HostInventory struct {
+// Coverage of a host.
+const (
+	CoverageFull    = "full"     // distro advisories cover its packages
+	CoverageKEVOnly = "kev_only" // only CISA's catalog, by name
+	CoverageNone    = "none"     // no software list
+)
+
+// Host is one host on the Vulnerabilities page.
+type Host struct {
 	HostID     string     `json:"host_id"`
 	Hostname   string     `json:"hostname"`
+	OS         string     `json:"os"`
 	Packages   int        `json:"packages"`
 	SnapshotAt *time.Time `json:"snapshot_at,omitempty"`
 	// Note says why there is no data, when the agent gave a reason.
-	Note string `json:"note,omitempty"`
+	Note         string  `json:"note,omitempty"`
+	Coverage     string  `json:"coverage"`
+	Exposure     string  `json:"exposure"`
+	ExposedPorts []int   `json:"exposed_ports"`
+	Open         int     `json:"open"`
+	MaxRisk      float64 `json:"max_risk"`
 }
 
-// Report is the Vulnerabilities page.
-type Report struct {
-	Matches   []store.VulnMatch `json:"matches"`
-	Confirmed int               `json:"confirmed"`
-	Possible  int               `json:"possible"`
-	Hosts     []HostInventory   `json:"hosts"`
-	KEV       KEVStatus         `json:"kev"`
-	OSV       OSVStatus         `json:"osv"`
-	LastRun   *time.Time        `json:"last_run,omitempty"`
-	Running   bool              `json:"running"`
+// Summary counts the open findings.
+type Summary struct {
+	Open            int `json:"open"`
+	Critical        int `json:"critical"`
+	High            int `json:"high"`
+	Medium          int `json:"medium"`
+	Low             int `json:"low"`
+	InternetExposed int `json:"internet_exposed"`
+	KEV             int `json:"kev"`
+	New7d           int `json:"new_7d"`
+	Fixed7d         int `json:"fixed_7d"`
+	NoFix           int `json:"no_fix"`
 }
 
-// KEVStatus is how the catalog download is doing.
-type KEVStatus struct {
+// SourceStatus is one data source.
+type SourceStatus struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
 	Enabled    bool       `json:"enabled"`
 	Entries    int        `json:"entries"`
-	Version    string     `json:"version,omitempty"`
 	LastUpdate *time.Time `json:"last_update,omitempty"`
 	Error      string     `json:"error,omitempty"`
 }
 
-// OSVStatus is the optional OSV check.
+// OSVStatus is the optional online OSV check.
 type OSVStatus struct {
 	Enabled bool   `json:"enabled"`
 	Error   string `json:"error,omitempty"`
 }
 
-// Service keeps matches up to date.
+// Report is the Vulnerabilities page.
+type Report struct {
+	Findings []store.VulnFinding      `json:"findings"`
+	Summary  Summary                  `json:"summary"`
+	History  []store.VulnHistoryPoint `json:"history"`
+	Hosts    []Host                   `json:"hosts"`
+	Sources  []SourceStatus           `json:"sources"`
+	OSVAPI   OSVStatus                `json:"osv_api"`
+	LastRun  *time.Time               `json:"last_run,omitempty"`
+	Running  bool                     `json:"running"`
+}
+
+// Service keeps findings up to date.
 type Service struct {
-	st     *store.Store
-	ev     events.Store
-	lists  *lists.Service
-	notify Notifier
-	log    *slog.Logger
+	st    *store.Store
+	ev    events.Store
+	lists *lists.Service
+	log   *slog.Logger
+	// Exposure, when set, says which hosts the internet can reach.
+	Exposure ExposureSource
 	// HTTP makes the optional OSV requests (tests replace it and OSVURL).
 	HTTP   *http.Client
 	OSVURL string
 	now    func() time.Time
 
 	kev     atomic.Pointer[catalog]
+	epss    atomic.Pointer[epssTable]
 	poke    chan struct{}
 	running atomic.Bool
 
-	mu       sync.Mutex
-	hosts    map[string]HostInventory
-	lastRun  time.Time
-	osvError string
+	osvMu  sync.Mutex
+	osvGen int
+	osvIdx *osvIndex
+
+	mu         sync.Mutex
+	hosts      map[string]Host
+	lastRun    time.Time
+	osvError   string
+	exposure   map[string][]int
+	exposureAt time.Time
 }
 
-// New registers the catalog on the offline lists. It starts nothing.
-func New(st *store.Store, ev events.Store, l *lists.Service, n Notifier, log *slog.Logger) *Service {
+// New registers the catalog, the distro advisories and the exploit scores on the offline lists.
+// It starts nothing.
+func New(st *store.Store, ev events.Store, l *lists.Service, log *slog.Logger) *Service {
 	s := &Service{
-		st: st, ev: ev, lists: l, notify: n, log: log, OSVURL: osvURL,
+		st: st, ev: ev, lists: l, log: log, OSVURL: osvURL,
 		HTTP: &http.Client{Timeout: time.Minute},
 		now:  func() time.Time { return time.Now().UTC() },
-		poke: make(chan struct{}, 1), hosts: map[string]HostInventory{},
+		poke: make(chan struct{}, 1), hosts: map[string]Host{},
 	}
 	l.Register(&lists.Source{
 		ID: ListID, Name: "Known exploited vulnerabilities (CISA)",
-		About:   "The vulnerabilities CISA knows are being exploited, compared with the software your agents report. See the Vulnerabilities page.",
+		About:   "The vulnerabilities CISA knows are being exploited. Used in the risk score on the Vulnerabilities page, and to match software no distro advisories cover.",
 		SiteURL: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog", DefaultOn: true, Every: 24 * time.Hour, MaxBytes: 32 << 20, MinEntries: 100,
 		License: "U.S. government data from CISA, free to use.", LicenseURL: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
 		Files: func(time.Time) []lists.RemoteFile { return []lists.RemoteFile{{Name: kevFileName, URL: kevURL}} },
@@ -145,6 +185,8 @@ func New(st *store.Store, ev events.Store, l *lists.Service, n Notifier, log *sl
 		},
 		Clear: func() { s.kev.Store(nil) },
 	})
+	s.registerOSV(l)
+	s.registerEPSS(l)
 	return s
 }
 
@@ -171,6 +213,8 @@ func (s *Service) SaveSettings(ctx context.Context, set Settings) error {
 // pkg is one line of a host's software list.
 type pkg struct {
 	name, version, typ string
+	// source is the source package, when the package manager records one.
+	source string
 }
 
 // inventory reads a host's newest software list: its newest row, then the rows of that snapshot.
@@ -194,7 +238,7 @@ func (s *Service) inventory(ctx context.Context, hostID string, now time.Time) (
 		if e.Package == nil || e.Package.Name == "" {
 			continue
 		}
-		p := pkg{e.Package.Name, e.Package.Version, e.Package.Type}
+		p := pkg{name: e.Package.Name, version: e.Package.Version, typ: e.Package.Type, source: e.Package.Source}
 		if !seen[p] {
 			seen[p] = true
 			out = append(out, p)
@@ -368,156 +412,454 @@ func (s *Service) osvCheck(ctx context.Context, host *store.Host, list []store.V
 	return nil
 }
 
-// Scan compares every host's newest software list with the catalog, and raises and resolves
-// alerts for what changed. A host with no recent list keeps its results.
+// exposureEvery is how often the firewall log is asked which hosts the internet reaches. The
+// query reads days of firewall log, so it is not run every scan.
+const (
+	exposureEvery = 6 * time.Hour
+	keepFixed     = 30 * 24 * time.Hour
+	historyDays   = 180
+)
+
+// internetExposure returns host ID -> ports reached from the internet, cached.
+func (s *Service) internetExposure(ctx context.Context, now time.Time) map[string][]int {
+	s.mu.Lock()
+	cached, at := s.exposure, s.exposureAt
+	s.mu.Unlock()
+	if cached != nil && now.Sub(at) < exposureEvery {
+		return cached
+	}
+	if s.Exposure == nil {
+		return map[string][]int{}
+	}
+	m, err := s.Exposure.InternetExposure(ctx)
+	if err != nil {
+		s.log.Warn("vulnerabilities: read exposure from the firewall log", "err", err)
+		if cached != nil {
+			return cached
+		}
+		return map[string][]int{}
+	}
+	s.mu.Lock()
+	s.exposure, s.exposureAt = m, now
+	s.mu.Unlock()
+	return m
+}
+
+// matchName is the name distro advisories use for a package: the source package for deb and
+// apk, the package itself for rpm.
+func matchName(p pkg) string {
+	if p.typ != "rpm" && p.source != "" {
+		return p.source
+	}
+	return p.name
+}
+
+type hostScan struct {
+	host *store.Host
+	pkgs []pkg
+	at   time.Time
+	eco  string
+	d    *distro
+}
+
+// Scan checks every host's newest software list, scores what it finds, and keeps the results
+// and the day's counts. A host with no recent list keeps its results.
 func (s *Service) Scan(ctx context.Context) error {
-	c := s.kev.Load()
 	now := s.now()
+	kevCat := s.kev.Load()
+	scores := s.epss.Load()
 	hosts, err := s.st.ListHosts(ctx, store.HostFilter{Kind: store.HostEndpoint})
 	if err != nil {
 		return err
 	}
-	existing, err := s.st.ListVulnMatches(ctx)
+	existing, err := s.st.ListVulnFindings(ctx)
 	if err != nil {
 		return err
 	}
-	byHost := map[string][]store.VulnMatch{}
-	for _, m := range existing {
-		byHost[m.HostID] = append(byHost[m.HostID], m)
+	byHost := map[string][]store.VulnFinding{}
+	for _, f := range existing {
+		byHost[f.HostID] = append(byHost[f.HostID], f)
 	}
-	inventories := map[string]HostInventory{}
+	exposure := s.internetExposure(ctx, now)
 	osvOn := s.Settings(ctx).OSV
 	var osvErr string
+
+	// 1. Read every host's software list, and note which distro packages to look up.
 	active := map[string]bool{}
+	infos := map[string]Host{}
+	var scans []hostScan
+	want := map[string]map[string]bool{}
+	used := map[string]bool{}
 	for _, h := range hosts {
 		if h.Revoked {
 			continue
 		}
 		active[h.ID] = true
-		inv := HostInventory{HostID: h.ID, Hostname: h.Hostname}
+		info := Host{HostID: h.ID, Hostname: h.Hostname, OS: strings.TrimSpace(h.OS.Name + " " + h.OS.Version), Coverage: CoverageNone,
+			Exposure: ExposureLAN, ExposedPorts: []int{}}
+		if ports := exposure[h.ID]; len(ports) > 0 {
+			info.Exposure, info.ExposedPorts = ExposureInternet, ports
+		}
 		for _, sensor := range h.Sensors {
 			if sensor.Name == event.ModuleInventory {
-				inv.Note = sensor.Error
+				info.Note = sensor.Error
 			}
 		}
 		pkgs, at, err := s.inventory(ctx, h.ID, now)
 		if err != nil {
 			s.log.Warn("vulnerabilities: read software list", "host", h.Hostname, "err", err)
-			inventories[h.ID] = inv
+		}
+		infos[h.ID] = info
+		if err != nil || len(pkgs) == 0 {
 			continue
 		}
-		if len(pkgs) == 0 {
-			inventories[h.ID] = inv
-			continue
-		}
-		inv.Packages, inv.SnapshotAt = len(pkgs), &at
-		inventories[h.ID] = inv
-		if c == nil {
-			continue
-		}
-		if h.OS.Name != "" {
-			pkgs = append(pkgs, pkg{h.OS.Name, h.OS.Version, "os"})
-		}
-		found := matchPackages(c, h, pkgs, now)
-		if osvOn {
-			if err := s.osvCheck(ctx, h, found); err != nil {
-				osvErr = err.Error()
-				s.log.Warn("vulnerabilities: OSV check failed", "err", err)
+		info.Packages, info.SnapshotAt = len(pkgs), &at
+		info.Coverage = CoverageKEVOnly
+		hs := hostScan{host: h, pkgs: pkgs, at: at}
+		if eco, d, ok := hostEcosystem(h.OS); ok {
+			hs.eco, hs.d = eco, d
+			used[d.Name] = true
+			if want[eco] == nil {
+				want[eco] = map[string]bool{}
+			}
+			for _, p := range pkgs {
+				if packageKind(p.typ) == d.Kind {
+					want[eco][matchName(p)] = true
+				}
 			}
 		}
-		if err := s.reconcile(ctx, h.ID, found, byHost[h.ID]); err != nil {
+		infos[h.ID] = info
+		scans = append(scans, hs)
+	}
+	s.noteEcosystems(ctx, used)
+	idx, err := s.index(want)
+	if err != nil {
+		s.log.Warn("vulnerabilities: read distro advisories", "err", err)
+		idx = &osvIndex{byPkg: map[ecoPkg][]*advisory{}}
+	}
+	osvDir := s.lists.Dir(OSVListID)
+
+	// 2. Match, score and keep each host's findings.
+	for _, hs := range scans {
+		h := hs.host
+		info := infos[h.ID]
+		covered := false
+		if hs.d != nil && osvDir != "" && s.lists.Enabled(OSVListID) {
+			if _, err := os.Stat(filepath.Join(osvDir, hs.d.File)); err == nil {
+				covered = true
+				info.Coverage = CoverageFull
+			}
+		}
+		found := map[string]*store.VulnFinding{}
+		add := func(f store.VulnFinding) {
+			k := f.SourcePackage + "|" + f.CVE
+			if old, ok := found[k]; ok {
+				// Two advisories for the same CVE: keep the more severe, and the later fix.
+				if f.CVSS != nil && (old.CVSS == nil || *f.CVSS > *old.CVSS) {
+					old.CVSS, old.CVSSVector, old.SeveritySource, old.AttackVector = f.CVSS, f.CVSSVector, f.SeveritySource, f.AttackVector
+				}
+				if f.FixedVersion == "" {
+					old.FixedVersion = ""
+				}
+				return
+			}
+			found[k] = &f
+		}
+		if covered {
+			seen := map[string]bool{}
+			for _, p := range hs.pkgs {
+				if packageKind(p.typ) != hs.d.Kind {
+					continue
+				}
+				name := matchName(p)
+				if seen[name+"|"+p.version] {
+					continue
+				}
+				seen[name+"|"+p.version] = true
+				for _, adv := range idx.byPkg[ecoPkg{hs.eco, name}] {
+					hit, fixed := adv.affects(hs.d.Kind, p.version)
+					if !hit {
+						continue
+					}
+					sev, src := advisorySeverity(adv)
+					cvss := sev.Score
+					ids := adv.CVEs
+					if len(ids) == 0 {
+						ids = []string{adv.ID}
+					}
+					for _, id := range ids {
+						add(store.VulnFinding{
+							HostID: h.ID, Hostname: h.Hostname, Package: p.name, SourcePackage: name, Version: p.version, PackageType: p.typ,
+							CVE: id, Title: shortTitle(adv.Summary, adv.ID), Summary: adv.Summary, FixedVersion: fixed,
+							CVSS: &cvss, CVSSVector: sev.Vector, SeveritySource: src, AttackVector: sev.AttackVector,
+							Confidence: Confirmed,
+						})
+					}
+				}
+			}
+		}
+		// Software no distro advisories cover is matched by name against CISA's catalog.
+		if kevCat != nil {
+			var rest []pkg
+			for _, p := range hs.pkgs {
+				if !covered || packageKind(p.typ) != hs.d.Kind {
+					rest = append(rest, p)
+				}
+			}
+			if !covered && h.OS.Name != "" {
+				rest = append(rest, pkg{name: h.OS.Name, version: h.OS.Version, typ: "os"})
+			}
+			matches := matchPackages(kevCat, h, rest, now)
+			if osvOn {
+				if err := s.osvCheck(ctx, h, matches); err != nil {
+					osvErr = err.Error()
+					s.log.Warn("vulnerabilities: OSV check failed", "err", err)
+				}
+			}
+			for _, m := range matches {
+				est := 7.5
+				add(store.VulnFinding{
+					HostID: h.ID, Hostname: h.Hostname, Package: m.Package, SourcePackage: m.Package, Version: m.Version, PackageType: m.PackageType,
+					CVE: m.CVE, Title: m.Title, Summary: m.Reason, CVSS: &est, SeveritySource: "estimated", Confidence: m.Confidence,
+				})
+			}
+		}
+		list := make([]store.VulnFinding, 0, len(found))
+		for _, f := range found {
+			s.enrich(f, kevCat, scores, info)
+			list = append(list, *f)
+		}
+		merged := mergeFindings(list, byHost[h.ID], now)
+		if err := s.st.ReplaceVulnFindings(ctx, h.ID, merged); err != nil {
 			return err
 		}
+		infos[h.ID] = info
 	}
-	// Hosts that are gone: forget their results.
-	for hostID, list := range byHost {
+	// Hosts that are gone: forget their results. Hosts with no recent software list keep
+	// theirs, but fixed ones still go after 30 days.
+	scanned := map[string]bool{}
+	for _, hs := range scans {
+		scanned[hs.host.ID] = true
+	}
+	for hostID, old := range byHost {
 		if !active[hostID] {
-			if err := s.reconcile(ctx, hostID, nil, list); err != nil {
+			if err := s.st.ReplaceVulnFindings(ctx, hostID, nil); err != nil {
+				return err
+			}
+			continue
+		}
+		if scanned[hostID] {
+			continue
+		}
+		kept := old[:0:0]
+		for _, f := range old {
+			if f.Status == store.VulnFixed && f.FixedAt != nil && now.Sub(*f.FixedAt) > keepFixed {
+				continue
+			}
+			kept = append(kept, f)
+		}
+		if len(kept) != len(old) {
+			if err := s.st.ReplaceVulnFindings(ctx, hostID, kept); err != nil {
 				return err
 			}
 		}
 	}
+	if err := s.saveHistory(ctx, now); err != nil {
+		s.log.Warn("vulnerabilities: save history", "err", err)
+	}
 	s.mu.Lock()
-	s.hosts, s.lastRun, s.osvError = inventories, now, osvErr
+	s.hosts, s.lastRun, s.osvError = infos, now, osvErr
 	s.mu.Unlock()
 	return nil
 }
 
-// reconcile stores a host's new results, keeps when each was first seen, and raises or resolves
-// one alert per host and CVE: raised for a CVE newly confirmed, resolved when it stops being so.
-func (s *Service) reconcile(ctx context.Context, hostID string, found, old []store.VulnMatch) error {
-	first := map[string]time.Time{}
-	raised := map[string]bool{}
-	for _, m := range old {
-		first[m.Package+"|"+m.CVE] = m.FirstSeen
-		if m.Raised {
-			raised[m.CVE] = true
+// enrich adds what is known about the CVE and the host, and the risk score.
+func (s *Service) enrich(f *store.VulnFinding, kevCat *catalog, scores *epssTable, h Host) {
+	f.Exposure, f.ExposedPorts = h.Exposure, h.ExposedPorts
+	in := riskInput{AttackVector: f.AttackVector, Exposure: h.Exposure, Ports: h.ExposedPorts, EPSS: -1}
+	if f.CVSS != nil {
+		in.CVSS = *f.CVSS
+	}
+	if kevCat != nil {
+		if e := kevCat.byCVE[f.CVE]; e != nil {
+			f.KEV, f.KEVDueDate = true, e.DueDate
+			f.Ransomware = strings.EqualFold(e.Ransomware, "known")
+			f.Title = e.Name
 		}
 	}
-	confirmed := map[string]bool{}
-	for i := range found {
-		m := &found[i]
-		if t, ok := first[m.Package+"|"+m.CVE]; ok && !t.IsZero() {
-			m.FirstSeen = t
+	in.KEV, in.Ransomware = f.KEV, f.Ransomware
+	if scores != nil {
+		if sc, ok := scores.scores[f.CVE]; ok {
+			p, pct := float64(sc.Prob), float64(sc.Percentile)
+			f.EPSS, f.EPSSPercentile = &p, &pct
+			in.EPSS = p
 		}
-		if m.Confidence == Confirmed {
-			if !confirmed[m.CVE] && !raised[m.CVE] {
-				if err := s.notify.RaiseVuln(ctx, *m); err != nil {
-					s.log.Warn("vulnerabilities: raise finding", "cve", m.CVE, "err", err)
-					// Left unraised, it is tried again next scan.
-					continue
-				}
+	}
+	r := score(in)
+	f.Likelihood, f.Risk, f.Band, f.LikelihoodReasons = r.Likelihood, r.Risk, r.Band, r.Reasons
+}
+
+// mergeFindings carries state across scans: when each was first seen, accepted risks, and fixed
+// ones (gone from the newest software list), which are kept for 30 days.
+func mergeFindings(found, old []store.VulnFinding, now time.Time) []store.VulnFinding {
+	prev := map[string]store.VulnFinding{}
+	for _, o := range old {
+		prev[o.SourcePackage+"|"+o.CVE] = o
+	}
+	in := map[string]bool{}
+	out := make([]store.VulnFinding, 0, len(found)+len(old))
+	for _, f := range found {
+		k := f.SourcePackage + "|" + f.CVE
+		in[k] = true
+		f.Status, f.FirstSeen, f.LastSeen, f.FixedAt = store.VulnOpen, now, now, nil
+		if o, ok := prev[k]; ok {
+			if !o.FirstSeen.IsZero() {
+				f.FirstSeen = o.FirstSeen
 			}
-			confirmed[m.CVE] = true
-		}
-	}
-	for i := range found {
-		found[i].Raised = confirmed[found[i].CVE]
-	}
-	for cve := range raised {
-		if !confirmed[cve] {
-			if err := s.notify.ResolveVuln(ctx, hostID, cve, "This software no longer shows this vulnerability in the newest software list: it was updated, removed, or the host is gone. HomeXDR resolved this alert itself."); err != nil {
-				s.log.Warn("vulnerabilities: resolve finding", "cve", cve, "err", err)
+			if o.Status == store.VulnAccepted {
+				f.Status, f.AcceptedNote = store.VulnAccepted, o.AcceptedNote
 			}
 		}
+		out = append(out, f)
 	}
-	return s.st.ReplaceVulnMatches(ctx, hostID, found)
+	for _, o := range old {
+		if in[o.SourcePackage+"|"+o.CVE] {
+			continue
+		}
+		if o.Status != store.VulnFixed {
+			t := now
+			o.Status, o.FixedAt = store.VulnFixed, &t
+		}
+		if o.FixedAt != nil && now.Sub(*o.FixedAt) > keepFixed {
+			continue
+		}
+		out = append(out, o)
+	}
+	return out
+}
+
+// saveHistory stores today's counts for the charts.
+func (s *Service) saveHistory(ctx context.Context, now time.Time) error {
+	list, err := s.st.ListVulnFindings(ctx)
+	if err != nil {
+		return err
+	}
+	day := now.Format("2006-01-02")
+	p := store.VulnHistoryPoint{Date: day}
+	for _, f := range list {
+		if f.FirstSeen.Format("2006-01-02") == day {
+			p.New++
+		}
+		if f.FixedAt != nil && f.FixedAt.Format("2006-01-02") == day {
+			p.Fixed++
+		}
+		if f.Status != store.VulnOpen {
+			continue
+		}
+		switch f.Band {
+		case BandCritical:
+			p.Critical++
+		case BandHigh:
+			p.High++
+		case BandMedium:
+			p.Medium++
+		default:
+			p.Low++
+		}
+	}
+	return s.st.SaveVulnHistory(ctx, p)
+}
+
+// SetAccepted marks a finding as an accepted risk, or undoes that.
+func (s *Service) SetAccepted(ctx context.Context, hostID, pkg, cve string, accepted bool, note string) error {
+	return s.st.SetVulnAccepted(ctx, hostID, pkg, cve, accepted, strings.TrimSpace(note))
 }
 
 // Report builds the Vulnerabilities page.
 func (s *Service) Report(ctx context.Context) (*Report, error) {
-	list, err := s.st.ListVulnMatches(ctx)
+	list, err := s.st.ListVulnFindings(ctx)
 	if err != nil {
 		return nil, err
 	}
-	rep := &Report{Matches: list, Hosts: []HostInventory{}, Running: s.running.Load()}
-	for _, v := range s.lists.Views() {
-		if v.ID == ListID {
-			rep.KEV = KEVStatus{Enabled: v.Enabled, Entries: v.Entries, LastUpdate: v.LastUpdate, Error: v.Error}
+	now := s.now()
+	sort.SliceStable(list, func(i, j int) bool {
+		if list[i].Risk != list[j].Risk {
+			return list[i].Risk > list[j].Risk
+		}
+		if list[i].Hostname != list[j].Hostname {
+			return list[i].Hostname < list[j].Hostname
+		}
+		return list[i].CVE < list[j].CVE
+	})
+	rep := &Report{Findings: list, Hosts: []Host{}, Sources: []SourceStatus{}, Running: s.running.Load()}
+	type hostAgg struct {
+		open int
+		max  float64
+	}
+	agg := map[string]*hostAgg{}
+	week := now.Add(-7 * 24 * time.Hour)
+	for _, f := range list {
+		if f.FixedAt != nil && f.FixedAt.After(week) {
+			rep.Summary.Fixed7d++
+		}
+		if f.Status != store.VulnOpen {
+			continue
+		}
+		sm := &rep.Summary
+		sm.Open++
+		switch f.Band {
+		case BandCritical:
+			sm.Critical++
+		case BandHigh:
+			sm.High++
+		case BandMedium:
+			sm.Medium++
+		default:
+			sm.Low++
+		}
+		if f.Exposure == ExposureInternet {
+			sm.InternetExposed++
+		}
+		if f.KEV {
+			sm.KEV++
+		}
+		if f.FirstSeen.After(week) {
+			sm.New7d++
+		}
+		if f.FixedVersion == "" {
+			sm.NoFix++
+		}
+		a := agg[f.HostID]
+		if a == nil {
+			a = &hostAgg{}
+			agg[f.HostID] = a
+		}
+		a.open++
+		if f.Risk > a.max {
+			a.max = f.Risk
 		}
 	}
-	// With the catalog off there is nothing to stand behind these results.
-	if !rep.KEV.Enabled {
-		rep.Matches = []store.VulnMatch{}
+	hist, err := s.st.ListVulnHistory(ctx, now.AddDate(0, 0, -historyDays).Format("2006-01-02"))
+	if err != nil {
+		return nil, err
 	}
-	for _, m := range rep.Matches {
-		if m.Confidence == Confirmed {
-			rep.Confirmed++
-		} else {
-			rep.Possible++
+	rep.History = hist
+	views := s.lists.Views()
+	for _, id := range []string{OSVListID, EPSSListID, ListID} {
+		for _, v := range views {
+			if v.ID == id {
+				rep.Sources = append(rep.Sources, SourceStatus{ID: v.ID, Name: v.Name, Enabled: v.Enabled, Entries: v.Entries, LastUpdate: v.LastUpdate, Error: v.Error})
+			}
 		}
-	}
-	if c := s.kev.Load(); c != nil {
-		rep.KEV.Version = c.version
 	}
 	hosts, err := s.st.ListHosts(ctx, store.HostFilter{Kind: store.HostEndpoint})
 	if err != nil {
 		return nil, err
 	}
-	rep.OSV.Enabled = s.Settings(ctx).OSV
+	rep.OSVAPI.Enabled = s.Settings(ctx).OSV
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rep.OSV.Error = s.osvError
+	rep.OSVAPI.Error = s.osvError
 	if !s.lastRun.IsZero() {
 		t := s.lastRun
 		rep.LastRun = &t
@@ -526,11 +868,14 @@ func (s *Service) Report(ctx context.Context) (*Report, error) {
 		if h.Revoked {
 			continue
 		}
-		inv, ok := s.hosts[h.ID]
+		info, ok := s.hosts[h.ID]
 		if !ok {
-			inv = HostInventory{HostID: h.ID, Hostname: h.Hostname}
+			info = Host{HostID: h.ID, Hostname: h.Hostname, OS: strings.TrimSpace(h.OS.Name + " " + h.OS.Version), Coverage: CoverageNone, Exposure: ExposureLAN, ExposedPorts: []int{}}
 		}
-		rep.Hosts = append(rep.Hosts, inv)
+		if a := agg[h.ID]; a != nil {
+			info.Open, info.MaxRisk = a.open, a.max
+		}
+		rep.Hosts = append(rep.Hosts, info)
 	}
 	return rep, nil
 }

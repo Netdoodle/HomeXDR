@@ -19,6 +19,8 @@ Each source's URL, file format and licence page were checked from the owner's PC
 | MAC vendors | on | `https://standards-oui.ieee.org/oui/oui.csv`, monthly. If IEEE refuses, `https://www.wireshark.org/download/automated/data/manuf` | CSV, or Wireshark's tab-separated file | IEEE's public listing |
 | IP networks | on | `https://iptoasn.com/data/ip2asn-combined.tsv.gz`, weekly | tab-separated range, AS number, country, name | Public domain (PDDL v1.0) |
 | Known exploited vulnerabilities | on | `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`, daily | JSON. See [vulnerabilities.md](vulnerabilities.md) | U.S. government data |
+| Distro security advisories (OSV) | on | `https://osv-vulnerabilities.storage.googleapis.com/<distro>/all.zip`, daily, only for distros your hosts run (Ubuntu's is about 850 MB) | zip of OSV JSON records. See [vulnerabilities.md](vulnerabilities.md) | Free to use; each distro's data keeps its own licence, listed on osv.dev |
+| Exploit prediction scores (EPSS) | on | `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz`, daily | gzipped CSV of `cve,epss,percentile` | Free to use, with credit to FIRST |
 | Website categories (UT1) | **off** | `https://dsi.ut-capitole.fr/blacklists/download/<category>.tar.gz`, weekly | tar.gz holding `<category>/domains` | **Not confirmed.** The files were reachable, but the licence page answered 503 on the day it was checked. It stays off until you have read their terms |
 | Newly registered domains | **off** | `https://raw.githubusercontent.com/WhoisFreaks/daily-newly-registered-domains/main/<date>-free-newly-registered-domains.csv`, daily, 30 days kept | one domain per line | **None stated** in the repository |
 

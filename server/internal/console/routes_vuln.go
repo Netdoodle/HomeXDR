@@ -1,6 +1,7 @@
 package console
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/Netdoodle/homexdr/server/internal/store"
@@ -11,6 +12,7 @@ func (h *Handler) routesVuln(viewer, admin string) {
 	h.route("GET /api/vulnerabilities", viewer, h.getVulns)
 	h.route("POST /api/vulnerabilities/refresh", admin, h.refreshVulns)
 	h.route("PUT /api/settings/vuln", admin, h.putVulnSettings)
+	h.route("PUT /api/vulnerabilities/accept", admin, h.acceptVuln)
 }
 
 func (h *Handler) vulnResponse(w http.ResponseWriter, r *http.Request) {
@@ -54,5 +56,41 @@ func (h *Handler) putVulnSettings(w http.ResponseWriter, r *http.Request, u *sto
 	}
 	h.c.Audit(r.Context(), u.Username, "vuln.osv", "", state)
 	h.c.Health.Vuln.Poke()
+	h.vulnResponse(w, r)
+}
+
+// acceptVuln marks a finding as an accepted risk, with a note, or undoes that.
+func (h *Handler) acceptVuln(w http.ResponseWriter, r *http.Request, u *store.User) {
+	var req struct {
+		HostID   string `json:"host_id"`
+		Package  string `json:"package"`
+		CVE      string `json:"cve"`
+		Accepted bool   `json:"accepted"`
+		Note     string `json:"note"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if req.HostID == "" || req.Package == "" || req.CVE == "" {
+		writeErr(w, http.StatusBadRequest, "host_id, package and cve are required")
+		return
+	}
+	if len(req.Note) > 2000 {
+		writeErr(w, http.StatusBadRequest, "the note is too long")
+		return
+	}
+	if err := h.c.Health.Vuln.SetAccepted(r.Context(), req.HostID, req.Package, req.CVE, req.Accepted, req.Note); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "no such open finding")
+			return
+		}
+		h.fail(w, err)
+		return
+	}
+	action := "vuln.accept"
+	if !req.Accepted {
+		action = "vuln.unaccept"
+	}
+	h.c.Audit(r.Context(), u.Username, action, req.HostID, req.Package+" "+req.CVE)
 	h.vulnResponse(w, r)
 }

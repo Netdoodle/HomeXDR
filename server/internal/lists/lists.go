@@ -656,3 +656,16 @@ func (s *Service) Run(ctx context.Context) {
 		wait = checkEvery
 	}
 }
+
+// Dir is the folder holding a list's live copy: the current one, or the last good one when a
+// crash left no current copy. It is "" when neither exists.
+func (s *Service) Dir(id string) string {
+	root := filepath.Join(s.dir, id)
+	for _, d := range []string{currentDir, lastGoodDir} {
+		dir := filepath.Join(root, d)
+		if _, err := os.Stat(dir); err == nil {
+			return dir
+		}
+	}
+	return ""
+}

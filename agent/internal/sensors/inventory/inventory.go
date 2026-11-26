@@ -168,7 +168,7 @@ func rowEvent(artifact string, r platform.Row) *event.Event {
 		e.Message = "inventory: system " + str(r, "os_name") + " " + str(r, "os_version")
 	case "software.list":
 		e.Event.Category = []string{event.CategoryPackage}
-		e.Package = &event.Package{Name: str(r, "name"), Version: str(r, "version"), Vendor: str(r, "vendor"), Type: str(r, "type")}
+		e.Package = &event.Package{Name: str(r, "name"), Version: str(r, "version"), Vendor: str(r, "vendor"), Type: str(r, "type"), Source: str(r, "source")}
 		e.Message = "inventory: package " + str(r, "name") + " " + str(r, "version")
 	case "users.list":
 		e.Event.Category = []string{event.CategoryIAM}

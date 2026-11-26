@@ -1,6 +1,8 @@
 package vuln
 
 import (
+	"archive/zip"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -35,109 +37,6 @@ const kevFixture = `{
   {"cveID":"CVE-2026-1111","vendorProject":"Unrelated Vendor","product":"Core","vulnerabilityName":"Generic Core Vulnerability","dateAdded":"2026-01-01","shortDescription":"Something.","dueDate":"2026-02-01","knownRansomwareCampaignUse":"Unknown"}
  ]
 }`
-
-type recorder struct {
-	raised   []store.VulnMatch
-	resolved []string
-	fail     bool
-}
-
-func (r *recorder) RaiseVuln(_ context.Context, m store.VulnMatch) error {
-	if r.fail {
-		return errors.New("store is down")
-	}
-	r.raised = append(r.raised, m)
-	return nil
-}
-
-func (r *recorder) ResolveVuln(_ context.Context, hostID, cve, _ string) error {
-	r.resolved = append(r.resolved, hostID+"/"+cve)
-	return nil
-}
-
-type rig struct {
-	t    *testing.T
-	s    *Service
-	st   *store.Store
-	ev   events.Store
-	rec  *recorder
-	now  time.Time
-	host *store.Host
-}
-
-func newRig(t *testing.T, osName, osVersion string) *rig {
-	t.Helper()
-	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "state.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
-	ev, err := events.OpenSQLite(filepath.Join(dir, "events.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { ev.Close() })
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	l := lists.New(filepath.Join(dir, "lists"), st, log)
-	rec := &recorder{}
-	s := New(st, ev, l, rec, log)
-	h, err := st.CreateEndpoint(context.Background(), "tower-id", api.HostInfo{Hostname: "tower", OS: event.OS{Platform: "linux", Name: osName, Version: osVersion}}, nil, "serial")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &rig{t: t, s: s, st: st, ev: ev, rec: rec, now: time.Now().UTC(), host: h}
-}
-
-func (r *rig) loadCatalog() {
-	r.t.Helper()
-	dir := r.t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, kevFileName), []byte(kevFixture), 0o600); err != nil {
-		r.t.Fatal(err)
-	}
-	c, err := parseCatalog(filepath.Join(dir, kevFileName))
-	if err != nil {
-		r.t.Fatal(err)
-	}
-	r.s.kev.Store(c)
-}
-
-// snapshot stores a software list, as the inventory sensor emits it.
-func (r *rig) snapshot(at time.Time, rows ...pkg) {
-	r.t.Helper()
-	var evs []*event.Event
-	for _, p := range rows {
-		evs = append(evs, &event.Event{
-			ID: event.NewID(), Timestamp: at, Host: event.Host{ID: r.host.ID, Name: "tower"},
-			Event:   event.Meta{Kind: event.KindState, Module: event.ModuleInventory, Dataset: "inventory.software.list"},
-			Package: &event.Package{Name: p.name, Version: p.version, Type: p.typ},
-		})
-	}
-	if err := r.ev.Insert(context.Background(), evs); err != nil {
-		r.t.Fatal(err)
-	}
-}
-
-func (r *rig) scan() []store.VulnMatch {
-	r.t.Helper()
-	if err := r.s.Scan(context.Background()); err != nil {
-		r.t.Fatal(err)
-	}
-	list, err := r.st.ListVulnMatches(context.Background())
-	if err != nil {
-		r.t.Fatal(err)
-	}
-	return list
-}
-
-func find(list []store.VulnMatch, pkgName, cve string) *store.VulnMatch {
-	for i := range list {
-		if list[i].Package == pkgName && list[i].CVE == cve {
-			return &list[i]
-		}
-	}
-	return nil
-}
 
 func TestParseCatalogNames(t *testing.T) {
 	r := newRig(t, "", "")
@@ -224,43 +123,173 @@ func TestCompareVersions(t *testing.T) {
 	}
 }
 
+type rig struct {
+	t    *testing.T
+	s    *Service
+	st   *store.Store
+	ev   events.Store
+	dir  string
+	now  time.Time
+	host *store.Host
+}
+
+type fakeExposure map[string][]int
+
+func (f fakeExposure) InternetExposure(context.Context) (map[string][]int, error) { return f, nil }
+
+func newRig(t *testing.T, osName, osVersion string) *rig {
+	t.Helper()
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ev, err := events.OpenSQLite(filepath.Join(dir, "events.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ev.Close() })
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	l := lists.New(filepath.Join(dir, "lists"), st, log)
+	s := New(st, ev, l, log)
+	h, err := st.CreateEndpoint(context.Background(), "tower-id", api.HostInfo{Hostname: "tower", OS: event.OS{Platform: "linux", Name: osName, Version: osVersion}}, nil, "serial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &rig{t: t, s: s, st: st, ev: ev, dir: dir, now: time.Now().UTC(), host: h}
+}
+
+func (r *rig) loadCatalog() {
+	r.t.Helper()
+	dir := r.t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, kevFileName), []byte(kevFixture), 0o600); err != nil {
+		r.t.Fatal(err)
+	}
+	c, err := parseCatalog(filepath.Join(dir, kevFileName))
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	r.s.kev.Store(c)
+}
+
+// loadOSV writes a distro export as the offline list would have downloaded it.
+func (r *rig) loadOSV(file string, records ...string) {
+	r.t.Helper()
+	dir := filepath.Join(r.dir, "lists", OSVListID, "current")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		r.t.Fatal(err)
+	}
+	f, err := os.Create(filepath.Join(dir, file))
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for _, rec := range records {
+		var head struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal([]byte(rec), &head); err != nil {
+			r.t.Fatal(err)
+		}
+		w, err := zw.Create(head.ID + ".json")
+		if err != nil {
+			r.t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(rec))
+	}
+	if err := zw.Close(); err != nil {
+		r.t.Fatal(err)
+	}
+	f.Close()
+	r.s.osvMu.Lock()
+	r.s.osvGen++
+	r.s.osvMu.Unlock()
+}
+
+// snapshot stores a software list, as the inventory sensor emits it.
+func (r *rig) snapshot(at time.Time, rows ...pkg) {
+	r.t.Helper()
+	var evs []*event.Event
+	for _, p := range rows {
+		evs = append(evs, &event.Event{
+			ID: event.NewID(), Timestamp: at, Host: event.Host{ID: r.host.ID, Name: "tower"},
+			Event:   event.Meta{Kind: event.KindState, Module: event.ModuleInventory, Dataset: "inventory.software.list"},
+			Package: &event.Package{Name: p.name, Version: p.version, Type: p.typ, Source: p.source},
+		})
+	}
+	if err := r.ev.Insert(context.Background(), evs); err != nil {
+		r.t.Fatal(err)
+	}
+}
+
+func (r *rig) scan() []store.VulnFinding {
+	r.t.Helper()
+	if err := r.s.Scan(context.Background()); err != nil {
+		r.t.Fatal(err)
+	}
+	list, err := r.st.ListVulnFindings(context.Background())
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return list
+}
+
+func open(list []store.VulnFinding) []store.VulnFinding {
+	var out []store.VulnFinding
+	for _, f := range list {
+		if f.Status != store.VulnFixed {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func find(list []store.VulnFinding, pkgName, cve string) *store.VulnFinding {
+	for i := range list {
+		if list[i].Package == pkgName && list[i].CVE == cve {
+			return &list[i]
+		}
+	}
+	return nil
+}
+
 func TestMatchingConfidence(t *testing.T) {
 	r := newRig(t, "Unraid OS", "7.2.8")
 	r.loadCatalog()
 	r.snapshot(r.now,
-		pkg{"sudo", "1.9.17p2", "slackware"},                // no limit stated: possible
-		pkg{"exim", "4.69", "slackware"},                    // below the stated limit: confirmed
-		pkg{"plex-unrelated", "1.0", "slackware"},           // does not match
-		pkg{"lscr.io/linuxserver/plex", "latest", "docker"}, // image, by its short name
-		pkg{"kernel-modules", "6.12", "slackware"},          // not the kernel package
+		pkg{name: "sudo", version: "1.9.17p2", typ: "slackware"},                // no limit stated: possible
+		pkg{name: "exim", version: "4.69", typ: "slackware"},                    // below the stated limit: confirmed
+		pkg{name: "plex-unrelated", version: "1.0", typ: "slackware"},           // does not match
+		pkg{name: "lscr.io/linuxserver/plex", version: "latest", typ: "docker"}, // image, by its short name
+		pkg{name: "kernel-modules", version: "6.12", typ: "slackware"},          // not the kernel package
 	)
 	list := r.scan()
 	if len(list) != 3 {
 		t.Fatalf("%+v", list)
 	}
-	if m := find(list, "sudo", "CVE-2021-3156"); m == nil || m.Confidence != Possible || !strings.Contains(m.Reason, "name matches") {
+	if m := find(list, "sudo", "CVE-2021-3156"); m == nil || m.Confidence != Possible || !strings.Contains(m.Summary, "name matches") {
 		t.Errorf("%+v", m)
 	}
-	if m := find(list, "exim", "CVE-2010-4344"); m == nil || m.Confidence != Confirmed || !m.Ransomware || m.KEVDate != "2022-03-25" || m.DueDate != "2022-04-15" || !strings.Contains(m.Reason, "before 4.70") {
+	if m := find(list, "exim", "CVE-2010-4344"); m == nil || m.Confidence != Confirmed || !m.Ransomware || !m.KEV || m.KEVDueDate != "2022-04-15" || !strings.Contains(m.Summary, "before 4.70") {
 		t.Errorf("%+v", m)
 	}
 	if m := find(list, "lscr.io/linuxserver/plex", "CVE-2020-5741"); m == nil || m.Confidence != Possible {
 		t.Errorf("%+v", m)
 	}
-	// Confirmed first.
-	if list[0].Confidence != Confirmed {
-		t.Errorf("order: %+v", list)
+	rep, err := r.s.Report(context.Background())
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Only the confirmed one alerts.
-	if len(r.rec.raised) != 1 || r.rec.raised[0].CVE != "CVE-2010-4344" {
-		t.Fatalf("%+v", r.rec.raised)
+	if rep.Hosts[0].Coverage != CoverageKEVOnly {
+		t.Errorf("coverage %+v", rep.Hosts[0])
 	}
 }
 
 func TestPatchedVersionIsDropped(t *testing.T) {
 	r := newRig(t, "Unraid OS", "7.2.8")
 	r.loadCatalog()
-	r.snapshot(r.now, pkg{"exim", "4.98", "slackware"})
+	r.snapshot(r.now, pkg{name: "exim", version: "4.98", typ: "slackware"})
 	if list := r.scan(); len(list) != 0 {
 		t.Fatalf("%+v", list)
 	}
@@ -269,14 +298,12 @@ func TestPatchedVersionIsDropped(t *testing.T) {
 func TestBackportingDistroStaysPossible(t *testing.T) {
 	r := newRig(t, "Debian GNU/Linux", "12")
 	r.loadCatalog()
-	// An old-looking number on Debian may well be patched, so it is never confirmed by number.
-	r.snapshot(r.now, pkg{"exim4", "4.69-1+deb12u1", "deb"}, pkg{"openssl", "1.0.1e-2+deb7u5", "deb"})
+	// With no distro advisories downloaded, an old-looking number on Debian may well be patched,
+	// so it is never confirmed by number.
+	r.snapshot(r.now, pkg{name: "exim4", version: "4.69-1+deb12u1", typ: "deb"}, pkg{name: "openssl", version: "1.0.1e-2+deb7u5", typ: "deb"})
 	list := r.scan()
-	if m := find(list, "exim4", "CVE-2010-4344"); m == nil || m.Confidence != Possible || !strings.Contains(m.Reason, "distributions") {
+	if m := find(list, "exim4", "CVE-2010-4344"); m == nil || m.Confidence != Possible || !strings.Contains(m.Summary, "distributions") {
 		t.Fatalf("%+v", m)
-	}
-	if len(r.rec.raised) != 0 {
-		t.Fatalf("raised: %+v", r.rec.raised)
 	}
 }
 
@@ -289,7 +316,7 @@ func TestDockerTagVersionCheck(t *testing.T) {
 	} {
 		r := newRig(t, "", "")
 		r.loadCatalog()
-		r.snapshot(r.now, pkg{"example/exim", c.tag, "docker"})
+		r.snapshot(r.now, pkg{name: "example/exim", version: c.tag, typ: "docker"})
 		list := r.scan()
 		switch {
 		case c.want == "" && len(list) != 0:
@@ -303,57 +330,54 @@ func TestDockerTagVersionCheck(t *testing.T) {
 func TestOnlyNewestSnapshotCounts(t *testing.T) {
 	r := newRig(t, "", "")
 	r.loadCatalog()
-	r.snapshot(r.now.Add(-6*time.Hour), pkg{"sudo", "1.0", "slackware"}, pkg{"exim", "4.69", "slackware"})
-	r.snapshot(r.now, pkg{"bash", "5.3", "slackware"}) // sudo and exim are gone
-	list := r.scan()
-	if len(list) != 0 {
+	r.snapshot(r.now.Add(-6*time.Hour), pkg{name: "sudo", version: "1.0", typ: "slackware"}, pkg{name: "exim", version: "4.69", typ: "slackware"})
+	r.snapshot(r.now, pkg{name: "bash", version: "5.3", typ: "slackware"}) // sudo and exim are gone
+	if list := r.scan(); len(list) != 0 {
 		t.Fatalf("%+v", list)
 	}
 }
 
 func TestFindingsFollowTheInventory(t *testing.T) {
 	r := newRig(t, "", "")
+	ctx := context.Background()
 	r.loadCatalog()
-	// Two packages with the same CVE on one host make one alert.
-	r.snapshot(r.now.Add(-2*time.Hour), pkg{"exim", "4.69", "slackware"}, pkg{"exim4", "4.69", "slackware"})
+	r.snapshot(r.now.Add(-2*time.Hour), pkg{name: "exim", version: "4.69", typ: "slackware"})
 	list := r.scan()
-	if len(list) != 2 || len(r.rec.raised) != 1 {
-		t.Fatalf("list %+v raised %+v", list, r.rec.raised)
+	if len(list) != 1 || list[0].Status != store.VulnOpen {
+		t.Fatalf("%+v", list)
 	}
 	firstSeen := list[0].FirstSeen
 
-	// Scanning again raises nothing new and keeps when it was first seen.
+	// Accepted, it stays accepted on the next scan, and keeps when it was first seen.
+	if err := r.s.SetAccepted(ctx, r.host.ID, "exim", "CVE-2010-4344", true, " behind the VPN "); err != nil {
+		t.Fatal(err)
+	}
 	r.s.now = func() time.Time { return r.now.Add(time.Hour) }
 	list = r.scan()
-	if len(r.rec.raised) != 1 || !list[0].FirstSeen.Equal(firstSeen) {
-		t.Fatalf("raised again: %+v", r.rec.raised)
-	}
-
-	// Patched: the alert resolves, once.
-	r.snapshot(r.now.Add(-time.Minute), pkg{"exim", "4.98", "slackware"}, pkg{"exim4", "4.98", "slackware"})
-	r.s.now = func() time.Time { return r.now.Add(2 * time.Hour) }
-	if list = r.scan(); len(list) != 0 {
+	if len(list) != 1 || list[0].Status != store.VulnAccepted || list[0].AcceptedNote != "behind the VPN" || !list[0].FirstSeen.Equal(firstSeen) {
 		t.Fatalf("%+v", list)
 	}
-	if len(r.rec.resolved) != 1 || r.rec.resolved[0] != r.host.ID+"/CVE-2010-4344" {
-		t.Fatalf("%+v", r.rec.resolved)
-	}
-	r.scan()
-	if len(r.rec.resolved) != 1 {
-		t.Fatalf("resolved again: %+v", r.rec.resolved)
-	}
-}
 
-func TestRaiseFailureRetries(t *testing.T) {
-	r := newRig(t, "", "")
-	r.loadCatalog()
-	r.snapshot(r.now, pkg{"exim", "4.69", "slackware"})
-	r.rec.fail = true
-	r.scan()
-	r.rec.fail = false
-	r.scan()
-	if len(r.rec.raised) != 1 {
-		t.Fatalf("%+v", r.rec.raised)
+	// Patched: it is kept as fixed, with the time.
+	r.snapshot(r.now.Add(-time.Minute), pkg{name: "exim", version: "4.98", typ: "slackware"})
+	r.s.now = func() time.Time { return r.now.Add(2 * time.Hour) }
+	list = r.scan()
+	if len(list) != 1 || list[0].Status != store.VulnFixed || list[0].FixedAt == nil {
+		t.Fatalf("%+v", list)
+	}
+	fixedAt := *list[0].FixedAt
+	list = r.scan()
+	if !list[0].FixedAt.Equal(fixedAt) {
+		t.Fatalf("fixed time moved: %+v", list[0])
+	}
+	if err := r.s.SetAccepted(ctx, r.host.ID, "exim", "CVE-2010-4344", true, ""); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("accepting a fixed finding: %v", err)
+	}
+
+	// After 30 days it is forgotten.
+	r.s.now = func() time.Time { return r.now.Add(31 * 24 * time.Hour) }
+	if list = r.scan(); len(list) != 0 {
+		t.Fatalf("%+v", list)
 	}
 }
 
@@ -361,16 +385,13 @@ func TestDecommissionedHostIsForgotten(t *testing.T) {
 	r := newRig(t, "", "")
 	ctx := context.Background()
 	r.loadCatalog()
-	r.snapshot(r.now, pkg{"exim", "4.69", "slackware"})
+	r.snapshot(r.now, pkg{name: "exim", version: "4.69", typ: "slackware"})
 	r.scan()
 	if err := r.st.DecommissionHost(ctx, r.host.ID); err != nil {
 		t.Fatal(err)
 	}
 	if list := r.scan(); len(list) != 0 {
 		t.Fatalf("%+v", list)
-	}
-	if len(r.rec.resolved) != 1 {
-		t.Fatalf("%+v", r.rec.resolved)
 	}
 }
 
@@ -381,17 +402,24 @@ func TestReportExplainsMissingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.KEV.Entries != 0 || !rep.KEV.Enabled || len(rep.Hosts) != 1 || rep.Hosts[0].Packages != 0 || rep.OSV.Enabled {
+	if len(rep.Hosts) != 1 || rep.Hosts[0].Packages != 0 || rep.Hosts[0].Coverage != CoverageNone || rep.OSVAPI.Enabled {
 		t.Fatalf("%+v", rep)
 	}
+	ids := map[string]bool{}
+	for _, src := range rep.Sources {
+		ids[src.ID] = src.Enabled
+	}
+	if !ids[ListID] || !ids[OSVListID] || !ids[EPSSListID] {
+		t.Fatalf("sources %+v", rep.Sources)
+	}
 	// With no catalog, a software list is still counted, and nothing matches.
-	r.snapshot(r.now, pkg{"sudo", "1.0", "slackware"})
+	r.snapshot(r.now, pkg{name: "sudo", version: "1.0", typ: "slackware"})
 	r.scan()
 	rep, err = r.s.Report(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.Hosts[0].Packages != 1 || rep.Hosts[0].SnapshotAt == nil || len(rep.Matches) != 0 || rep.LastRun == nil {
+	if rep.Hosts[0].Packages != 1 || rep.Hosts[0].SnapshotAt == nil || len(rep.Findings) != 0 || rep.LastRun == nil {
 		t.Fatalf("%+v", rep)
 	}
 	r.loadCatalog()
@@ -400,18 +428,7 @@ func TestReportExplainsMissingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.Possible != 1 || rep.Confirmed != 0 || rep.KEV.Version != "2026.11.04" {
-		t.Fatalf("%+v", rep)
-	}
-	// Turning the catalog off hides results that nothing stands behind any more.
-	if err := r.s.lists.SetEnabled(ctx, ListID, false); err != nil {
-		t.Fatal(err)
-	}
-	rep, err = r.s.Report(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rep.Matches) != 0 || rep.Possible != 0 || rep.KEV.Enabled || r.s.kev.Load() != nil {
+	if rep.Summary.Open != 1 || rep.Summary.KEV != 1 || rep.Summary.New7d != 1 || len(rep.History) != 1 || rep.Hosts[0].Open != 1 {
 		t.Fatalf("%+v", rep)
 	}
 }
@@ -429,6 +446,20 @@ func TestOSVEcosystems(t *testing.T) {
 		{"Fedora", "40", "rpm", ""},
 	} {
 		if got := osvEcosystem(event.OS{Name: c.name, Version: c.version}, c.typ); got != c.want {
+			t.Errorf("%+v: %q", c, got)
+		}
+	}
+	for _, c := range []struct{ name, version, want string }{
+		{"Debian GNU/Linux", "12", "Debian:12"},
+		{"Raspbian GNU/Linux", "12", "Debian:12"},
+		{"Ubuntu", "24.04", "Ubuntu:24.04:LTS"},
+		{"Alpine Linux", "3.20.3", "Alpine:v3.20"},
+		{"Rocky Linux", "9.4", "Rocky Linux:9"},
+		{"AlmaLinux", "9.4", "AlmaLinux:9"},
+		{"Unraid OS", "7.2.8", ""},
+	} {
+		got, _, _ := hostEcosystem(event.OS{Name: c.name, Version: c.version})
+		if got != c.want {
 			t.Errorf("%+v: %q", c, got)
 		}
 	}
@@ -456,7 +487,8 @@ func TestOSVIsOffByDefaultAndSendsOnlyPossibleMatches(t *testing.T) {
 	}))
 	defer srv.Close()
 	r.s.OSVURL = srv.URL
-	r.snapshot(r.now, pkg{"openssl", "1.0.1e-2", "deb"}, pkg{"sudo", "1.9.5-1", "deb"}, pkg{"bash", "5.2-1", "deb"}, pkg{"vim", "9.0-1", "deb"})
+	r.snapshot(r.now, pkg{name: "openssl", version: "1.0.1e-2", typ: "deb"}, pkg{name: "sudo", version: "1.9.5-1", typ: "deb"},
+		pkg{name: "bash", version: "5.2-1", typ: "deb"}, pkg{name: "vim", version: "9.0-1", typ: "deb"})
 
 	// Off: nothing is sent.
 	list := r.scan()
@@ -484,14 +516,11 @@ func TestOSVIsOffByDefaultAndSendsOnlyPossibleMatches(t *testing.T) {
 			t.Errorf("ecosystem: %v", q)
 		}
 	}
-	if m := find(list, "openssl", "CVE-2014-0160"); m == nil || m.Confidence != Confirmed || !strings.Contains(m.Reason, "OSV") {
+	if m := find(list, "openssl", "CVE-2014-0160"); m == nil || m.Confidence != Confirmed || !strings.Contains(m.Summary, "OSV") {
 		t.Fatalf("%+v", m)
 	}
 	if m := find(list, "sudo", "CVE-2021-3156"); m == nil || m.Confidence != Possible {
 		t.Fatalf("%+v", m)
-	}
-	if len(r.rec.raised) != 1 || r.rec.raised[0].CVE != "CVE-2014-0160" {
-		t.Fatalf("%+v", r.rec.raised)
 	}
 
 	// OSV down: results stay, the error shows, nothing else breaks.
@@ -501,7 +530,151 @@ func TestOSVIsOffByDefaultAndSendsOnlyPossibleMatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(rep.OSV.Error, "api.osv.dev") {
-		t.Fatalf("%+v", rep.OSV)
+	if !strings.Contains(rep.OSVAPI.Error, "api.osv.dev") {
+		t.Fatalf("%+v", rep.OSVAPI)
+	}
+}
+
+// Shaped like the real Debian export's records.
+const debOpenSSL = `{"id":"DEBIAN-CVE-2024-0727","upstream":["CVE-2024-0727"],"details":"Issue summary: Processing a maliciously formatted PKCS12 file may lead OpenSSL to crash. More text.",
+ "affected":[{"package":{"name":"openssl","ecosystem":"Debian:12"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"3.0.13-1~deb12u1"}]}]},
+  {"package":{"name":"openssl","ecosystem":"Debian:13"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"3.1.5-1"}]}]}],
+ "severity":[{"type":"CVSS_V3","score":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}]}`
+
+const debCurlUnfixed = `{"id":"DEBIAN-CVE-2025-0001","upstream":["CVE-2025-0001"],"details":"A local flaw in curl.",
+ "affected":[{"package":{"name":"curl","ecosystem":"Debian:12"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"}]}],"ecosystem_specific":{"urgency":"low"}}],
+ "severity":[{"type":"CVSS_V3","score":"CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"}]}`
+
+const debUnimportant = `{"id":"DEBIAN-CVE-2025-0002","upstream":["CVE-2025-0002"],"details":"Nothing to see.",
+ "affected":[{"package":{"name":"curl","ecosystem":"Debian:12"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"}]}],"ecosystem_specific":{"urgency":"unimportant"}}]}`
+
+const dsaDuplicate = `{"id":"DSA-5000-1","upstream":["CVE-2024-0727"],"affected":[{"package":{"name":"openssl","ecosystem":"Debian:12"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"9.9"}]}]}]}`
+
+func TestDistroAdvisoriesMatchSourcePackages(t *testing.T) {
+	r := newRig(t, "Debian GNU/Linux", "12")
+	r.loadCatalog()
+	r.loadOSV("Debian.zip", debOpenSSL, debCurlUnfixed, debUnimportant, dsaDuplicate)
+	r.s.epss.Store(&epssTable{scores: map[string]epssScore{"CVE-2024-0727": {Prob: 0.002, Percentile: 0.5}}})
+	r.snapshot(r.now,
+		pkg{name: "libssl3", version: "3.0.11-1~deb12u2", typ: "deb", source: "openssl"}, // affected, via its source
+		pkg{name: "openssl", version: "3.0.13-1~deb12u1", typ: "deb"},                    // the fixed version
+		pkg{name: "curl", version: "7.88.1-10+deb12u5", typ: "deb"},                      // no fix released yet
+		pkg{name: "sudo", version: "1.9.13p3-1+deb12u1", typ: "deb"},                     // no advisory: and no name matching either
+	)
+	list := r.scan()
+	if len(list) != 2 {
+		t.Fatalf("%+v", list)
+	}
+	f := find(list, "libssl3", "CVE-2024-0727")
+	if f == nil || f.SourcePackage != "openssl" || f.FixedVersion != "3.0.13-1~deb12u1" || f.Confidence != Confirmed ||
+		f.CVSS == nil || *f.CVSS != 9.8 || f.AttackVector != "network" || f.SeveritySource != "osv" || f.EPSS == nil {
+		t.Fatalf("%+v", f)
+	}
+	// Not internet-facing: likelihood 3, so 9.8 becomes 2.9.
+	if f.Exposure != ExposureLAN || f.Likelihood != 3 || f.Risk != 2.9 || f.Band != BandLow || !strings.HasPrefix(f.Summary, "Issue summary") || !strings.HasPrefix(f.Title, "Processing a maliciously") {
+		t.Fatalf("%+v", f)
+	}
+	c := find(list, "curl", "CVE-2025-0001")
+	if c == nil || c.FixedVersion != "" || c.AttackVector != "local" || c.Likelihood != 1.5 {
+		t.Fatalf("%+v", c)
+	}
+	rep, err := r.s.Report(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Hosts[0].Coverage != CoverageFull || rep.Summary.NoFix != 1 || rep.Findings[0].CVE != "CVE-2024-0727" {
+		t.Fatalf("%+v", rep)
+	}
+	if got := r.s.ecosystemsInUse(); len(got) != 1 || got[0] != "Debian" {
+		t.Fatalf("in use: %v", got)
+	}
+
+	// Port-forwarded: the same CVE scores much higher.
+	r.s.Exposure = fakeExposure{r.host.ID: {443}}
+	r.s.mu.Lock()
+	r.s.exposure = nil
+	r.s.mu.Unlock()
+	list = r.scan()
+	f = find(list, "libssl3", "CVE-2024-0727")
+	if f.Exposure != ExposureInternet || f.Likelihood != 7 || f.Risk != 6.9 || f.Band != BandHigh || len(f.ExposedPorts) != 1 {
+		t.Fatalf("%+v", f)
+	}
+}
+
+func TestCVSS(t *testing.T) {
+	for _, c := range []struct {
+		vec    string
+		score  float64
+		av     string
+		approx bool
+	}{
+		{"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 9.8, "network", false},
+		{"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H", 10, "network", false},
+		{"CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H", 5.5, "local", false},
+		{"CVSS:3.0/AV:L/AC:H/PR:N/UI:R/S:C/C:H/I:H/A:H", 7.7, "local", false},
+		{"CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N", 4.3, "network", false},
+		{"CVSS:3.1/AV:P/AC:H/PR:H/UI:R/S:U/C:N/I:N/A:N", 0, "physical", false},
+		{"CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", 9.8, "network", true},
+	} {
+		got, ok := parseCVSS(c.vec)
+		if !ok || got.Score != c.score || got.AttackVector != c.av || got.Approximate != c.approx {
+			t.Errorf("%s: %+v %v", c.vec, got, ok)
+		}
+	}
+	if _, ok := parseCVSS("AV:N/AC:L"); ok {
+		t.Error("accepted a vector with no version")
+	}
+}
+
+func TestRiskScore(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		in   riskInput
+		l, r float64
+		band string
+	}{
+		{"lan network", riskInput{CVSS: 9.5, AttackVector: "network", Exposure: ExposureLAN, EPSS: 0.001}, 3, 2.9, BandLow},
+		{"internet network", riskInput{CVSS: 9.5, AttackVector: "network", Exposure: ExposureInternet, Ports: []int{443}, EPSS: 0.001}, 7, 6.7, BandHigh},
+		{"internet kev", riskInput{CVSS: 9.8, AttackVector: "network", Exposure: ExposureInternet, Ports: []int{443}, EPSS: 0.9, KEV: true}, 10, 9.8, BandCritical},
+		{"lan kev", riskInput{CVSS: 9.8, AttackVector: "network", Exposure: ExposureLAN, EPSS: 0.2, KEV: true}, 8, 7.8, BandHigh},
+		{"local", riskInput{CVSS: 7.8, AttackVector: "local", Exposure: ExposureInternet, EPSS: -1}, 1.5, 1.2, BandLow},
+		{"physical", riskInput{CVSS: 6.8, AttackVector: "physical", Exposure: ExposureLAN, EPSS: -1}, 0.5, 0.3, BandLow},
+		{"epss bump", riskInput{CVSS: 7.5, AttackVector: "network", Exposure: ExposureLAN, EPSS: 0.05}, 4, 3, BandMedium},
+	} {
+		got := score(c.in)
+		if got.Likelihood != c.l || got.Risk != c.r || got.Band != c.band || len(got.Reasons) == 0 {
+			t.Errorf("%s: %+v", c.name, got)
+		}
+	}
+}
+
+func TestInRange(t *testing.T) {
+	ev := []osvEvent{{Introduced: "1.0-1"}, {Fixed: "1.2-1"}, {Introduced: "2.0-1"}, {LastAffected: "2.1-1"}}
+	for _, c := range []struct {
+		v     string
+		hit   bool
+		fixed string
+	}{
+		{"0.9-1", false, ""}, {"1.0-1", true, "1.2-1"}, {"1.1-3", true, "1.2-1"}, {"1.2-1", false, ""},
+		{"2.0-1", true, ""}, {"2.1-1", true, ""}, {"2.2-1", false, ""},
+	} {
+		hit, fixed := inRange("deb", c.v, ev)
+		if hit != c.hit || fixed != c.fixed {
+			t.Errorf("%s: %v %q", c.v, hit, fixed)
+		}
+	}
+}
+
+func TestParseEPSS(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, epssFileName)
+	f, _ := os.Create(path)
+	zw := gzip.NewWriter(f)
+	_, _ = zw.Write([]byte("#model_version:v2026.06.15,score_date:2026-11-25T12:00:23Z\ncve,epss,percentile\nCVE-1999-0001,0.04753,0.92648\nbad,row\n"))
+	zw.Close()
+	f.Close()
+	tb, err := parseEPSS(path)
+	if err != nil || tb.date != "2026-11-25" || len(tb.scores) != 1 || tb.scores["CVE-1999-0001"].Prob < 0.047 {
+		t.Fatalf("%+v %v", tb, err)
 	}
 }

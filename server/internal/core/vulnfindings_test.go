@@ -2,59 +2,74 @@ package core
 
 import (
 	"context"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/shared/api"
+	"github.com/Netdoodle/homexdr/shared/event"
 )
 
-func TestVulnFindingsBecomeOneAlertPerHostAndCVE(t *testing.T) {
+func TestOldVulnAlertsAreRetired(t *testing.T) {
 	c := healthCore(t, nil)
 	ctx := context.Background()
-	n := vulnNotifier{c}
-	m := store.VulnMatch{
-		HostID: "h1", Hostname: "tower", Package: "exim", Version: "4.69", CVE: "CVE-2010-4344",
-		Title: "Exim Heap-Based Buffer Overflow Vulnerability", Reason: "Version 4.69 is affected.", Ransomware: true,
-	}
-	for range 2 {
-		if err := n.RaiseVuln(ctx, m); err != nil {
+	for _, cve := range []string{"CVE-2010-4344", "CVE-2021-3156"} {
+		if err := c.RaiseFinding(ctx, Finding{RuleID: RuleVulnKEV, Severity: store.SevHigh, Title: "Known-exploited vulnerability: " + cve,
+			Entity: "h1/" + cve, HostID: "h1", Hostname: "tower", Dataset: "homexdr.vulnerability", Data: map[string]any{"entity": "h1/" + cve}}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	other := m
-	other.CVE = "CVE-2021-0001"
-	if err := n.RaiseVuln(ctx, other); err != nil {
-		t.Fatal(err)
-	}
+	c.retireVulnAlerts(ctx)
 	list, _, err := c.State.ListAlerts(ctx, store.AlertFilter{RuleID: RuleVulnKEV, Limit: 10})
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("%v %v", list, err)
 	}
-	if len(list) != 2 {
-		t.Fatalf("got %d alerts", len(list))
-	}
-	var first *store.Alert
 	for _, a := range list {
-		if strings.Contains(a.Rule.Title, "CVE-2010-4344") {
-			first = a
+		got, err := c.State.GetAlert(ctx, a.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Status != store.AlertResolved || len(got.Notes) != 1 || got.Notes[0].Text != vulnRetiredNote {
+			t.Fatalf("%+v", got)
 		}
 	}
-	if first == nil || first.Count != 2 || first.Severity != store.SevHigh || first.HostID != "h1" {
-		t.Fatalf("%+v", first)
-	}
-	if err := n.ResolveVuln(ctx, "h1", "CVE-2010-4344", "patched"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := c.State.GetAlert(ctx, first.ID)
+}
+
+func TestVulnExposureFromFirewallLog(t *testing.T) {
+	c := newRepoTestCore(t)
+	ctx := context.Background()
+	web, err := c.State.CreateEndpoint(ctx, "web", api.HostInfo{Hostname: "web", IPs: []string{"192.168.120.22"}, OS: event.OS{Platform: "linux"}}, nil, "s1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != store.AlertResolved || len(got.Notes) != 1 || got.Notes[0].Text != "patched" {
-		t.Fatalf("%+v", got)
+	if _, err := c.State.CreateEndpoint(ctx, "nas", api.HostInfo{Hostname: "nas", IPs: []string{"192.168.120.30"}, OS: event.OS{Platform: "linux"}}, nil, "s2"); err != nil {
+		t.Fatal(err)
 	}
-	// The other CVE's alert is untouched.
-	open, _, err := c.State.ListAlerts(ctx, store.AlertFilter{RuleID: RuleVulnKEV, Statuses: []string{store.AlertNew}, Limit: 10})
-	if err != nil || len(open) != 1 {
-		t.Fatalf("%v %v", open, err)
+	now := time.Now().UTC()
+	row := func(action, src, dst string, port int, ago time.Duration) *event.Event {
+		return &event.Event{
+			Timestamp:   now.Add(-ago),
+			Event:       event.Meta{Module: event.ModuleOPNsense, Dataset: "opnsense.filterlog", Action: action, Category: []string{event.CategoryNetwork}},
+			Source:      &event.Endpoint{IP: src, Port: 40000},
+			Destination: &event.Endpoint{IP: dst, Port: port},
+			Network:     &event.Network{Direction: "inbound", Transport: "tcp"},
+		}
+	}
+	evs := []*event.Event{
+		row("pass", "198.51.100.7", "192.168.120.22", 443, time.Hour),        // a port forward to web
+		row("pass", "198.51.100.8", "192.168.120.22", 443, 2*time.Hour),      // same port again
+		row("block", "198.51.100.7", "192.168.120.30", 445, time.Hour),       // blocked: not exposure
+		row("pass", "192.168.120.151", "192.168.120.30", 22, time.Hour),       // from the LAN: not the internet
+		row("pass", "198.51.100.7", "192.168.120.22", 8080, 10*24*time.Hour), // too old
+	}
+	if err := c.Events.Insert(ctx, evs); err != nil {
+		t.Fatal(err)
+	}
+	got, err := vulnExposure{c}.InternetExposure(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || len(got[web.ID]) != 1 || got[web.ID][0] != 443 {
+		t.Fatalf("%v", got)
 	}
 }

@@ -27,6 +27,7 @@ type catalog struct {
 	version string
 	entries int
 	byName  map[string][]*Entry
+	byCVE   map[string]*Entry
 }
 
 type kevFile struct {
@@ -45,9 +46,10 @@ func parseCatalog(path string) (*catalog, error) {
 	if err := json.Unmarshal(b, &f); err != nil {
 		return nil, fmt.Errorf("not the catalog's JSON: %w", err)
 	}
-	c := &catalog{version: f.CatalogVersion, entries: len(f.Vulnerabilities), byName: map[string][]*Entry{}}
+	c := &catalog{version: f.CatalogVersion, entries: len(f.Vulnerabilities), byName: map[string][]*Entry{}, byCVE: map[string]*Entry{}}
 	for i := range f.Vulnerabilities {
 		e := &f.Vulnerabilities[i]
+		c.byCVE[e.CVE] = e
 		for _, name := range packageNames(e.Vendor, e.Product) {
 			c.byName[name] = append(c.byName[name], e)
 		}
