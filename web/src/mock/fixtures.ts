@@ -197,6 +197,9 @@ export const artifacts: ArtifactDef[] = [
   { name: 'kernel.modules', description: 'Loaded kernel modules (Linux) or drivers (Windows).', platforms: ['windows', 'linux'], columns: ['name', 'path', 'size', 'signed', 'state'] },
 ]
 
+/** `${hostId}|${pid}` of mock-list processes killed in this session. */
+export const killedListPids = new Set<string>()
+
 /** Plausible artifact rows for a host. */
 export function artifactRows(name: string, hostId: string, params: Record<string, string> = {}): Row[] {
   const h = hostById(hostId)!
@@ -204,9 +207,38 @@ export function artifactRows(name: string, hostId: string, params: Record<string
   switch (name) {
     case 'system.info':
       return [{ hostname: h.hostname, os_name: h.os.name, os_version: h.os.version, kernel: h.os.kernel ?? '', arch: h.arch, boot_time: h.boot_time, cpus: h.cpus, memory_bytes: h.memory_bytes, domain: win ? 'WORKGROUP' : '' }]
-    case 'process.list':
-      return events
+    case 'process.list': {
+      // A few long-running system processes, then the ones seen starting in the events
+      // (one row per PID).
+      const boot = h.boot_time ?? ago(3 * DAY)
+      const base: Row[] = (win
+        ? [
+            [4, 0, 'System', '', '', 'SYSTEM'],
+            [612, 4, 'smss.exe', 'C:\\Windows\\System32\\smss.exe', '\\SystemRoot\\System32\\smss.exe', 'SYSTEM'],
+            [804, 612, 'services.exe', 'C:\\Windows\\System32\\services.exe', 'C:\\Windows\\system32\\services.exe', 'SYSTEM'],
+            [1104, 804, 'svchost.exe', 'C:\\Windows\\System32\\svchost.exe', 'C:\\Windows\\system32\\svchost.exe -k netsvcs -p', 'SYSTEM'],
+            [2216, 804, 'MsMpEng.exe', 'C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\MsMpEng.exe', '"MsMpEng.exe"', 'SYSTEM'],
+            [2380, 804, 'homexdr-agent.exe', 'C:\\Program Files\\HomeXDR\\homexdr-agent.exe', '"C:\\Program Files\\HomeXDR\\homexdr-agent.exe" run', 'SYSTEM'],
+            [5120, 4980, 'explorer.exe', 'C:\\Windows\\explorer.exe', 'C:\\Windows\\Explorer.EXE', 'alex'],
+            [6344, 5120, 'chrome.exe', 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', '"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"', 'alex'],
+            [6390, 6344, 'chrome.exe', 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'chrome.exe --type=renderer', 'alex'],
+            [7012, 5120, 'Code.exe', 'C:\\Users\\alex\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe', '"Code.exe"', 'alex'],
+          ]
+        : [
+            [1, 0, 'systemd', '/usr/lib/systemd/systemd', '/sbin/init', 'root'],
+            [412, 1, 'systemd-journald', '/usr/lib/systemd/systemd-journald', '/usr/lib/systemd/systemd-journald', 'root'],
+            [688, 1, 'sshd', '/usr/sbin/sshd', 'sshd: /usr/sbin/sshd -D [listener]', 'root'],
+            [702, 1, 'cron', '/usr/sbin/cron', '/usr/sbin/cron -f', 'root'],
+            [731, 1, 'homexdr-agent', '/opt/homexdr/homexdr-agent', '/opt/homexdr/homexdr-agent run', 'root'],
+            [905, 1, 'dockerd', '/usr/bin/dockerd', '/usr/bin/dockerd -H fd://', 'root'],
+          ]
+      ).map(([pid, ppid, name, executable, command_line, user]) => ({
+        pid, ppid, entity_id: `${hostId.slice(-6)}-${pid}`, name, executable, command_line, user, start: boot, sha256: '',
+      }))
+      const seen = new Set(base.map((r) => r.pid))
+      return base.filter((r) => !killedListPids.has(`${hostId}|${r.pid}`)).concat(events
         .filter((e) => e.host.id === hostId && e.event.type?.includes('start') && e.process)
+        .filter((e) => !seen.has(e.process!.pid) && (seen.add(e.process!.pid), true))
         .slice(0, 14)
         .map((e) => ({
           pid: e.process!.pid,
@@ -218,7 +250,8 @@ export function artifactRows(name: string, hostId: string, params: Record<string
           user: e.process!.user?.name,
           start: e.process!.start,
           sha256: params.hash === 'false' ? '' : e.process!.hash?.sha256,
-        }))
+        })))
+    }
     case 'network.connections':
       return [
         { transport: 'tcp', state: 'LISTEN', local_ip: '0.0.0.0', local_port: win ? 135 : 22, remote_ip: '', remote_port: 0, pid: win ? 1104 : lSshd.pid, process_name: win ? 'svchost.exe' : 'sshd', community_id: '' },

@@ -15,8 +15,9 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
 - **IOC investigation.** Paste an IP, domain, URL or hash to get a score and brief from
   VirusTotal, AbuseIPDB, abuse.ch, GreyNoise, Shodan and others, next to where it appears in
   your own events ([docs/intel.md](docs/intel.md)).
-- **Response actions:** kill process trees, isolate hosts, quarantine and fetch files,
-  run built-in collection artifacts and fleet-wide hunts.
+- **Response actions:** kill process trees (pick from the host's live process list or enter
+  a PID), isolate hosts, quarantine and fetch files, run built-in collection artifacts and
+  fleet-wide hunts.
 - **Per-host Actions menu.** The Actions button on each host (in the host list and on its
   page) is a searchable menu of everything you can do to it: Response (isolate, kill, files,
   artifacts, Defender), Endpoint (reboot, shut down, move to group, search its events, its

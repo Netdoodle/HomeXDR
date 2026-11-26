@@ -52,6 +52,7 @@ import {
   agentConfig,
   alerts,
   artifactRows,
+  killedListPids,
   artifacts,
   audit,
   commands,
@@ -1025,8 +1026,29 @@ function finishCommand(c: MockCommand, h: Host) {
         (x) => x.host_id === h.id && x.pid === pid && !x.end,
       );
       if (!mp) {
-        c.status = "failed";
-        c.error = `no running process with PID ${pid}`;
+        // Long-running processes that only appear in the mock process list.
+        const listed = artifactRows("process.list", h.id, { hash: "false" });
+        const lp = listed.find((x) => Number(x.pid) === pid);
+        if (!lp) {
+          c.status = "failed";
+          c.error = `no running process with PID ${pid}`;
+          break;
+        }
+        if (typeof p.entity_id === "string" && p.entity_id && p.entity_id !== lp.entity_id) {
+          c.status = "failed";
+          c.error = "PID was reused by a different process; nothing was killed";
+          break;
+        }
+        const killed = [pid];
+        if (p.tree) {
+          const walk = (ppid: number) =>
+            listed
+              .filter((x) => Number(x.ppid) === ppid)
+              .forEach((x) => (killed.push(Number(x.pid)), walk(Number(x.pid))));
+          walk(pid);
+        }
+        killed.forEach((k) => killedListPids.add(`${h.id}|${k}`));
+        c.output = { killed };
         break;
       }
       if (

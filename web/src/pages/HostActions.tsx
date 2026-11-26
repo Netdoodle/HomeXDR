@@ -13,6 +13,8 @@ import { ActionConfirmDialog } from "../components/ActionDialog";
 import { ArtifactParamsForm } from "../components/ArtifactParams";
 import { useCan } from "../components/Auth";
 import { Icon, type IconName } from "../components/Icon";
+import { ProcessPicker } from "../components/ProcessPicker";
+import type { ProcRow } from "../lib/processPicker";
 import { EmptyState, ErrorState, Loading } from "../components/States";
 import {
   artifactDefaults,
@@ -21,7 +23,7 @@ import {
   validateArtifactParams,
 } from "../lib/artifacts";
 import { actionAllowed, COMMAND_LABEL } from "../lib/commands";
-import { splitList } from "../lib/format";
+import { plural, splitList } from "../lib/format";
 import { useUrlState } from "../lib/hooks";
 
 function ActionCard({
@@ -32,9 +34,12 @@ function ActionCard({
   type,
   host,
   children,
+  wide,
 }: {
   /** lets the Actions menu scroll to this card (?focus=anchor) */
   anchor?: string;
+  /** spans both grid columns */
+  wide?: boolean;
   icon: IconName;
   title: string;
   description: ReactNode;
@@ -45,7 +50,11 @@ function ActionCard({
   const types = Array.isArray(type) ? type : [type];
   const blocked = types.filter((t) => !actionAllowed(host, t));
   return (
-    <section className="panel" id={anchor ? `action-${anchor}` : undefined}>
+    <section
+      className="panel"
+      id={anchor ? `action-${anchor}` : undefined}
+      style={wide ? { gridColumn: "1 / -1" } : undefined}
+    >
       <div className="panel-header">
         <h2 className="row" style={{ gap: 8 }}>
           <Icon name={icon} size={15} /> {title}
@@ -109,6 +118,8 @@ export function HostActions({ host }: { host: Host }) {
   const [pid, setPid] = useState("");
   const [entity, setEntity] = useState("");
   const [tree, setTree] = useState(false);
+  // the process picked from the running-process list, shown in the confirm dialog
+  const [picked, setPicked] = useState<ProcRow | null>(null);
   const [qPath, setQPath] = useState("");
   const [restoreId, setRestoreId] = useState("");
   const [getPath, setGetPath] = useState("");
@@ -225,13 +236,31 @@ export function HostActions({ host }: { host: Host }) {
           title="Kill process"
           type="process.kill"
           host={host}
-          description="Terminate a process by PID. Add the process entity ID (from an event or the process tree) so a reused PID is never hit."
+          wide
+          description="Terminate a process by PID. Pick one from the agent's list of running processes, or enter a PID. The entity ID (filled in when you pick from the list, or copied from an event or the process tree) makes sure a reused PID is never hit."
         >
+          <ProcessPicker
+            host={host}
+            onPick={(p) => {
+              setPicked(p);
+              setPid(String(p.pid));
+              setEntity(p.entity_id);
+              setRequest({
+                type: "process.kill",
+                params: {
+                  pid: p.pid,
+                  entity_id: p.entity_id || undefined,
+                  tree,
+                },
+              });
+            }}
+          />
           <form
             className="stack"
             style={{ gap: 8 }}
             onSubmit={(e) => {
               e.preventDefault();
+              setPicked(null);
               if (pidValid)
                 setRequest({
                   type: "process.kill",
@@ -456,9 +485,45 @@ export function HostActions({ host }: { host: Host }) {
       <ActionConfirmDialog
         host={host}
         request={request}
-        onClose={() => setRequest(null)}
+        onClose={() => {
+          setRequest(null);
+          setPicked(null);
+        }}
         onDone={done}
-      />
+      >
+        {request?.type === "process.kill" ? (
+          <div className="stack" style={{ gap: 8 }}>
+            {picked && picked.pid === request.params.pid ? (
+              <div className="small">
+                <strong>{picked.name}</strong>
+                {picked.user ? <span className="muted"> · {picked.user}</span> : null}
+                {picked.command_line ? (
+                  <div className="mono xsmall muted" style={{ wordBreak: "break-all" }}>
+                    {picked.command_line}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={!!request.params.tree}
+                onChange={(e) => {
+                  setTree(e.target.checked);
+                  setRequest({
+                    type: "process.kill",
+                    params: { ...request.params, tree: e.target.checked },
+                  });
+                }}
+              />{" "}
+              Also kill every process it started (process tree)
+              {picked && picked.pid === request.params.pid && picked.children
+                ? ` (${plural(picked.children, "child process", "child processes")} running now)`
+                : ""}
+            </label>
+          </div>
+        ) : null}
+      </ActionConfirmDialog>
     </div>
   );
 }
