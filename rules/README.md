@@ -65,6 +65,22 @@ to the destination's Applications.
 | Gatekeeper Overridden On macOS | medium | the user opening a file Gatekeeper blocked (macOS 15+) |
 | User Added To The Admin Group On macOS | high | an account added to `admin` (macOS 14+) |
 | HomeXDR Agent Stopped Or Removed On macOS | high | `launchctl bootout`/`unload`/`disable`, `pkill` or `uninstall` of the agent |
+| Download Piped To A Shell On macOS | medium | `curl ... \| sh`, `bash -c "$(curl ...)"`, base64 into a shell, or `do shell script` running curl, when run as one command line |
+| Browser Passwords, Cookies, Keychains Or Wallets Copied On macOS | high | `cp`, `ditto`, `zip`, `sqlite3` and similar on Chrome and Firefox logins and cookies, keychains or crypto wallets, as infostealers do |
+| Archive Uploaded With Curl From A Temporary Folder On macOS | medium | `curl -F file=@/tmp/x.zip` and similar uploads of an archive from `/tmp`, `/var/folders` or `/Users/Shared` |
+| Privacy Database Edited Directly On macOS | high | `sqlite3` writing to a `TCC.db`, or a file copied over one: privacy permissions granted without a prompt |
+| Gatekeeper Or Quarantine Turned Off From The Command Line | high | `spctl --master-disable` or `--global-disable`, or `LSQuarantine` set to no |
+| Remote Login Or Screen Sharing Turned On From The Command Line | medium | `systemsetup -setremotelogin on`, `launchctl load` of SSH or Screen Sharing, or the Remote Desktop `kickstart -activate` |
+| Certificate Trusted As A Root From The Command Line On macOS | medium | `security add-trusted-cert` |
+| Web Proxy Set From The Command Line On macOS | medium | `networksetup -setwebproxy`, `-setsecurewebproxy`, `-setsocksfirewallproxy` or `-setautoproxyurl` |
+| Login Or Logout Hook Set On macOS | high | `defaults write com.apple.loginwindow LoginHook` or `LogoutHook` |
+| Shell Startup File Changed By A Program In A Temporary Or Hidden Folder | medium | a program in `/tmp`, `/var/folders`, `/Users/Shared`, `/Volumes` or a hidden folder changing `.zshrc`, `.zprofile`, `.bash_profile` and similar |
+| Launch Job Loaded From A Temporary Or Hidden Folder On macOS | high | `launchctl load`, `bootstrap` or `submit` of a job in `/tmp`, `/var/folders`, `/Users/Shared` or a hidden folder |
+| Program Started From A Hidden File Or Folder On macOS | medium | a program run from a hidden file in a home folder (`~/.helper`) or a hidden folder in `/tmp`, `/Users/Shared` or Application Support |
+| Office App Started A Shell Or Script On macOS | high | Word, Excel or PowerPoint starting a shell, `osascript`, Python, Perl, Ruby or curl |
+| Application Firewall Turned Off On macOS | medium | `socketfilterfw --setglobalstate off` or `com.apple.alf globalstate 0` |
+| System Logs Erased On macOS | high | `log erase`, logging switched off with `log config`, or the log, audit or diagnostics folders deleted |
+| Sudo Rule Added From The Command Line On macOS | medium | `tee`, `cp`, `mv` or a redirect writing `/etc/sudoers` or `/etc/sudoers.d` |
 | Many Failed Logins From One Address | medium | correlation: 20 or more failed SSH logins or Windows logons from one address within 5 minutes |
 | Process Connected To Many Ports On One Address | medium | correlation: one process trying 25 or more ports on one address within a minute (a port scan) |
 | Decoy File Modified, Deleted Or Renamed | critical | a change, deletion, rename or replacement of a decoy file the agent placed ([decoys.md](../docs/decoys.md)) |

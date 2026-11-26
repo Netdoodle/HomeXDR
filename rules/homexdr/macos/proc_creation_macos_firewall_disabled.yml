@@ -1,0 +1,25 @@
+title: Application Firewall Turned Off On macOS
+id: d6f51efd-6b68-45e0-af19-381f1629d556
+status: experimental
+description: |
+  The macOS application firewall was switched off with `socketfilterfw` or
+  `defaults write com.apple.alf`, letting any program accept incoming connections.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1562/004/
+tags:
+  - attack.defense-evasion
+  - attack.t1562.004
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re:
+      - '\bsocketfilterfw\b.*--setglobalstate\s+off\b'
+      - '\bdefaults\s+write\b.*com\.apple\.alf\b.*\bglobalstate\s+-int\s+0\b'
+  condition: selection
+falsepositives:
+  - You or a setup script turning the firewall off
+level: medium

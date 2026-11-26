@@ -1,0 +1,27 @@
+title: System Logs Erased On macOS
+id: ded68147-c8d9-4ffe-b305-d731552c4937
+status: experimental
+description: |
+  `log erase` wiped the unified log, `log config` switched logging off, or the log and
+  audit folders were deleted. Intruders do this to hide what they did.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1070/002/
+tags:
+  - attack.defense-evasion
+  - attack.t1070.002
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re:
+      - '(?:^|/|\s)log\s+erase\b'
+      - '(?:^|/|\s)log\s+config\b.*--mode\s+["'']?level:off'
+      - '\brm\s.*\s(?:/private)?/var/(?:audit|db/diagnostics|db/uuidtext)(?:/|\s|$)'
+      - '\brm\s.*\s(?:/private)?/var/log/?\*?(?:\s|$)'
+  condition: selection
+falsepositives:
+  - Clearing logs on purpose to free disk space
+level: high

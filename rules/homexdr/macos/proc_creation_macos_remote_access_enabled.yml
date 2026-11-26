@@ -1,0 +1,32 @@
+title: Remote Login Or Screen Sharing Turned On From The Command Line
+id: 87887db5-21be-47d1-9199-11aca431afdc
+status: experimental
+description: |
+  SSH (Remote Login), Screen Sharing, Remote Management or Remote Apple Events was
+  switched on with `systemsetup`, `launchctl` or the Remote Desktop `kickstart` tool.
+  Intruders open these to come back later. People normally turn them on in System
+  Settings > General > Sharing, which does not run these commands.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1021/004/
+  - https://attack.mitre.org/techniques/T1021/005/
+tags:
+  - attack.lateral-movement
+  - attack.persistence
+  - attack.t1021.004
+  - attack.t1021.005
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re:
+      - '\bsystemsetup\b.*\s-setremotelogin\s+(?:on|yes)\b'
+      - '\bsystemsetup\b.*\s-setremoteappleevents\s+(?:on|yes)\b'
+      - '\blaunchctl\s+(?:load|enable|bootstrap)\b.*(?:com\.openssh\.sshd|com\.apple\.screensharing|LaunchDaemons/ssh\.plist)'
+      - 'ARDAgent\.app/Contents/Resources/kickstart\b.*\s-activate\b'
+  condition: selection
+falsepositives:
+  - Setup scripts that enable SSH or Remote Management on a new Mac
+level: medium

@@ -1,0 +1,29 @@
+title: Gatekeeper Or Quarantine Turned Off From The Command Line
+id: 17a5bb96-5540-493e-a34a-2fb566aa2a80
+status: experimental
+description: |
+  `spctl --master-disable` (or `--global-disable`) switched Gatekeeper off, or
+  `defaults write` turned off the quarantine flag on downloads. Afterwards unsigned and
+  un-notarized programs run without a warning. Malware installers often tell the user to
+  paste these commands.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1553/001/
+  - https://attack.mitre.org/techniques/T1562/001/
+tags:
+  - attack.defense-evasion
+  - attack.t1553.001
+  - attack.t1562.001
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re:
+      - '\bspctl\s+(?:--master-disable|--global-disable|--disable)\b'
+      - '(?i)\bdefaults\s+write\b.*com\.apple\.LaunchServices\b.*\bLSQuarantine\s+-bool\s+(?:no|false|0)\b'
+  condition: selection
+falsepositives:
+  - You turning Gatekeeper off on purpose
+level: high

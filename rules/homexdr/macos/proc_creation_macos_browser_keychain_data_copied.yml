@@ -1,0 +1,50 @@
+title: Browser Passwords, Cookies, Keychains Or Wallets Copied On macOS
+id: d8227f68-5cad-4453-9ae1-13d772a20157
+status: experimental
+description: |
+  A command-line tool read, copied or archived saved browser passwords, cookies,
+  keychains or cryptocurrency wallets. Infostealers such as Atomic (AMOS) collect these
+  files into a folder in /tmp, zip them and upload them. Browsers open these files
+  themselves and do not start these tools.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1555/001/
+  - https://attack.mitre.org/techniques/T1555/003/
+  - https://attack.mitre.org/techniques/T1539/
+tags:
+  - attack.credential-access
+  - attack.t1555.001
+  - attack.t1555.003
+  - attack.t1539
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection_tool:
+    Image|endswith:
+      - '/cp'
+      - '/ditto'
+      - '/zip'
+      - '/tar'
+      - '/rsync'
+      - '/sqlite3'
+      - '/cat'
+      - '/base64'
+      - '/curl'
+  selection_target:
+    CommandLine|contains:
+      - '/Login Data'
+      - '/Web Data'
+      - '/Cookies'
+      - '/key4.db'
+      - '/logins.json'
+      - '/cookies.sqlite'
+      - '/Library/Keychains/'
+      - '/Local Extension Settings/'
+      - '/Exodus/exodus.wallet'
+      - '/Electrum/wallets'
+  condition: all of selection_*
+falsepositives:
+  - Backup or migration scripts that copy browser profiles or keychains
+level: high

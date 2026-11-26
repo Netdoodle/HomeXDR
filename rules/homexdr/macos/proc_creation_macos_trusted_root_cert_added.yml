@@ -1,0 +1,26 @@
+title: Certificate Trusted As A Root From The Command Line On macOS
+id: 294ee380-1e88-4b61-a395-f0c9f4a5256c
+status: experimental
+description: |
+  `security add-trusted-cert` marked a certificate as trusted. A rogue root certificate
+  lets whoever holds its key read and change HTTPS traffic without browser warnings, which
+  adware and traffic-stealing malware rely on.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1553/004/
+tags:
+  - attack.defense-evasion
+  - attack.t1553.004
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    Image|endswith: '/security'
+    CommandLine|contains: 'add-trusted-cert'
+  condition: selection
+falsepositives:
+  - Development tools that install a local certificate authority (mkcert, mitmproxy, Charles, Proxyman)
+  - Company certificates installed by a setup script
+level: medium

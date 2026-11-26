@@ -1,0 +1,40 @@
+title: Office App Started A Shell Or Script On macOS
+id: 40046e3a-881c-4ebe-a26a-c51d04e4a0fb
+status: experimental
+description: |
+  Word, Excel or PowerPoint started a shell, osascript, Python or curl. A macro or a
+  malicious document runs commands this way; Office itself does not normally start them.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1204/002/
+  - https://attack.mitre.org/techniques/T1059/
+tags:
+  - attack.execution
+  - attack.t1204.002
+  - attack.t1059
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection_parent:
+    ParentImage|contains:
+      - '/Microsoft Word.app/'
+      - '/Microsoft Excel.app/'
+      - '/Microsoft PowerPoint.app/'
+  selection_child:
+    Image|endswith:
+      - '/sh'
+      - '/bash'
+      - '/zsh'
+      - '/dash'
+      - '/osascript'
+      - '/python'
+      - '/python3'
+      - '/perl'
+      - '/ruby'
+      - '/curl'
+  condition: all of selection_*
+falsepositives:
+  - Macros or add-ins you rely on that run shell commands
+level: high

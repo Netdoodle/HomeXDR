@@ -1,0 +1,29 @@
+title: Privacy Database Edited Directly On macOS
+id: 38baf85f-4a58-48b9-bf3e-07ebfb168980
+status: experimental
+description: |
+  `sqlite3` wrote to a TCC.db, or a file was copied over one. TCC.db holds which apps may
+  use the camera, microphone, screen, files and other protected data. Editing it directly
+  grants access without the user ever seeing a prompt. Read-only queries are not matched.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1548/006/
+tags:
+  - attack.defense-evasion
+  - attack.privilege-escalation
+  - attack.t1548.006
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection_sqlite:
+    Image|endswith: '/sqlite3'
+    CommandLine|contains: 'TCC.db'
+    CommandLine|re: '(?i)\b(?:insert|update|replace|delete|drop)\b'
+  selection_copy:
+    CommandLine|re: '\b(?:cp|mv|ditto|install)\s.*\S+/com\.apple\.TCC/TCC\.db["'']?\s*$'
+  condition: 1 of selection_*
+falsepositives:
+  - Device management or test scripts that seed privacy permissions
+level: high

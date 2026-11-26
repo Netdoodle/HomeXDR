@@ -1,0 +1,35 @@
+title: Shell Startup File Changed By A Program In A Temporary Or Hidden Folder
+id: ebafe153-9019-402d-b0e1-24c523cdcb19
+status: experimental
+description: |
+  A program running from /tmp, /var/folders, /Users/Shared, a mounted disk image or a
+  hidden folder changed a shell startup file (.zshrc, .zprofile, .zshenv, .bash_profile
+  and so on). Whatever is written there runs in every new Terminal window. Installers and
+  editors you use run from /Applications, Homebrew or your home folder instead.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1546/004/
+tags:
+  - attack.persistence
+  - attack.privilege-escalation
+  - attack.t1546.004
+logsource:
+  product: macos
+  category: file_event
+detection:
+  selection_file:
+    TargetFilename|re: '^/Users/[^/]+/\.(?:zshrc|zshenv|zprofile|zlogin|zlogout|bashrc|bash_profile|bash_login|profile)$'
+  selection_image:
+    - Image|startswith:
+        - '/private/tmp/'
+        - '/tmp/'
+        - '/private/var/tmp/'
+        - '/private/var/folders/'
+        - '/Users/Shared/'
+        - '/Volumes/'
+    - Image|re: '/\.[^/]+/[^/]+$|^/Users/[^/]+/\.[^/]+$'
+  condition: all of selection_*
+falsepositives:
+  - An installer run from a mounted disk image that adds itself to your PATH
+level: medium

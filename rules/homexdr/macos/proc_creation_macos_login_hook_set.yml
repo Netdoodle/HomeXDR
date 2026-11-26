@@ -1,0 +1,25 @@
+title: Login Or Logout Hook Set On macOS
+id: b7117a5b-98b9-4b64-bb58-defccdbb3b12
+status: experimental
+description: |
+  `defaults write com.apple.loginwindow LoginHook` (or LogoutHook) set a script that
+  runs as root whenever someone logs in or out. Apple deprecated these hooks years ago,
+  so a new one is almost always persistence.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1037/002/
+tags:
+  - attack.persistence
+  - attack.privilege-escalation
+  - attack.t1037.002
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re: '\bdefaults\s+write\b.*com\.apple\.loginwindow\b.*\b(?:LoginHook|LogoutHook)\b'
+  condition: selection
+falsepositives:
+  - Old management scripts that still use login hooks
+level: high

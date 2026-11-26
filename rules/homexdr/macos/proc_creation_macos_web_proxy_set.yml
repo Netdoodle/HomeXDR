@@ -1,0 +1,27 @@
+title: Web Proxy Set From The Command Line On macOS
+id: bafa770b-5537-43b4-b47b-f5bafdff53e7
+status: experimental
+description: |
+  `networksetup` pointed a network service at a web, HTTPS, SOCKS or auto-config proxy.
+  Adware and traffic-stealing malware route the browser through their own proxy this way.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1090/
+  - https://attack.mitre.org/techniques/T1557/
+tags:
+  - attack.command-and-control
+  - attack.t1090
+  - attack.credential-access
+  - attack.t1557
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    Image|endswith: '/networksetup'
+    CommandLine|re: '\s-set(?:secure)?webproxy\s|\s-setsocksfirewallproxy\s|\s-setautoproxyurl\s'
+  condition: selection
+falsepositives:
+  - Proxy and debugging tools (Charles, Proxyman) and VPN clients setting the proxy for you
+level: medium

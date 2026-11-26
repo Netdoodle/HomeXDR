@@ -1,0 +1,30 @@
+title: Program Started From A Hidden File Or Folder On macOS
+id: 2f1c4bbc-f7cd-49b0-9ee7-fd7a0f91f9e6
+status: experimental
+description: |
+  A program ran from a hidden file directly in a home folder (such as ~/.helper), or from
+  a hidden folder in /tmp, /Users/Shared or Application Support. Backdoors and stealers
+  hide there; real apps live in /Applications, Homebrew or tool folders such as ~/.cargo,
+  which this rule does not match.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1564/001/
+tags:
+  - attack.defense-evasion
+  - attack.t1564.001
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    Image|re:
+      - '^/Users/[^/]+/\.[^/]+$'
+      - '^(?:/private)?/(?:tmp|var/tmp)/\.'
+      - '^/Users/Shared/\.'
+      - '^/Library/Application Support/\.'
+      - '^/Users/[^/]+/Library/Application Support/\.'
+  condition: selection
+falsepositives:
+  - Tools that unpack a helper into a hidden temporary folder
+level: medium

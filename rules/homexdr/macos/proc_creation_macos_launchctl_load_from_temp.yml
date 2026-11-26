@@ -1,0 +1,31 @@
+title: Launch Job Loaded From A Temporary Or Hidden Folder On macOS
+id: 2f0dbeb1-dcff-4fee-bd20-d2d2f9451e1a
+status: experimental
+description: |
+  `launchctl load`, `bootstrap` or `submit` started a job from /tmp, /var/folders,
+  /Users/Shared or a hidden folder. Real software keeps its launch plists in the
+  LaunchAgents and LaunchDaemons folders; malware loads them from wherever it dropped
+  them.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1543/001/
+  - https://attack.mitre.org/techniques/T1569/001/
+tags:
+  - attack.persistence
+  - attack.execution
+  - attack.t1543.001
+  - attack.t1569.001
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    Image|endswith: '/launchctl'
+    CommandLine|re:
+      - '\s(?:load|bootstrap|submit)\b.*\s["'']?(?:/private)?/(?:tmp|var/tmp|var/folders|Users/Shared)/'
+      - '\s(?:load|bootstrap)\b.*/\.[^/\s]+/[^/\s]+\.plist'
+  condition: selection
+falsepositives:
+  - Testing a launch job you are writing from a temporary folder
+level: high

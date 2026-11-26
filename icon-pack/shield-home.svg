@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Background tile (navy, from sample) -->
+  <rect id="tile" width="1024" height="1024" rx="224" fill="#0C1E3F"/>
+  <!-- LOCKED outer shield: centerline inset 32px so the 64px stroke fills the 96..928 safe zone -->
+  <path id="shield" d="M512 128 L128 256 V512 C128 704 288 824 512 896 C736 824 896 704 896 512 V256 Z" stroke="#69D8F4" stroke-width="64"/>
+  <!-- Inner symbol: Home + keyhole -->
+  <g id="symbol">
+    <path d="M376 512 L512 392 L648 512 M424 470 V632 H600 V470" stroke="#69D8F4" stroke-width="48"/>
+    <path d="M512 502 a26 26 0 0 1 14 48 l10 34 h-48 l10 -34 a26 26 0 0 1 14 -48 z" fill="#69D8F4"/>
+  </g>
+</svg>

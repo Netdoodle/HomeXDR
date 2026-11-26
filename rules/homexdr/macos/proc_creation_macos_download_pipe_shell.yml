@@ -1,0 +1,37 @@
+title: Download Piped To A Shell On macOS
+id: c8429743-c080-4916-94f9-0f3122b8184c
+status: experimental
+description: |
+  A script was downloaded and run straight from the network: `curl ... | sh`,
+  `bash -c "$(curl ...)"`, a base64 blob decoded into a shell, or AppleScript's
+  `do shell script` running curl. Fake "fix" pages and cracked-app installers use this to
+  drop infostealers. It matches when the whole pipeline is one command line, as it is
+  when a script, an AppleScript or a launch job runs it; commands typed into Terminal
+  start each program separately and are not seen as one line.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1059/004/
+  - https://attack.mitre.org/techniques/T1105/
+tags:
+  - attack.execution
+  - attack.t1059.004
+  - attack.command-and-control
+  - attack.t1105
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re:
+      - '(?:curl|wget)\s[^|]*\|\s*(?:sudo\s+)?(?:/usr)?(?:/bin/)?(?:ba|da|z|k)?sh(?:\s|$)'
+      - '(?:curl|wget)\s[^|]*\|\s*(?:/usr/bin/)?(?:osascript|python3?)(?:\s|$)'
+      - '(?:ba|da|z|k)?sh\s+-c\s+["'']?\$\((?:curl|wget)\s'
+      - 'base64\s+(?:-d|-D|--decode)\b[^|]*\|\s*(?:sudo\s+)?(?:/usr)?(?:/bin/)?(?:ba|da|z|k)?sh(?:\s|$)'
+      - 'do shell script\s+\\?["''][^"'']*\b(?:curl|wget)\s'
+  filter_homebrew:
+    CommandLine|contains: 'https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - Install scripts you run on purpose from a script (rustup, nvm, oh-my-zsh)
+level: medium

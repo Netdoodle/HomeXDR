@@ -1,0 +1,27 @@
+title: Sudo Rule Added From The Command Line On macOS
+id: 64016e52-1819-4e40-a4ff-d0e7024579c7
+status: experimental
+description: |
+  A sudoers file was written with `tee`, `cp`, `mv` or a shell redirect. A
+  NOPASSWD rule there gives a user or a program root without a password.
+author: HomeXDR
+date: 2026-11-25
+references:
+  - https://attack.mitre.org/techniques/T1548/003/
+tags:
+  - attack.privilege-escalation
+  - attack.defense-evasion
+  - attack.t1548.003
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    CommandLine|re:
+      - '\btee\b.*\s(?:/private)?/etc/sudoers(?:\.d/\S*)?(?:\s|$)'
+      - '\b(?:cp|mv|install|ditto)\s.*\s(?:/private)?/etc/sudoers(?:\.d/\S*)?\s*$'
+      - '>>?\s*(?:/private)?/etc/sudoers(?:\.d/|\s|$)'
+  condition: selection
+falsepositives:
+  - Setup scripts that add sudo rules for an account you manage
+level: medium
