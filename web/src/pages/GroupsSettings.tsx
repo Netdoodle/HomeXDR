@@ -41,6 +41,7 @@ const GLOBAL_LINK: Record<string, string> = {
   firewall: '/settings/firewall',
   decoys: '/settings/agent-config',
   sysmon: '/settings/agent-config',
+  vuln: '/vulnerabilities',
 }
 
 export function GroupsTab() {

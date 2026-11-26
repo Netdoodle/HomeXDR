@@ -20,6 +20,8 @@ export interface GroupPolicy {
   decoys?: { enabled?: boolean }
   /** Sysmon set up by Windows agents (Settings → Agent config) */
   sysmon?: { enabled?: boolean }
+  /** vulnerability management: matching, the Vulnerabilities pages and their counts */
+  vuln?: { enabled?: boolean }
 }
 
 /** An effective setting and where it comes from (no group: Global). */
@@ -39,6 +41,7 @@ export interface Effective {
   firewall: SettingSource
   decoys: SettingSource
   sysmon: SettingSource
+  vuln: SettingSource
 }
 
 export interface HostGroup {
@@ -53,12 +56,12 @@ export interface HostGroup {
 
 export interface GroupsView {
   org: { name: string }
-  global: { clamav: boolean; yara: boolean; action: string; app_control: string; ai_auto: boolean; defender_hardening: string; firewall: boolean; decoys: boolean; sysmon: boolean }
+  global: { clamav: boolean; yara: boolean; action: string; app_control: string; ai_auto: boolean; defender_hardening: string; firewall: boolean; decoys: boolean; sysmon: boolean; vuln: boolean }
   groups: HostGroup[]
   ungrouped: number
 }
 
-export type SettingKey = 'clamav' | 'yara' | 'action' | 'app_control' | 'ai_auto' | 'defender_hardening' | 'firewall' | 'decoys' | 'sysmon'
+export type SettingKey = 'clamav' | 'yara' | 'action' | 'app_control' | 'ai_auto' | 'defender_hardening' | 'firewall' | 'decoys' | 'sysmon' | 'vuln'
 
 /** One overridable setting: its choices, from strongest protection to weakest. */
 export interface SettingDef {
@@ -179,6 +182,18 @@ export const SETTINGS: SettingDef[] = [
     set: (p, v) => ({ ...p, sysmon: { ...p.sysmon, enabled: bool(v) } }),
     weaker: () =>
       'will have the Sysmon setup HomeXDR made undone (on Windows) and no longer report remote threads, process access and process tampering',
+  },
+  {
+    key: 'vuln',
+    label: 'Vulnerability management',
+    choices: [
+      { value: 'on', label: 'On' },
+      { value: 'off', label: 'Off' },
+    ],
+    get: (p) => onOff(p.vuln?.enabled),
+    set: (p, v) => ({ ...p, vuln: { ...p.vuln, enabled: bool(v) } }),
+    weaker: () =>
+      'will be left out of vulnerability management: their software is still listed, but they and their CVEs disappear from the Vulnerabilities pages and counts',
   },
 ]
 

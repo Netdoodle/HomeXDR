@@ -679,3 +679,46 @@ func TestParseEPSS(t *testing.T) {
 		t.Fatalf("%+v %v", tb, err)
 	}
 }
+
+func TestExcludedGroupIsHiddenAndComesBack(t *testing.T) {
+	r := newRig(t, "", "")
+	ctx := context.Background()
+	r.loadCatalog()
+	r.snapshot(r.now.Add(-time.Hour), pkg{name: "exim", version: "4.69", typ: "slackware"})
+	if list := r.scan(); len(list) != 1 {
+		t.Fatalf("%+v", list)
+	}
+	rep, err := r.s.Report(ctx)
+	if err != nil || len(rep.Findings) != 1 || rep.Summary.Open != 1 || len(rep.Hosts) != 1 {
+		t.Fatalf("%+v %v", rep, err)
+	}
+
+	// The host's group turns vulnerability management off: it vanishes from the report,
+	// the counts and the day's history, but its findings stay stored.
+	off := true
+	r.s.Excluded = func(string) bool { return off }
+	r.s.now = func() time.Time { return r.now.Add(time.Hour) }
+	if list := r.scan(); len(list) != 1 {
+		t.Fatalf("findings must be kept while hidden: %+v", list)
+	}
+	rep, err = r.s.Report(ctx)
+	if err != nil || len(rep.Findings) != 0 || rep.Summary.Open != 0 || rep.Summary.KEV != 0 || len(rep.Hosts) != 0 {
+		t.Fatalf("host still reported: %+v %v", rep, err)
+	}
+	hist, err := r.st.ListVulnHistory(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range hist {
+		if p.Critical+p.High+p.Medium+p.Low+p.New != 0 {
+			t.Fatalf("history counts an excluded host: %+v", p)
+		}
+	}
+
+	// Back on: it is there at once, without a scan.
+	off = false
+	rep, err = r.s.Report(ctx)
+	if err != nil || len(rep.Findings) != 1 || rep.Summary.Open != 1 || len(rep.Hosts) != 1 {
+		t.Fatalf("host did not come back: %+v %v", rep, err)
+	}
+}

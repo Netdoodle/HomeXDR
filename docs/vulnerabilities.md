@@ -98,6 +98,20 @@ Each scan stores the day's counts (open by band, new, fixed) for the charts, for
 Scans run every hour and soon after a list updates; the distro advisories are only re-read when a
 download changes or hosts gain packages.
 
+## Leaving hosts out
+
+Each host group has a **Vulnerability management** setting (Settings → Groups): Inherit, On or
+Off, On by default and inherited like the other group settings. Put a host that is meant to carry
+vulnerable software, such as a penetration-testing machine, in a group with it Off and the host
+and its CVEs disappear from this page: the findings table, the host list, the summary counts, the
+charts and the exposure and known-exploited figures. Nothing else changes. Its software list is
+still collected and shown on the host page.
+
+While a host is left out it is not matched, and its earlier findings are kept (hidden, not
+deleted). Turning the setting back On shows them again straight away, and the next scan, which
+starts soon after the change, refreshes them. Vulnerabilities raise no alerts, so there is
+nothing else to silence.
+
 ## Optional: OSV online check
 
 Off by default. When on, the names and versions of **possibly matching packages only** (name

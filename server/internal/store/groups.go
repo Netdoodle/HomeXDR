@@ -42,6 +42,13 @@ type GroupPolicy struct {
 	Decoys DecoysGroupPolicy `json:"decoys"`
 	// Sysmon: whether the group's Windows hosts set up Sysmon (docs/sysmon.md).
 	Sysmon SysmonGroupPolicy `json:"sysmon"`
+	// Vuln: whether the group's hosts take part in vulnerability management (docs/vulnerabilities.md).
+	Vuln VulnGroupPolicy `json:"vuln"`
+}
+
+// VulnGroupPolicy switches vulnerability management for a group. The global value is On.
+type VulnGroupPolicy struct {
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // SysmonGroupPolicy switches Sysmon management for a group. Global is the agent config's

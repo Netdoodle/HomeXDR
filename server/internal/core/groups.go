@@ -174,6 +174,18 @@ func (c *Core) ResolveSysmon(groupID string, global bool) SettingSource {
 	return SettingSource{Value: global}
 }
 
+// ResolveVulnManagement works out whether hosts in a group ("" for hosts in no group) take
+// part in vulnerability management: matching, the Vulnerabilities pages and their counts.
+// It is On unless a group on the way up turns it off.
+func (c *Core) ResolveVulnManagement(groupID string) SettingSource {
+	for _, g := range c.groupChain(groupID) {
+		if p := g.Policy.Vuln.Enabled; p != nil {
+			return SettingSource{Value: *p, GroupID: g.ID, GroupName: g.Name}
+		}
+	}
+	return SettingSource{Value: true}
+}
+
 // avScanners is the antivirus' view of ResolveAV.
 func (c *Core) avScanners(groupID string) av.Scanners {
 	e := c.ResolveAV(groupID)

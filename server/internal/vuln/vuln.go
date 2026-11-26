@@ -136,6 +136,10 @@ type Service struct {
 	log   *slog.Logger
 	// Exposure, when set, says which hosts the internet can reach.
 	Exposure ExposureSource
+	// Excluded, when set, says whether hosts in a group are left out of vulnerability
+	// management (the group's Vulnerability management setting is Off). Their findings are
+	// kept but hidden and not refreshed, so turning it back On shows them again at once.
+	Excluded func(groupID string) bool
 	// HTTP makes the optional OSV requests (tests replace it and OSVURL).
 	HTTP   *http.Client
 	OSVURL string
@@ -192,6 +196,20 @@ func New(st *store.Store, ev events.Store, l *lists.Service, log *slog.Logger) *
 	s.registerOSV(l)
 	s.registerEPSS(l)
 	return s
+}
+
+// excludedHosts returns the IDs of hosts whose group has vulnerability management off.
+func (s *Service) excludedHosts(hosts []*store.Host) map[string]bool {
+	out := map[string]bool{}
+	if s.Excluded == nil {
+		return out
+	}
+	for _, h := range hosts {
+		if s.Excluded(h.GroupID) {
+			out[h.ID] = true
+		}
+	}
+	return out
 }
 
 // Poke asks for a scan soon.
@@ -504,11 +522,17 @@ func (s *Service) Scan(ctx context.Context) error {
 	var scans []hostScan
 	want := map[string]map[string]bool{}
 	used := map[string]bool{}
+	excluded := s.excludedHosts(hosts)
 	for _, h := range hosts {
 		if h.Revoked {
 			continue
 		}
 		active[h.ID] = true
+		if excluded[h.ID] {
+			// Vulnerability management is off for the host's group: keep its old findings
+			// untouched (hidden from reports) and look at nothing new.
+			continue
+		}
 		info := Host{HostID: h.ID, Hostname: h.Hostname, OS: strings.TrimSpace(h.OS.Name + " " + h.OS.Version), Coverage: CoverageNone,
 			Exposure: ExposureLAN, ExposedPorts: []int{}}
 		if ports := exposure[h.ID]; len(ports) > 0 {
@@ -673,7 +697,7 @@ func (s *Service) Scan(ctx context.Context) error {
 			}
 			continue
 		}
-		if scanned[hostID] {
+		if scanned[hostID] || excluded[hostID] {
 			continue
 		}
 		kept := old[:0:0]
@@ -689,7 +713,7 @@ func (s *Service) Scan(ctx context.Context) error {
 			}
 		}
 	}
-	if err := s.saveHistory(ctx, now); err != nil {
+	if err := s.saveHistory(ctx, now, excluded); err != nil {
 		s.log.Warn("vulnerabilities: save history", "err", err)
 	}
 	s.mu.Lock()
@@ -764,7 +788,7 @@ func mergeFindings(found, old []store.VulnFinding, now time.Time) []store.VulnFi
 }
 
 // saveHistory stores today's counts for the charts.
-func (s *Service) saveHistory(ctx context.Context, now time.Time) error {
+func (s *Service) saveHistory(ctx context.Context, now time.Time, excluded map[string]bool) error {
 	list, err := s.st.ListVulnFindings(ctx)
 	if err != nil {
 		return err
@@ -772,6 +796,9 @@ func (s *Service) saveHistory(ctx context.Context, now time.Time) error {
 	day := now.Format("2006-01-02")
 	p := store.VulnHistoryPoint{Date: day}
 	for _, f := range list {
+		if excluded[f.HostID] {
+			continue
+		}
 		if f.FirstSeen.Format("2006-01-02") == day {
 			p.New++
 		}
@@ -805,6 +832,26 @@ func (s *Service) Report(ctx context.Context) (*Report, error) {
 	list, err := s.st.ListVulnFindings(ctx)
 	if err != nil {
 		return nil, err
+	}
+	hosts, err := s.st.ListHosts(ctx, store.HostFilter{Kind: store.HostEndpoint})
+	if err != nil {
+		return nil, err
+	}
+	if excluded := s.excludedHosts(hosts); len(excluded) > 0 {
+		kept := list[:0:0]
+		for _, f := range list {
+			if !excluded[f.HostID] {
+				kept = append(kept, f)
+			}
+		}
+		list = kept
+		visible := hosts[:0:0]
+		for _, h := range hosts {
+			if !excluded[h.ID] {
+				visible = append(visible, h)
+			}
+		}
+		hosts = visible
 	}
 	now := s.now()
 	sort.SliceStable(list, func(i, j int) bool {
@@ -876,10 +923,6 @@ func (s *Service) Report(ctx context.Context) (*Report, error) {
 				rep.Sources = append(rep.Sources, SourceStatus{ID: v.ID, Name: v.Name, Enabled: v.Enabled, Entries: v.Entries, LastUpdate: v.LastUpdate, Error: v.Error})
 			}
 		}
-	}
-	hosts, err := s.st.ListHosts(ctx, store.HostFilter{Kind: store.HostEndpoint})
-	if err != nil {
-		return nil, err
 	}
 	rep.OSVAPI.Enabled = s.Settings(ctx).OSV
 	s.mu.Lock()

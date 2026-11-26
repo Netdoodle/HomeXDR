@@ -34,6 +34,8 @@ type effectiveView struct {
 	Decoys core.SettingSource `json:"decoys"`
 	// Sysmon: whether the group's Windows hosts set up Sysmon.
 	Sysmon core.SettingSource `json:"sysmon"`
+	// Vuln: whether the group's hosts take part in vulnerability management.
+	Vuln core.SettingSource `json:"vuln"`
 }
 
 type groupsView struct {
@@ -54,6 +56,8 @@ type groupsView struct {
 		Decoys bool `json:"decoys"`
 		// Sysmon: whether Windows agents set up Sysmon (Settings → Agent config).
 		Sysmon bool `json:"sysmon"`
+		// Vuln: vulnerability management is on unless a group turns it off.
+		Vuln bool `json:"vuln"`
 	} `json:"global"`
 	Groups    []groupView `json:"groups"`
 	Ungrouped int         `json:"ungrouped"` // hosts in no group
@@ -73,9 +77,10 @@ func (h *Handler) groupsView(r *http.Request) (*groupsView, error) {
 	agentCfg := h.c.AgentConfig(r.Context())
 	v.Global.Decoys = agentCfg.Decoys.Enabled
 	v.Global.Sysmon = agentCfg.Sysmon.Enabled
+	v.Global.Vuln = true
 	for _, g := range gs {
 		eff := effectiveView{EffectiveAV: h.c.ResolveAV(g.ID), Decoys: h.c.ResolveDecoys(g.ID, v.Global.Decoys),
-			Sysmon: h.c.ResolveSysmon(g.ID, v.Global.Sysmon)}
+			Sysmon: h.c.ResolveSysmon(g.ID, v.Global.Sysmon), Vuln: h.c.ResolveVulnManagement(g.ID)}
 		v.Groups = append(v.Groups, groupView{HostGroup: g, Effective: eff})
 	}
 	hosts, err := h.c.State.ListHosts(r.Context(), store.HostFilter{Kind: store.HostEndpoint, GroupIDs: []string{""}})
@@ -113,6 +118,9 @@ func (h *Handler) groupResult(w http.ResponseWriter, r *http.Request, err error)
 		h.fail(w, err)
 		return
 	}
+	// A group's Vulnerability management setting or membership may have changed: refresh
+	// the findings (and the day's counts) soon.
+	h.c.Health.Vuln.Poke()
 	h.listGroups(w, r, nil)
 }
 
@@ -173,6 +181,7 @@ func (h *Handler) patchGroup(w http.ResponseWriter, r *http.Request, u *store.Us
 			parts = append(parts, "host firewall "+onOffInherit(in.Policy.Firewall.Enabled))
 			parts = append(parts, "decoy files "+onOffInherit(in.Policy.Decoys.Enabled))
 			parts = append(parts, "Sysmon events "+onOffInherit(in.Policy.Sysmon.Enabled))
+			parts = append(parts, "vulnerability management "+onOffInherit(in.Policy.Vuln.Enabled))
 		}
 		h.c.Audit(r.Context(), u.Username, "group.update", g.ID, g.Name+": "+strings.Join(parts, ", "))
 	}

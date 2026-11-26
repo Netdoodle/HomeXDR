@@ -37,6 +37,7 @@ func (c *Core) initHealth(ctx context.Context) {
 	c.Intel.SetOffline(c.Health.Lists)
 	c.Health.Vuln = vuln.New(c.State, c.Events, c.Health.Lists, c.Log)
 	c.Health.Vuln.Exposure = vulnExposure{c}
+	c.Health.Vuln.Excluded = func(groupID string) bool { return !c.ResolveVulnManagement(groupID).Value }
 	if err := c.Health.Feeds.load(ctx); err != nil {
 		c.Log.Warn("feed health: load", "err", err)
 	}

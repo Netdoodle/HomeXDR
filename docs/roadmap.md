@@ -161,6 +161,9 @@ agents at the MagicDNS name; the spool covers the gaps.
 
 ## Done
 
+- November 2026: a per-group **Vulnerability management** switch (inherited, On by default)
+  that leaves a group's hosts out of the Vulnerabilities pages and counts while their software
+  inventory is still collected ([vulnerabilities.md](vulnerabilities.md#leaving-hosts-out)).
 - November 2026: the alert storyline, a graph of the whole attack chain around an alert
   with cross-process links, scheduled-task, service and WMI launches, alerts and ATT&CK
   tactics per process ([storyline.md](storyline.md)); Windows agents turn on Sysmon (the

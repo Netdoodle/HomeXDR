@@ -3,6 +3,8 @@
 
 import type { Exposure, VulnFinding, VulnHistoryPoint, VulnHost, VulnReport, VulnStatus } from '../api/vuln'
 import { bandFor } from '../lib/vuln'
+import { vulnExcluded } from './groups'
+import { LAPTOP_ID, LINUX_ID, PI_ID } from './hosts'
 import type { MockRoute } from './health'
 import { mulberry32 } from './rng'
 
@@ -32,6 +34,9 @@ const hostDefs: HostDef[] = [
   { host_id: 'h-arch', hostname: 'devbox', os: 'Arch Linux', packages: 811, coverage: 'kev_only', exposure: 'lan', exposed_ports: [22], type: 'pacman', snapshot: 5.5 },
   { host_id: 'h-old', hostname: 'old-vm', os: 'Unknown', packages: 0, coverage: 'none', exposure: 'lan', exposed_ports: [], type: 'deb', note: 'software.list: no supported package database found (looked for dpkg, rpm, apk, pacman and Slackware packages)' },
 ]
+/** The mock hosts that stand for some of these hosts, so their group's setting applies. */
+const groupHost: Record<string, string> = { 'h-web': LINUX_ID, 'h-pihole': PI_ID, 'h-laptop': LAPTOP_ID }
+const hidden = (hostId: string) => vulnExcluded(groupHost[hostId] ?? hostId)
 const hid = (h: string) => hostDefs.find((d) => d.hostname === h)!
 
 // [host, package, version, fixed, cve, title, cvss, epss, kev, ransomware, vector, source, status, age(days)]
@@ -204,8 +209,10 @@ const hist = history()
 let report: VulnReport = build_report()
 
 function build_report(): VulnReport {
-  const open = findings.filter((f) => f.status === 'open')
-  const hosts: VulnHost[] = hostDefs.map((h) => {
+  // Hosts in a group with Vulnerability management off are left out of everything.
+  const shown = findings.filter((f) => !hidden(f.host_id))
+  const open = shown.filter((f) => f.status === 'open')
+  const hosts: VulnHost[] = hostDefs.filter((h) => !hidden(h.host_id)).map((h) => {
     const mine = open.filter((f) => f.host_id === h.host_id)
     return {
       host_id: h.host_id,
@@ -223,7 +230,7 @@ function build_report(): VulnReport {
   })
   const count = (b: string) => open.filter((f) => f.band === b).length
   return {
-    findings: [...findings],
+    findings: [...shown],
     summary: {
       open: open.length,
       critical: count('critical'),
@@ -232,8 +239,8 @@ function build_report(): VulnReport {
       low: count('low'),
       internet_exposed: open.filter((f) => f.exposure === 'internet').length,
       kev: open.filter((f) => f.kev).length,
-      new_7d: findings.filter((f) => Date.parse(f.first_seen) > Date.now() - 7 * DAY).length,
-      fixed_7d: findings.filter((f) => f.fixed_at && Date.parse(f.fixed_at) > Date.now() - 7 * DAY).length,
+      new_7d: shown.filter((f) => Date.parse(f.first_seen) > Date.now() - 7 * DAY).length,
+      fixed_7d: shown.filter((f) => f.fixed_at && Date.parse(f.fixed_at) > Date.now() - 7 * DAY).length,
       no_fix: open.filter((f) => !f.fixed_version).length,
     },
     history: hist,
@@ -253,7 +260,10 @@ function build_report(): VulnReport {
 }
 
 export function registerVulnMocks(route: MockRoute) {
-  route('GET', '/api/vulnerabilities', () => report)
+  route('GET', '/api/vulnerabilities', () => {
+    report = { ...build_report(), osv_api: report.osv_api }
+    return report
+  })
   route('POST', '/api/vulnerabilities/refresh', () => report, { role: 'admin' })
   route(
     'PUT',

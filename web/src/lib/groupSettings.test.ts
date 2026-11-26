@@ -56,3 +56,21 @@ describe('Sysmon events group setting', () => {
     expect(def.weaker('Office')).toMatch(/Sysmon/)
   })
 })
+
+describe('Vulnerability management group setting', () => {
+  const def = SETTINGS.find((d) => d.key === 'vuln')!
+
+  it('is an inherited on/off switch', () => {
+    expect(def.label).toBe('Vulnerability management')
+    expect(def.choices.map((c) => c.value)).toEqual(['on', 'off'])
+    expect(isWeaker(def, 'off', 'on')).toBe(true)
+    const p: GroupPolicy = { av: {} }
+    expect(def.get(p)).toBeUndefined()
+    const off = def.set(p, 'off')
+    expect(off.vuln).toEqual({ enabled: false })
+    expect(off.sysmon).toBeUndefined()
+    expect(def.get(off)).toBe('off')
+    expect(def.get(def.set(off, undefined))).toBeUndefined()
+    expect(def.weaker('Red Team')).toMatch(/Vulnerabilities pages/)
+  })
+})
