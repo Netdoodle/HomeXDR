@@ -84,7 +84,7 @@ export function groupChain(id: string): { id: string; name: string }[] {
 /** For the vulnerability mock: whether the host's group has vulnerability management off. */
 export function vulnExcluded(hostId: string): boolean {
   const h = hosts.find((x) => x.id === hostId)
-  return h ? !effective(h.group_id).vuln.value : false
+  return h?.group_id ? !effective(h.group_id).vuln.value : false
 }
 
 /** For the firewall mock: whether host firewall control applies in a group. */
