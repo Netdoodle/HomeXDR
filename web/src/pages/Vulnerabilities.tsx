@@ -565,7 +565,7 @@ function SourcesPanel({ report: r, isAdmin }: { report: VulnReport; isAdmin: boo
           onChange={(on) => (on ? setConfirming(true) : save.mutate(false))}
         />
         <p className="small muted" style={{ margin: 0 }}>
-          Off by default. When on, the names and versions of possibly matching packages are sent to api.osv.dev, an outside service run by Google, and nothing else about your hosts.
+          Off by default. When on, the names and versions of possibly matching packages are sent to api.osv.dev, an outside service run by Google. For Unraid hosts, the OS name and version are sent to the U.S. National Vulnerability Database (services.nvd.nist.gov), which settles which CVEs apply to that release. Nothing else about your hosts is sent.
         </p>
         {r.osv_api.error ? (
           <div className="small" style={{ color: 'var(--danger)' }}>
@@ -583,7 +583,7 @@ function SourcesPanel({ report: r, isAdmin }: { report: VulnReport; isAdmin: boo
           save.mutate(true)
         }}
       >
-        The names and versions of possibly matching packages will be sent to api.osv.dev, an outside service. This tells them some of what you run.
+        The names and versions of possibly matching packages will be sent to api.osv.dev, an outside service, and an Unraid host's OS version to services.nvd.nist.gov. This tells them some of what you run.
       </ConfirmDialog>
     </section>
   )

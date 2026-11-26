@@ -106,9 +106,15 @@ host's whole software list. If OSV lists that exact version as affected by the C
 becomes confirmed. It does nothing for Slackware, Unraid or Docker images, which OSV has no data
 for.
 
+The same switch lets HomeXDR ask the U.S. National Vulnerability Database (`services.nvd.nist.gov`)
+which CVEs affect an Unraid host's exact OS version, using NVD's affected-version ranges. Only the
+product name and version are sent, once a day per version. CVEs NVD lists for that version are
+added as confirmed, and catalog matches NVD does not list for it are dropped, which clears the old
+Unraid entries on current releases.
+
 ## Not covered yet
 
 - Docker images: only the image name and tag are known, not the packages inside.
-- Slackware and Unraid: no advisory feed has fixed versions for them.
+- Slackware packages and Unraid's own packages: no advisory feed has fixed versions for them. Unraid's OS release is covered by the NVD check above.
 - Windows and macOS applications.
 - Red Hat Enterprise Linux itself (Rocky and AlmaLinux are covered).

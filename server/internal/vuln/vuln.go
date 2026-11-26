@@ -139,12 +139,16 @@ type Service struct {
 	// HTTP makes the optional OSV requests (tests replace it and OSVURL).
 	HTTP   *http.Client
 	OSVURL string
+	NVDURL string
 	now    func() time.Time
 
 	kev     atomic.Pointer[catalog]
 	epss    atomic.Pointer[epssTable]
 	poke    chan struct{}
 	running atomic.Bool
+
+	nvdMu    sync.Mutex
+	nvdCache map[string]nvdCacheEntry
 
 	osvMu  sync.Mutex
 	osvGen int
@@ -162,7 +166,7 @@ type Service struct {
 // It starts nothing.
 func New(st *store.Store, ev events.Store, l *lists.Service, log *slog.Logger) *Service {
 	s := &Service{
-		st: st, ev: ev, lists: l, log: log, OSVURL: osvURL,
+		st: st, ev: ev, lists: l, log: log, OSVURL: osvURL, NVDURL: nvdURL,
 		HTTP: &http.Client{Timeout: time.Minute},
 		now:  func() time.Time { return time.Now().UTC() },
 		poke: make(chan struct{}, 1), hosts: map[string]Host{},
@@ -614,6 +618,17 @@ func (s *Service) Scan(ctx context.Context) error {
 				if err := s.osvCheck(ctx, h, matches); err != nil {
 					osvErr = err.Error()
 					s.log.Warn("vulnerabilities: OSV check failed", "err", err)
+				}
+				// Whole-OS products without a distro feed (Unraid) are settled by the NVD.
+				var extra []store.VulnFinding
+				var err error
+				matches, extra, err = s.nvdRefine(ctx, h, matches, rest)
+				if err != nil {
+					osvErr = err.Error()
+					s.log.Warn("vulnerabilities: NVD check failed", "err", err)
+				}
+				for _, f := range extra {
+					add(f)
 				}
 			}
 			for _, m := range matches {
