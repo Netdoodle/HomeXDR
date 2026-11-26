@@ -23,6 +23,7 @@ import type {
   Event,
   Health,
   Host,
+  HostApplications,
   HostFilter,
   Hunt,
   HuntCreate,
@@ -86,6 +87,12 @@ export const getHost = (id: string) => http.get<Host>(`/api/hosts/${enc(id)}`)
 export const updateHostLabels = (id: string, labels: string[]) =>
   http.patch<Host>(`/api/hosts/${enc(id)}`, { labels })
 export const revokeHost = (id: string) => http.del(`/api/hosts/${enc(id)}`)
+/** Permanently deletes a host. Needs the typed hostname and a fresh authenticator code. */
+export const removeHost = (id: string, totp_code: string, confirm_hostname: string) =>
+  http.post<void>(`/api/hosts/${enc(id)}/remove`, { totp_code, confirm_hostname })
+export const hostApplications = (id: string) => http.get<HostApplications>(`/api/hosts/${enc(id)}/applications`)
+export const rescanHostVulns = (id: string) =>
+  http.post<{ started: boolean; scope: 'all' }>(`/api/hosts/${enc(id)}/vuln-rescan`)
 export const decommissionHost = (id: string) => http.post<Host>(`/api/hosts/${enc(id)}/decommission`)
 export const recommissionHost = (id: string) => http.post<Host>(`/api/hosts/${enc(id)}/recommission`)
 export const updateHostNow = (id: string) => http.post<Host>(`/api/hosts/${enc(id)}/update-now`)

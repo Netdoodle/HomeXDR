@@ -221,8 +221,9 @@ type pkg struct {
 	source string
 }
 
-// inventory reads a host's newest software list: its newest row, then the rows of that snapshot.
-func (s *Service) inventory(ctx context.Context, hostID string, now time.Time) ([]pkg, time.Time, error) {
+// inventoryEvents reads the events of a host's newest software list: its newest row, then
+// the rows of that snapshot.
+func (s *Service) inventoryEvents(ctx context.Context, hostID string, now time.Time) ([]*event.Event, time.Time, error) {
 	from, to := now.AddDate(0, 0, -inventoryDays), now.Add(time.Minute)
 	newest, err := events.SampleSource(ctx, s.ev, hostID, event.ModuleInventory, "inventory.software.list", from, to, 1)
 	if err != nil {
@@ -235,6 +236,15 @@ func (s *Service) inventory(ctx context.Context, hostID string, now time.Time) (
 	rows, err := events.SampleSource(ctx, s.ev, hostID, event.ModuleInventory, "inventory.software.list", at.Add(-snapshotWindow), to, maxPackages)
 	if err != nil {
 		return nil, time.Time{}, err
+	}
+	return rows, at, nil
+}
+
+// inventory reads a host's newest software list.
+func (s *Service) inventory(ctx context.Context, hostID string, now time.Time) ([]pkg, time.Time, error) {
+	rows, at, err := s.inventoryEvents(ctx, hostID, now)
+	if err != nil || len(rows) == 0 {
+		return nil, at, err
 	}
 	seen := map[pkg]bool{}
 	out := make([]pkg, 0, len(rows))

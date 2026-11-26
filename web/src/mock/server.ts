@@ -78,6 +78,7 @@ import { registerHealthMocks } from "./health";
 import { registerHealthCheckMocks } from "./healthChecks";
 import { registerListMocks } from "./lists";
 import { registerVulnMocks } from "./vuln";
+import { applicationsFor } from "./applications";
 import { registerFirewallMocks } from "./firewall";
 import { repoFiles, repoSkipped } from "./repoFiles";
 import { registerNoiseMocks, reusedTriage } from "./noise";
@@ -843,6 +844,51 @@ route(
   { role: "admin" },
 );
 
+// Removing a host needs the signed-in admin's authenticator code (MOCK_TOTP_CODE; a
+// recovery code does not count, as on the real server) and the host's name typed back.
+route(
+  "POST",
+  "/api/hosts/:id/remove",
+  ({ params, body, user }) => {
+    const h = getHostOr404(params.id);
+    const b = obj(body);
+    const self = users.find((x) => x.id === user!.id);
+    if (!self?.totp_enabled)
+      fail(
+        403,
+        "set up two-factor authentication first (Account > Two-factor), then try again",
+      );
+    if (
+      String(b.confirm_hostname ?? "").trim().toLowerCase() !==
+      h.hostname.toLowerCase()
+    )
+      fail(400, "type the host's name exactly to confirm");
+    if (String(b.totp_code ?? "").replace(/\s+/g, "") !== MOCK_TOTP_CODE)
+      fail(403, "that code is not right");
+    hosts.splice(hosts.indexOf(h), 1);
+    for (let i = commands.length - 1; i >= 0; i--)
+      if (commands[i].host_id === h.id) commands.splice(i, 1);
+    logAudit(user, "host.remove", h.hostname, null);
+    return NO_CONTENT;
+  },
+  { role: "admin" },
+);
+
+route("GET", "/api/hosts/:id/applications", ({ params }) =>
+  applicationsFor(getHostOr404(params.id)),
+);
+
+route(
+  "POST",
+  "/api/hosts/:id/vuln-rescan",
+  ({ params, user }) => {
+    const h = getHostOr404(params.id);
+    logAudit(user, "host.vuln_rescan", h.hostname, null);
+    return { started: true, scope: "all" };
+  },
+  { role: "analyst" },
+);
+
 function validateCommand(h: Host, req: CommandRequest) {
   const p = (req.params ?? {}) as Record<string, unknown>;
   switch (req.type) {
@@ -882,7 +928,19 @@ function validateCommand(h: Host, req: CommandRequest) {
         fail(400, "params.allow must be an array of strings");
       break;
     case "host.release":
+    case "agent.restart":
+    case "agent.logs":
+    case "agent.flush_queue":
       break;
+    case "host.reboot":
+    case "host.shutdown": {
+      const d = p.delay_sec;
+      if (d !== undefined && (!Number.isInteger(d) || (d as number) < 0 || (d as number) > 3600))
+        fail(400, "params.delay_sec must be a whole number of seconds from 0 to 3600");
+      if (p.message !== undefined && typeof p.message !== "string")
+        fail(400, "params.message must be a string");
+      break;
+    }
     default:
       fail(
         400,
@@ -1039,6 +1097,22 @@ function finishCommand(c: MockCommand, h: Host) {
         sha256: sha(),
       };
       c._file = `HomeXDR mock mode: placeholder content for ${String(p.path)}\n`;
+      break;
+    case "agent.logs":
+      c.output = {
+        path: "homexdr-agent.log",
+        size: 64,
+        md5: sha().slice(0, 32),
+        sha1: sha().slice(0, 40),
+        sha256: sha(),
+      };
+      c._file = `HomeXDR mock mode: placeholder agent log for ${h.hostname}\n`;
+      break;
+    case "host.reboot":
+    case "host.shutdown":
+    case "agent.restart":
+    case "agent.flush_queue":
+      c.output = {};
       break;
     case "artifact.collect": {
       const rows = artifactRows(

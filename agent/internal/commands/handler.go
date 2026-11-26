@@ -21,6 +21,7 @@ import (
 	"github.com/Netdoodle/homexdr/agent/internal/backoff"
 	"github.com/Netdoodle/homexdr/agent/internal/fileops"
 	"github.com/Netdoodle/homexdr/agent/internal/platform"
+	"github.com/Netdoodle/homexdr/agent/internal/spool"
 	"github.com/Netdoodle/homexdr/agent/internal/transport"
 	"github.com/Netdoodle/homexdr/shared/api"
 	"github.com/Netdoodle/homexdr/shared/hostfw"
@@ -66,6 +67,14 @@ type Handler struct {
 	Platform string
 	// Hardening applies the Defender hardening profile (Windows); nil elsewhere.
 	Hardening platform.DefenderHardening
+	// Spool is the local event queue (agent.flush_queue); nil without one.
+	Spool *spool.Spool
+	// DataDir is the agent's data dir (status.json and the bundle for agent.logs).
+	DataDir string
+	// Restart stops the agent for a restart (agent.restart). It is called from a timer
+	// RestartDelay (default 2 s) after the command was accepted, and must not block.
+	Restart      func()
+	RestartDelay time.Duration
 
 	slow chan struct{} // limits concurrent artifact collections and uploads
 }
@@ -121,6 +130,8 @@ func timeout(typ string) time.Duration {
 		return 10 * time.Minute
 	case api.CmdDefenderHarden:
 		return 5 * time.Minute
+	case api.CmdAgentLogs:
+		return 10 * time.Minute
 	}
 	return 5 * time.Minute
 }
@@ -140,7 +151,7 @@ func (h *Handler) execute(parent context.Context, cmd *api.Command) {
 		h.post(parent, api.CommandResult{CommandID: cmd.ID, Status: api.StatusRejected, Error: err.Error()})
 		return
 	}
-	if cmd.Type == api.CmdArtifact || cmd.Type == api.CmdFileGet {
+	if cmd.Type == api.CmdArtifact || cmd.Type == api.CmdFileGet || cmd.Type == api.CmdAgentLogs {
 		select {
 		case h.slow <- struct{}{}:
 			defer func() { <-h.slow }()
@@ -275,6 +286,14 @@ func (h *Handler) prepare(cmd *api.Command) (runFunc, error) {
 
 	case api.CmdDefenderHarden:
 		return h.prepareHarden(cmd)
+	case api.CmdHostReboot, api.CmdHostShutdown:
+		return h.preparePower(cmd)
+	case api.CmdAgentRestart:
+		return h.prepareRestart(cmd)
+	case api.CmdAgentLogs:
+		return h.prepareLogs(cmd)
+	case api.CmdAgentFlushQueue:
+		return h.prepareFlushQueue(cmd)
 	case api.CmdFirewall:
 		var p api.FirewallParams
 		if err := decodeParams(cmd.Params, &p); err != nil {

@@ -17,6 +17,15 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
   your own events ([docs/intel.md](docs/intel.md)).
 - **Response actions:** kill process trees, isolate hosts, quarantine and fetch files,
   run built-in collection artifacts and fleet-wide hunts.
+- **Per-host Actions menu.** The Actions button on each host (in the host list and on its
+  page) is a searchable menu of everything you can do to it: Response (isolate, kill, files,
+  artifacts, Defender), Endpoint (reboot, shut down, move to group, search its events, its
+  Applications list, rescan vulnerabilities) and Agent (restart, fetch logs, flush the event
+  queue, update, decommission, revoke). Recently used and starred items sit on top. Items you
+  cannot use are greyed out with the reason. **Remove host** deletes a host for good; it needs
+  your authenticator code, so turn on two-factor login first (Settings, My account). Stored
+  events and alerts are kept, and the removed agent's certificate stops working. The
+  **Applications** tab lists the software the agent reported ([docs/api.md](docs/api.md)).
 - **Network correlation.** Ingests OPNsense `filterlog` and Suricata EVE over syslog and
   joins them to endpoint processes by Community ID.
 - **Network visibility.** Optional NetFlow/IPFIX, Unbound and DHCP intake name each device behind

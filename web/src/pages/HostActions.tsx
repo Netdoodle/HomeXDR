@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import {
   api,
@@ -22,8 +22,10 @@ import {
 } from "../lib/artifacts";
 import { actionAllowed, COMMAND_LABEL } from "../lib/commands";
 import { splitList } from "../lib/format";
+import { useUrlState } from "../lib/hooks";
 
 function ActionCard({
+  anchor,
   icon,
   title,
   description,
@@ -31,6 +33,8 @@ function ActionCard({
   host,
   children,
 }: {
+  /** lets the Actions menu scroll to this card (?focus=anchor) */
+  anchor?: string;
   icon: IconName;
   title: string;
   description: ReactNode;
@@ -41,7 +45,7 @@ function ActionCard({
   const types = Array.isArray(type) ? type : [type];
   const blocked = types.filter((t) => !actionAllowed(host, t));
   return (
-    <section className="panel">
+    <section className="panel" id={anchor ? `action-${anchor}` : undefined}>
       <div className="panel-header">
         <h2 className="row" style={{ gap: 8 }}>
           <Icon name={icon} size={15} /> {title}
@@ -82,6 +86,23 @@ export function HostActions({ host }: { host: Host }) {
   const isAdmin = useCan("admin");
   const navigate = useNavigate();
   const [request, setRequest] = useState<CommandRequest | null>(null);
+  const [sp] = useUrlState();
+  const focus = sp.get("focus");
+
+  // The Actions menu sends people here for actions that need input: scroll to the card
+  // and flash it.
+  useEffect(() => {
+    if (!focus) return;
+    const el = document.getElementById(`action-${focus}`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.classList.add("flash-highlight");
+    const t = setTimeout(() => el.classList.remove("flash-highlight"), 2600);
+    return () => {
+      clearTimeout(t);
+      el.classList.remove("flash-highlight");
+    };
+  }, [focus]);
 
   // form state
   const [allow, setAllow] = useState("");
@@ -199,6 +220,7 @@ export function HostActions({ host }: { host: Host }) {
         </ActionCard>
 
         <ActionCard
+          anchor="kill"
           icon="kill"
           title="Kill process"
           type="process.kill"
@@ -262,6 +284,7 @@ export function HostActions({ host }: { host: Host }) {
         </ActionCard>
 
         <ActionCard
+          anchor="quarantine"
           icon="quarantine"
           title="Quarantine / restore file"
           type={["file.quarantine", "file.restore"]}
@@ -335,6 +358,7 @@ export function HostActions({ host }: { host: Host }) {
 
         {isAdmin ? (
           <ActionCard
+            anchor="get-file"
             icon="download"
             title="Get file"
             type="file.get"
@@ -389,6 +413,7 @@ export function HostActions({ host }: { host: Host }) {
         ) : null}
 
         <ActionCard
+          anchor="hash"
           icon="hash"
           title="Hash file"
           type="file.hash"
@@ -453,6 +478,7 @@ function DefenderCard({
     onRequest({ type: "defender.action", params });
   return (
     <ActionCard
+      anchor="defender"
       icon="bug"
       title="Microsoft Defender"
       type="defender.action"
@@ -579,6 +605,7 @@ function ArtifactCard({
 
   return (
     <ActionCard
+      anchor="artifact"
       icon="artifact"
       title="Run artifact"
       type="artifact.collect"

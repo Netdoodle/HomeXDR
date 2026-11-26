@@ -8,6 +8,7 @@ export const queryKeys = {
   overview: (hours: number) => ['overview', hours] as const,
   hosts: (f?: HostFilter) => (f ? (['hosts', f] as const) : (['hosts'] as const)),
   host: (id: string) => ['host', id] as const,
+  hostApplications: (id: string) => ['host', id, 'applications'] as const,
   hostCommands: (id: string) => ['host', id, 'commands'] as const,
   hostTimeline: (id: string, f: TimelineFilter) => ['host', id, 'timeline', f] as const,
   command: (id: string) => ['command', id] as const,

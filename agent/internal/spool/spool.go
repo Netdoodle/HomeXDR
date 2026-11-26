@@ -332,6 +332,37 @@ func (s *Spool) Close() error {
 	return err
 }
 
+// Purge drops every event that has not been delivered: all segment files are removed and
+// the cursor starts over in a fresh segment. It returns how many events and bytes were
+// waiting. A batch that a reader holds keeps its lines, but its Commit does nothing
+// afterwards. Dropped events are not counted in Stats.Dropped (that counts overflow).
+func (s *Spool) Purge() (events, bytes int64, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return 0, 0, ErrClosed
+	}
+	oldSegs, oldW := s.segs, s.w
+	events, bytes = s.queued, max(s.total-s.cur.Off, 0)
+	next := s.active().seq + 1
+	// Open the new segment first so a failure leaves the spool as it was.
+	s.segs = nil
+	if err := s.openSegment(next); err != nil {
+		s.segs = oldSegs
+		return 0, 0, err
+	}
+	_ = oldW.Close() // buffered lines of the old active segment are discarded with it
+	for _, g := range oldSegs {
+		if err := os.Remove(s.path(g.seq)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			s.log.Warn("spool: cannot remove segment", "seq", g.seq, "err", err)
+		}
+	}
+	s.total, s.queued = 0, 0
+	s.cur = cursor{Seq: next}
+	s.saveCursorLocked()
+	return events, bytes, nil
+}
+
 // Stats are queue counters.
 type Stats struct {
 	Events  int64

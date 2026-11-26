@@ -180,3 +180,72 @@ func TestInspect(t *testing.T) {
 		t.Fatalf("inspect: %d bytes %d segments", b, segs)
 	}
 }
+
+func TestPurge(t *testing.T) {
+	dir := t.TempDir()
+	// Small limit so several segments exist.
+	s, err := Open(dir, 4<<20, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 5000
+	for i := range n {
+		if err := s.Append(line(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Deliver some, so the cursor sits inside the queue.
+	b, err := s.Next(100, 1<<20)
+	if err != nil || b == nil {
+		t.Fatalf("next: %v %v", b, err)
+	}
+	b.Commit(len(b.Lines))
+	want := s.Stats()
+	if want.Events == 0 {
+		t.Fatal("nothing queued")
+	}
+	// A batch read before the purge must not move the cursor afterwards.
+	stale, err := s.Next(10, 1<<20)
+	if err != nil || stale == nil {
+		t.Fatal(err)
+	}
+
+	ev, by, err := s.Purge()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev != want.Events || by != want.Bytes {
+		t.Fatalf("purged %d events, %d bytes; queue had %d, %d", ev, by, want.Events, want.Bytes)
+	}
+	if st := s.Stats(); st.Events != 0 || st.Bytes != 0 || st.Dropped != 0 {
+		t.Fatalf("stats after purge: %+v", st)
+	}
+	stale.Commit(len(stale.Lines))
+	if got := drain(t, s, 100); len(got) != 0 {
+		t.Fatalf("%d events left after purge", len(got))
+	}
+	if qb, _ := Inspect(dir); qb != 0 {
+		t.Fatalf("%d bytes still on disk", qb)
+	}
+
+	// New events flow normally, also across a restart.
+	for i := 0; i < 3; i++ {
+		if err := s.Append(line(10000 + i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Purge(); err != ErrClosed {
+		t.Fatalf("purge after close: %v", err)
+	}
+	s2, err := Open(dir, 4<<20, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	if got := drain(t, s2, 100); len(got) != 3 || got[0] != `{"id":"10000"` {
+		t.Fatalf("after reopen got %v", got)
+	}
+}

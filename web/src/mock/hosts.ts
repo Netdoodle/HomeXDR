@@ -80,8 +80,8 @@ export const hosts: Host[] = [
       { name: 'auth', impl: 'authlog', state: 'running', events: 9133 },
     ],
     queue_events: 0,
-    // Local policy on this server does not allow file uploads.
-    allowed_actions: COMMAND_TYPES.filter((t) => t !== 'file.get'),
+    // Local policy on this server does not allow file uploads or shutting it down.
+    allowed_actions: COMMAND_TYPES.filter((t) => t !== 'file.get' && t !== 'host.shutdown'),
     open_alerts: 0,
     boot_time: ago(17 * DAY),
     cpus: 8,

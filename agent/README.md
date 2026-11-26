@@ -426,6 +426,29 @@ and the usual persistence places under `/etc` (cron, systemd units, `init.d`,
 path are resolved before the check. The check runs on the agent, so the server cannot
 skip it; malware hidden among system files is still stopped and must be removed by hand.
 
+## Host power and agent management commands
+
+Five more command types, all subject to the local policy (`allowed_actions`) and admin-only
+in the console:
+
+| Command | What it does |
+|---|---|
+| `host.reboot`, `host.shutdown` | Schedule a reboot or power-off. Params: `delay_sec` (0..3600, default 60 when left out) and an optional `message` (at most 200 printable characters). Linux and macOS run `shutdown -r\|-h +M "msg"` (M = delay in minutes, rounded up; `now` for 0), Windows runs `shutdown.exe /r\|/s /t SEC /c "msg"`. The command completes once the OS accepted the request; the default delay lets the result reach the server first. Output: `{"scheduled_for": <RFC 3339>, "delay_sec": n}`. |
+| `agent.restart` | Reports `completed`, then about 2 s later stops the agent the way a self-update does (spool closed, sensors stopped). Linux, Unraid and macOS re-exec the binary with the same PID; on Windows the service exits with an error code so the Service Control Manager's recovery action restarts it. |
+| `agent.logs` | Uploads a zip of the agent's own logs (like `file.get`): the agent log file(s) including the rotated one, `status.json`, and where the log only goes to the journal or syslog, `journalctl -u homexdr-agent.service -n 20000` or the agent's syslog lines. At most 50 MB uncompressed; the config file, keys and certificates are never included. |
+| `agent.flush_queue` | Deletes every event waiting in the local spool. Output: `{"events_dropped": n, "bytes_dropped": n}`. |
+
+Log locations: `<data dir>\logs\agent.log` and `agent.log.1` (Windows, rotated at 10 MB),
+`/Library/Logs/HomeXDR/agent.log` (macOS, rotated by newsyslog), the journal of
+`homexdr-agent.service` (Linux with systemd), the syslog with tag `homexdr-agent` (Unraid
+and other systems without systemd).
+
+**Local policy default.** These five are part of the default policy, so an agent whose
+config leaves out `allowed_actions` accepts them. An agent whose config already lists
+`allowed_actions` (for example one the Unraid plugin wrote from `ALLOWED_ACTIONS`) keeps its list and refuses them until
+they are added. To turn them off on a host, remove them from `allowed_actions`; a host
+that must never be rebooted remotely should not list `host.reboot` or `host.shutdown`.
+
 ## Automatic updates
 
 With `auto_update` on, the agent checks each heartbeat for an update offer. It then

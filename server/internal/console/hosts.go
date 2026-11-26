@@ -94,12 +94,28 @@ func (h *Handler) hostAction(w http.ResponseWriter, r *http.Request, u *store.Us
 		writeErr(w, http.StatusForbidden, "getting files from hosts needs the admin role")
 		return
 	}
+	// Rebooting or shutting down a host, restarting or flushing the agent and pulling its
+	// logs are admin actions too.
+	switch req.Type {
+	case api.CmdHostReboot, api.CmdHostShutdown, api.CmdAgentRestart, api.CmdAgentLogs, api.CmdAgentFlushQueue:
+		if u.Role != store.RoleAdmin {
+			writeErr(w, http.StatusForbidden, "host power and agent management actions need the admin role")
+			return
+		}
+	}
+	// A power command that waited a day for an offline host must not fire when it comes
+	// back, so these expire quickly.
+	var ttl time.Duration
+	switch req.Type {
+	case api.CmdHostReboot, api.CmdHostShutdown, api.CmdAgentRestart:
+		ttl = 15 * time.Minute
+	}
 	host, err := h.c.State.GetHost(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	rec, err := h.c.IssueCommand(r.Context(), host, req.Type, req.Params, u.Username, "", 0)
+	rec, err := h.c.IssueCommand(r.Context(), host, req.Type, req.Params, u.Username, "", ttl)
 	if err != nil {
 		h.fail(w, err)
 		return
@@ -185,7 +201,11 @@ func (h *Handler) commandDownload(w http.ResponseWriter, r *http.Request, u *sto
 	h.c.Audit(r.Context(), u.Username, "command.download", c.ID, c.UploadName)
 	// Collected files may be malware: always force a download, never render.
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.quarantine"`, name))
+	// The agent's own log bundle is not a collected file, so it keeps its .zip name.
+	if c.Type != api.CmdAgentLogs {
+		name += ".quarantine"
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, "", st.ModTime(), f)
 }

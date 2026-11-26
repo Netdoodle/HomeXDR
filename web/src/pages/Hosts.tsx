@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router'
 import { api, queryKeys, type HostFilter } from '../api'
 import { AlertCount, OsLabel, StatusDot, Tags, UpdateBadge } from '../components/Badges'
 import { shortVersion } from '../lib/agents'
+import { HostActionsMenu } from '../components/HostActionsMenu'
 import { PageHeader } from '../components/Layout'
 import { GroupFilter, HostGroupName } from './GroupsSettings'
 import { CopyIcon, RelTime } from '../components/Misc'
@@ -108,6 +109,7 @@ export function HostsPage() {
                 <col style={{ width: 80 }} />
                 <col style={{ width: 96 }} />
                 <col style={{ width: 70 }} />
+                <col style={{ width: 100 }} />
               </colgroup>
               <thead>
                 <tr>
@@ -119,6 +121,9 @@ export function HostsPage() {
                   <th>Agent</th>
                   <th>Last seen</th>
                   <th className="right">Alerts</th>
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -161,6 +166,9 @@ export function HostsPage() {
                     </td>
                     <td className="right">
                       <AlertCount n={h.open_alerts} />
+                    </td>
+                    <td className="right">
+                      <HostActionsMenu host={h} small />
                     </td>
                   </tr>
                 ))}

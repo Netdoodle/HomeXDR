@@ -12,6 +12,22 @@ export const COMMAND_LABEL: Record<CommandType, string> = {
   'file.hash': 'Hash file',
   'artifact.collect': 'Run artifact',
   'defender.action': 'Defender action',
+  'host.reboot': 'Reboot host',
+  'host.shutdown': 'Shut down host',
+  'agent.restart': 'Restart agent',
+  'agent.logs': 'Fetch agent logs',
+  'agent.flush_queue': 'Flush event queue',
+}
+
+/** Default delay of reboot and shutdown, in seconds. */
+export const POWER_DEFAULT_DELAY = 60
+export const POWER_MAX_DELAY = 3600
+
+export function formatDelay(sec: number): string {
+  if (sec <= 0) return 'immediately'
+  if (sec % 3600 === 0) return `in ${sec / 3600} hour${sec === 3600 ? '' : 's'}`
+  if (sec % 60 === 0) return `in ${sec / 60} minute${sec === 60 ? '' : 's'}`
+  return `in ${sec} seconds`
 }
 
 export function commandLabel(type: string): string {
@@ -110,6 +126,50 @@ export function describeCommand(req: CommandRequest, host: Pick<Host, 'hostname'
     }
     case 'defender.action':
       return describeDefender(req.params, h)
+    case 'host.reboot':
+    case 'host.shutdown': {
+      const reboot = req.type === 'host.reboot'
+      const delay = req.params.delay_sec ?? POWER_DEFAULT_DELAY
+      return {
+        title: `${reboot ? 'Reboot' : 'Shut down'} ${h}?`,
+        effects: [
+          `${h} ${reboot ? 'restarts' : 'powers off'} ${formatDelay(delay)}. Everyone using it is logged out and unsaved work is lost.`,
+          reboot
+            ? 'The agent reconnects after the host has booted.'
+            : 'A host that is shut down stays off until someone starts it; HomeXDR cannot turn it back on.',
+          req.params.message ? `The message shown to users: ${req.params.message}` : 'No message is shown to users.',
+        ],
+        confirmLabel: reboot ? 'Reboot host' : 'Shut down host',
+        danger: true,
+      }
+    }
+    case 'agent.restart':
+      return {
+        title: `Restart the agent on ${h}?`,
+        effects: [`The HomeXDR agent service on ${h} restarts. Monitoring pauses for a few seconds; nothing else on the host is touched.`],
+        confirmLabel: 'Restart agent',
+        danger: false,
+      }
+    case 'agent.logs':
+      return {
+        title: `Fetch the agent's logs from ${h}?`,
+        effects: [
+          `The agent uploads its recent log files to the HomeXDR server. Download the zip from the Commands tab, like a file.get result.`,
+          'Nothing changes on the host.',
+        ],
+        confirmLabel: 'Fetch logs',
+        danger: false,
+      }
+    case 'agent.flush_queue':
+      return {
+        title: `Flush the event queue on ${h}?`,
+        effects: [
+          `The agent drops every event waiting in its local spool on ${h}. Events that were not sent to the server yet are lost for good.`,
+          'Use it when a huge backlog is stuck or the spool is full. Events already on the server are not affected.',
+        ],
+        confirmLabel: 'Flush queue',
+        danger: true,
+      }
   }
 }
 
@@ -166,6 +226,9 @@ export function commandParamsSummary(c: Pick<CommandRecord, 'type' | 'params'>):
       return `id ${String(p.id ?? '')}`
     case 'defender.action':
       return [p.action, p.scan_type, p.path, p.threat_id].filter((x) => x !== undefined && x !== '').map(String).join(' ')
+    case 'host.reboot':
+    case 'host.shutdown':
+      return formatDelay(Number(p.delay_sec ?? POWER_DEFAULT_DELAY))
     case 'artifact.collect': {
       const params = p.params && typeof p.params === 'object' ? Object.entries(p.params as Record<string, string>) : []
       return `${String(p.name ?? '')}${params.length ? ' ' + params.map(([k, v]) => `${k}=${v}`).join(' ') : ''}`

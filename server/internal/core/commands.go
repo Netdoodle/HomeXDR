@@ -173,6 +173,18 @@ func validateParams(h *store.Host, typ string, params json.RawMessage) (json.Raw
 			p.Rules = []api.FirewallRule{}
 		}
 		v = p
+	case api.CmdHostReboot, api.CmdHostShutdown:
+		p, err := api.ParseHostPower(params)
+		if err != nil {
+			return nil, invalid("%v", err)
+		}
+		v = p
+	case api.CmdAgentRestart, api.CmdAgentLogs, api.CmdAgentFlushQueue:
+		var p struct{}
+		if err := decodeStrict(params, &p); err != nil {
+			return nil, err
+		}
+		v = p
 	case api.CmdFileGet:
 		var p api.FileGetParams
 		if err := decodeStrict(params, &p); err != nil {

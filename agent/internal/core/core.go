@@ -203,6 +203,12 @@ func (a *Agent) Run(ctx context.Context) error {
 		Files:      fileops.NewStore(filepath.Join(a.dataDir, QuarantineDir), a.dataDir, a.configPath, exe),
 		Log:        a.log,
 		Platform:   a.plat.Name(),
+		Spool:      sp,
+		DataDir:    a.dataDir,
+		Restart: func() {
+			a.log.Info("restarting the agent on command")
+			a.stop(ErrRestart) // Run returns after closing the spool and stopping the sensors
+		},
 	}
 	if ac, ok := a.plat.(platform.AppControl); ok {
 		a.handler.AppControl = ac

@@ -533,7 +533,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request, host *store.Hos
 	if c == nil {
 		return
 	}
-	if c.Type != api.CmdFileGet || store.FinalStatus(c.Status) {
+	if (c.Type != api.CmdFileGet && c.Type != api.CmdAgentLogs) || store.FinalStatus(c.Status) {
 		writeErr(w, http.StatusConflict, "command does not accept uploads")
 		return
 	}

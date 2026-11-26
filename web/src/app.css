@@ -3065,3 +3065,54 @@ main h2 {
 .sev-pill.low {
   background: #5cb85c;
 }
+
+/* ------------------------------------------------------------ host actions menu */
+
+.host-actions-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+}
+.host-actions-list {
+  overflow: auto;
+  min-height: 0;
+}
+.host-actions-pop .host-action-item {
+  cursor: pointer;
+}
+.host-actions-pop .host-action-item.active {
+  background: var(--surface-hover);
+}
+.host-actions-pop .host-action-item.disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+.host-actions-pop .host-action-item.danger:not(.disabled) {
+  color: var(--danger, #e5484d);
+}
+.host-actions-pop .star {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  color: var(--text-faint);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.host-actions-pop .star.on,
+.host-actions-pop .star:hover {
+  color: #e8b931;
+}
+
+@keyframes hx-flash {
+  from {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+  to {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+.flash-highlight {
+  animation: hx-flash 2.4s ease-out;
+}

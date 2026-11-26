@@ -78,7 +78,10 @@ type Severity = "critical" | "high" | "medium" | "low" | "informational"
 | GET | `/api/hosts?q=&status=&label=&platform=&include_decommissioned=` | `{"hosts": Host[], "total": n}`; `q` matches hostname/IP. Decommissioned agents are left out unless `status=decommissioned` or `include_decommissioned=true` |
 | GET | `/api/hosts/{id}` | `Host` |
 | PATCH | `/api/hosts/{id}` | `{"labels": string[]}` → `Host` (analyst+) |
-| DELETE | `/api/hosts/{id}` | revokes the agent certificate (admin) → `204` |
+| DELETE | `/api/hosts/{id}` | revokes the agent certificate (admin) → `204`. The host stays listed as revoked |
+| POST | `/api/hosts/{id}/remove` | `{"totp_code": "123456", "confirm_hostname": "<hostname>"}` → `204` (admin, audited as `host.remove`): deletes the host for good. `403` unless the caller has two-factor on (`set up two-factor authentication first`) and the code is a current authenticator code, never a recovery code. A code works once and wrong codes count against the same limits as the two-factor login (`429` after too many); `400` if `confirm_hostname` is not the host's name (case-insensitive). One transaction deletes the host row (with its labels and group membership), its commands and their rows and uploaded files, its vulnerability findings and its feed-source state. Stored events and alerts stay; alerts keep the hostname. The agent's certificate then names no host: every agent route answers `401 unknown agent`, renewal included, and enrolling again needs a token and creates a host with a new ID. A syslog source that keeps sending is added again as a new network device |
+| GET | `/api/hosts/{id}/applications` | `{"applications": Application[], "total": n, "reported_at": string \| null}` (viewer+): the software list from the agent's last inventory (newest within 14 days), sorted by name. `Application` is `{name, version?, type?, source?, vendor?, architecture?, install_path?}`; `type` is the package manager (`deb`, `rpm`, `msi`, `brew`, ...). Empty with `reported_at: null` when there is no list |
+| POST | `/api/hosts/{id}/vuln-rescan` | `202` `{"started": bool, "scope": "all"}` (analyst+, audited as `host.vuln_rescan`): starts a vulnerability scan in the background. The scan always covers every host, so `scope` is `all`; `started` is false when one was already running |
 | POST | `/api/hosts/{id}/decommission` | → `Host` (admin, audited): hides an endpoint agent until it reconnects |
 | POST | `/api/hosts/{id}/recommission` | → `Host` (admin, audited): restores it now |
 | POST | `/api/hosts/{id}/update-now` | → `Host` (admin, audited): offer the agent its target release at the next heartbeat, ignoring the maintenance window and staged rollout |
@@ -123,9 +126,17 @@ type HostUpdate = {
 ## Commands (response actions and collections)
 
 `CommandType` is one of `process.kill`, `host.isolate`, `host.release`,
-`file.quarantine`, `file.restore`, `file.get`, `file.hash`, `artifact.collect`.
+`file.quarantine`, `file.restore`, `file.get`, `file.hash`, `artifact.collect`,
+`defender.action`, `host.reboot`, `host.shutdown`, `agent.restart`, `agent.logs` and
+`agent.flush_queue`.
 There is no arbitrary-command type. Params match `shared/api/agent.go` (`KillParams`, `IsolateParams`, ...). The
 server rejects types not in the host's `allowed_actions` with `409`.
+`host.reboot`, `host.shutdown`, `agent.restart`, `agent.logs` and `agent.flush_queue` are
+admin only. `host.reboot` and `host.shutdown` take `{"delay_sec": 0..3600 (default 60),
+"message"?: string}`; the others take no params. `agent.logs` uploads the agent's recent logs
+as a file, shaped like a `file.get` result, and the download is on
+`/api/commands/{id}/download`. `agent.flush_queue` drops the events waiting in the agent's
+spool. On an Unraid host a shutdown or reboot stops the array first.
 `file.get` and the download need the admin role (`403` for analysts): a file pull can read
 anything on a host, such as SSH keys or browser data. The antivirus's own uploads are
 issued by the server and are not affected.

@@ -7,7 +7,9 @@ import { AlertCount, AlertStatusBadge, OsLabel, SeverityBadge, StatusDot, Tags, 
 import { EventTable } from '../components/EventTable'
 import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
+import { HostActionsMenu } from '../components/HostActionsMenu'
 import { InvestigateMenu } from '../components/InvestigateMenu'
+import { RemoveHostDialog } from '../components/RemoveHostDialog'
 import { CopyIcon, KV, LabelEditor, LinkTabs, RelTime } from '../components/Misc'
 import { HostGroupPicker } from './GroupsSettings'
 import { ConfirmDialog } from '../components/Modal'
@@ -20,6 +22,7 @@ import { useDocumentTitle, useUrlState } from '../lib/hooks'
 import { HOST_STATUS_LABEL } from '../lib/severity'
 import { formatDateTime, formatDurationSec, rangeFromParams, rangeToParams, resolveRange } from '../lib/time'
 import { HostActions } from './HostActions'
+import { HostApplications } from './HostApplications'
 import { HostCommands } from './HostCommands'
 
 const TABS = [
@@ -27,14 +30,17 @@ const TABS = [
   { id: 'timeline', label: 'Timeline', icon: 'clock' as const },
   { id: 'alerts', label: 'Alerts', icon: 'alert' as const },
   { id: 'commands', label: 'Commands', icon: 'terminal' as const },
+  { id: 'applications', label: 'Applications', icon: 'table' as const },
   { id: 'actions', label: 'Actions', icon: 'isolate' as const },
 ]
 
 export function HostDetailPage() {
   const { id = '' } = useParams()
   const [sp] = useUrlState()
-  const tab = TABS.some((t) => t.id === sp.get('tab')) ? sp.get('tab')! : 'overview'
   const q = useQuery({ queryKey: queryKeys.host(id), queryFn: () => api.getHost(id), refetchInterval: 30_000 })
+  // Network devices send no software list, so they have no Applications tab.
+  const visibleTabs = TABS.filter((t) => t.id !== 'applications' || q.data?.kind !== 'network')
+  const tab = visibleTabs.some((t) => t.id === sp.get('tab')) ? sp.get('tab')! : 'overview'
   useDocumentTitle(q.data?.hostname ?? 'Host')
 
   if (q.isPending) return <Loading />
@@ -50,7 +56,7 @@ export function HostDetailPage() {
     )
   }
   const h = q.data
-  const tabs = TABS.map((t) =>
+  const tabs = visibleTabs.map((t) =>
     t.id === 'alerts' && h.open_alerts ? { ...t, label: <>Alerts <span className="badge count alerts">{h.open_alerts}</span></> } : t,
   )
 
@@ -83,11 +89,14 @@ export function HostDetailPage() {
           </span>
         }
         actions={
+          <>
+          <HostActionsMenu host={h} />
           <InvestigateMenu
             targets={h.ips
               .filter((ip) => !ip.startsWith('127.') && !ip.startsWith('172.17.') && ip !== '::1' && !/^fe80:/i.test(ip))
               .map((ip) => ({ label: 'Address', value: ip, local: /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|f[cd]|fe80)/i.test(ip) }))}
           />
+          </>
         }
       />
       <LinkTabs tabs={tabs} active={tab} href={(t) => `/hosts/${encodeURIComponent(h.id)}${t === 'overview' ? '' : `?tab=${t}`}`} />
@@ -96,6 +105,7 @@ export function HostDetailPage() {
       {tab === 'alerts' ? <HostAlerts host={h} /> : null}
       {tab === 'commands' ? <HostCommands host={h} /> : null}
       {tab === 'actions' ? <HostActions host={h} /> : null}
+      {tab === 'applications' ? <HostApplications host={h} /> : null}
     </>
   )
 }
@@ -107,6 +117,7 @@ function Overview({ host: h }: { host: Host }) {
   const canEdit = useCan('analyst')
   const isAdmin = useCan('admin')
   const [revokeOpen, setRevokeOpen] = useState(false)
+  const [removeOpen, setRemoveOpen] = useState(false)
   const all = useQuery({ queryKey: queryKeys.hosts({}), queryFn: () => api.listHosts({}), staleTime: 60_000 })
   const suggestions = useMemo(() => [...new Set((all.data?.hosts ?? []).flatMap((x) => x.labels))].sort(), [all.data])
 
@@ -243,12 +254,12 @@ function Overview({ host: h }: { host: Host }) {
             </div>
           </section>
         ) : null}
-        {isAdmin && h.status !== 'revoked' ? (
+        {isAdmin ? (
           <section className="panel">
             <div className="panel-header">
               <h2>Danger zone</h2>
             </div>
-            {h.kind === 'endpoint' && h.status !== 'decommissioned' ? (
+            {h.status !== 'revoked' && h.kind === 'endpoint' && h.status !== 'decommissioned' ? (
               <div className="panel-body row" style={{ gap: 12 }}>
                 <span className="small muted grow">
                   Decommission: hide this agent from host lists and counts now. It is restored automatically when it reconnects.
@@ -256,15 +267,26 @@ function Overview({ host: h }: { host: Host }) {
                 <DecommissionButton host={h} />
               </div>
             ) : null}
+            {h.status !== 'revoked' ? (
+              <div className="panel-body row" style={{ gap: 12 }}>
+                <span className="small muted grow">Revoke the agent certificate. The agent can no longer send events or receive commands and must re-enroll.</span>
+                <button type="button" className="btn danger" onClick={() => setRevokeOpen(true)}>
+                  <Icon name="trash" size={14} /> Revoke agent
+                </button>
+              </div>
+            ) : null}
             <div className="panel-body row" style={{ gap: 12 }}>
-              <span className="small muted grow">Revoke the agent certificate. The agent can no longer send events or receive commands and must re-enroll.</span>
-              <button type="button" className="btn danger" onClick={() => setRevokeOpen(true)}>
-                <Icon name="trash" size={14} /> Revoke agent
+              <span className="small muted grow">
+                Remove this host permanently, with its command history and findings. Needs your authenticator code. Stored events and alerts are kept.
+              </span>
+              <button type="button" className="btn danger" onClick={() => setRemoveOpen(true)}>
+                <Icon name="trash" size={14} /> Remove host
               </button>
             </div>
           </section>
         ) : null}
       </div>
+      <RemoveHostDialog host={h} open={removeOpen} onClose={() => setRemoveOpen(false)} />
       <ConfirmDialog
         open={revokeOpen}
         onClose={() => setRevokeOpen(false)}

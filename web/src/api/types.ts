@@ -113,6 +113,25 @@ export interface Host {
   update?: HostUpdate;
 }
 
+/** One line of a host's software inventory (GET /api/hosts/{id}/applications). */
+export interface HostApplication {
+  name: string;
+  version?: string;
+  /** package manager: deb, rpm, msi, winget, brew, ... */
+  type?: string;
+  source?: string;
+  vendor?: string;
+  architecture?: string;
+  install_path?: string;
+}
+
+export interface HostApplications {
+  applications: HostApplication[];
+  total: number;
+  /** when the agent reported this list; null when there is none yet */
+  reported_at: string | null;
+}
+
 export interface HostFilter {
   q?: string;
   status?: string;
@@ -192,7 +211,12 @@ export type CommandType =
   | "file.get"
   | "file.hash"
   | "artifact.collect"
-  | "defender.action";
+  | "defender.action"
+  | "host.reboot"
+  | "host.shutdown"
+  | "agent.restart"
+  | "agent.logs"
+  | "agent.flush_queue";
 
 export const COMMAND_TYPES: CommandType[] = [
   "process.kill",
@@ -204,6 +228,11 @@ export const COMMAND_TYPES: CommandType[] = [
   "file.hash",
   "artifact.collect",
   "defender.action",
+  "host.reboot",
+  "host.shutdown",
+  "agent.restart",
+  "agent.logs",
+  "agent.flush_queue",
 ];
 
 export type CommandStatus =
@@ -262,6 +291,13 @@ export interface ArtifactParams {
   params?: Record<string, string>;
 }
 
+/** host.reboot and host.shutdown (admin only). */
+export interface PowerParams {
+  /** seconds before it happens, 0..3600 (default 60) */
+  delay_sec?: number;
+  message?: string;
+}
+
 export type CommandRequest =
   | { type: "process.kill"; params: KillParams }
   | { type: "host.isolate"; params: IsolateParams }
@@ -271,7 +307,13 @@ export type CommandRequest =
   | { type: "file.get"; params: FileGetParams }
   | { type: "file.hash"; params: FileHashParams }
   | { type: "artifact.collect"; params: ArtifactParams }
-  | { type: "defender.action"; params: DefenderParams };
+  | { type: "defender.action"; params: DefenderParams }
+  | { type: "host.reboot"; params: PowerParams }
+  | { type: "host.shutdown"; params: PowerParams }
+  | { type: "agent.restart"; params: Record<string, never> }
+  // agent.logs uploads a file shaped like file.get's result (download it under Commands)
+  | { type: "agent.logs"; params: Record<string, never> }
+  | { type: "agent.flush_queue"; params: Record<string, never> };
 
 // Result shapes (CommandRecord.output) from shared/api/agent.go.
 export interface KillResult {
