@@ -340,7 +340,9 @@ func (r *Runner) checkData(ctx context.Context, s *Spec, now time.Time) (dataLev
 		return toFloat(res.Rows[0][0]) > 0
 	}
 	flows := func() bool { return has("event.module:netflow") }
-	rows := func() bool { return has("event.module:opnsense") || has("event.module:firewall") || has("event.dataset:suricata.flow") }
+	rows := func() bool {
+		return has("event.module:opnsense") || has("event.module:firewall") || has("event.dataset:suricata.flow")
+	}
 	switch s.Need {
 	case needFlows:
 		if flows() {
