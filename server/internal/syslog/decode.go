@@ -11,34 +11,6 @@ import (
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
-// Decode turns a syslog message into an event. kind reports what was recognized:
-// "opnsense", "suricata", "unbound", "dhcp" or "syslog".
-func Decode(m *Message) (ev *event.Event, kind string) {
-	switch {
-	case m.AppName == "filterlog":
-		if ev := decodeFilterlog(m); ev != nil {
-			return ev, "opnsense"
-		}
-	case strings.HasPrefix(strings.TrimSpace(m.Msg), "{") && strings.Contains(m.Msg, `"event_type"`):
-		if ev := decodeEVE(m); ev != nil {
-			return ev, "suricata"
-		}
-	case m.AppName == "sshd" || strings.HasPrefix(m.AppName, "sshd-"):
-		if ev := decodeSSHD(m); ev != nil {
-			return ev, "syslog"
-		}
-	case m.AppName == "unbound":
-		if ev := decodeUnbound(m); ev != nil {
-			return ev, "unbound"
-		}
-	case isDHCPApp(m.AppName):
-		if ev := decodeDHCP(m); ev != nil {
-			return ev, "dhcp"
-		}
-	}
-	return decodeGeneric(m), "syslog"
-}
-
 func base(m *Message, module, dataset string) *event.Event {
 	ev := &event.Event{
 		ID:        event.NewID(),

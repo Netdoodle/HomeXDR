@@ -97,7 +97,8 @@ const (
 	ModuleArtifact   = "artifact"   // artifact collection rows
 	ModuleResponse   = "response"   // response action audit events
 	ModuleSyslog     = "syslog"     // generic syslog
-	ModuleOPNsense   = "opnsense"   // OPNsense filterlog
+	ModuleOPNsense   = "opnsense"   // OPNsense and pfSense filterlog
+	ModuleFirewall   = "firewall"   // every other firewall (FortiGate, Palo Alto, Sophos, MikroTik, Ubiquiti, Linux netfilter)
 	ModuleSuricata   = "suricata"   // Suricata EVE JSON
 	ModuleNetFlow    = "netflow"    // NetFlow and IPFIX flow records
 	ModuleDNS        = "dns"        // resolver query logs (Unbound)

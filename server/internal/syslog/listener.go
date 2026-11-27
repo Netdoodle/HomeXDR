@@ -245,16 +245,6 @@ func (l *Listener) batcher(ctx context.Context) {
 	}
 }
 
-func vendorFor(kind string) string {
-	switch kind {
-	case "opnsense":
-		return "OPNsense"
-	case "suricata":
-		return "Suricata"
-	}
-	return ""
-}
-
 func (l *Listener) flush(ctx context.Context, src string, items []item) {
 	name, vendor := "", ""
 	for _, it := range items {

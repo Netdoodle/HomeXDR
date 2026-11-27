@@ -67,8 +67,13 @@ Send the addresses blocked under Settings → Firewall to OPNsense as an alias, 
 network-wide block that also covers devices without the agent.
 
 ### Ingest logs from any firewall or platform
-Today only OPNsense filterlog, Suricata EVE, DHCP, DNS and sshd syslog are parsed into
-network events; anything else is stored as a plain syslog line that cannot be correlated.
+OPNsense/pfSense filterlog, Suricata EVE, DHCP, DNS and sshd syslog were the first sources
+parsed into network events. Built from each vendor's documented log format, and not yet
+tested against real devices ("community tested" once someone confirms them), are FortiGate,
+Palo Alto, Sophos, MikroTik and Ubiquiti (UniFi gateways and EdgeRouters) firewall logs. They
+all become `event.module:firewall` with the same fields, so detections and the exposure views
+work for every vendor. Anything else is still stored as a plain syslog line that cannot be
+correlated.
 The goal is to bring in any source and join it to endpoint activity. Correlation already
 works on normalized fields (5-tuple, Community ID, IP/MAC, host name, user, DNS name,
 hash), so the work is getting every source into that schema. In phases:

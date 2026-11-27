@@ -206,7 +206,7 @@ func (inv *Inventory) Observe(host *store.Host, evs []*event.Event) {
 	defer inv.mu.Unlock()
 	for _, e := range evs {
 		switch e.Event.Module {
-		case event.ModuleOPNsense:
+		case event.ModuleOPNsense, event.ModuleFirewall:
 			inv.observeFirewall(host, e, now)
 		case event.ModuleDHCP:
 			inv.observeDHCP(e, now)

@@ -25,7 +25,7 @@ import (
 //
 // DHCP replies to the firewall's own lease (server port 67 to client port 68, and 547 to
 // 546 for DHCPv6) are the ISP handing out the WAN address, not someone trying to get in.
-const inboundBase = `event.dataset:opnsense.filterlog network.direction:inbound NOT event.action:rdr` +
+const inboundBase = `(event.dataset:opnsense.filterlog OR event.module:firewall) network.direction:inbound NOT event.action:rdr` +
 	` NOT (network.transport:udp source.port:67 destination.port:68)` +
 	` NOT (network.transport:udp source.port:547 destination.port:546)`
 

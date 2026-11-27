@@ -18,7 +18,7 @@ import (
 // own WAN rows, which are most of its log, out of the grouping. Detectors then check each
 // address exactly against the home network scope.
 const (
-	trafficFilter   = `(event.module:netflow OR event.module:opnsense OR event.dataset:suricata.flow)`
+	trafficFilter   = `(event.module:netflow OR event.module:opnsense OR event.module:firewall OR event.dataset:suricata.flow)`
 	internalSources = `(source.ip:10.* OR source.ip:192.168.* OR source.ip:172.* OR source.ip:fd*)`
 	internalDests   = `(destination.ip:10.* OR destination.ip:192.168.* OR destination.ip:172.* OR destination.ip:fd*)`
 	notBlocked      = `NOT event.action:block NOT event.action:reject`
@@ -197,7 +197,7 @@ func runBeaconing(rc *runCtx) error {
 	from, to := rc.window(rc.value("window_hours"))
 	minCount := int(rc.value("min_count"))
 	series, err := rc.r.d.Events.ConnTimes(rc.Context, events.ConnTimesQuery{
-		From: from, To: to, Modules: []string{event.ModuleNetFlow, event.ModuleOPNsense},
+		From: from, To: to, Modules: []string{event.ModuleNetFlow, event.ModuleOPNsense, event.ModuleFirewall},
 		MinCount: minCount, MaxSeries: maxBeatPairs, MaxTimes: max(maxBeatTimes, minCount),
 	})
 	if err != nil {
@@ -912,7 +912,7 @@ func runExposure(rc *runCtx) error {
 	group := " | stats count as n by source.ip, destination.ip, destination.port, network.transport"
 	// A firewall logs the packet that opens a connection, so an allowed row from a public
 	// address to an internal one is a connection coming in.
-	rows, err := rc.table("event.module:opnsense event.action:pass network.direction:inbound "+internalDests+group, from, to)
+	rows, err := rc.table("(event.module:opnsense OR event.module:firewall) event.action:pass network.direction:inbound "+internalDests+group, from, to)
 	if err != nil {
 		return err
 	}
