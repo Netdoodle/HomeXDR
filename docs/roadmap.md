@@ -66,6 +66,30 @@ host page shows when a host is on a metered network.
 Send the addresses blocked under Settings → Firewall to OPNsense as an alias, for a
 network-wide block that also covers devices without the agent.
 
+### Ingest logs from any firewall or platform
+Today only OPNsense filterlog, Suricata EVE, DHCP, DNS and sshd syslog are parsed into
+network events; anything else is stored as a plain syslog line that cannot be correlated.
+The goal is to bring in any source and join it to endpoint activity. Correlation already
+works on normalized fields (5-tuple, Community ID, IP/MAC, host name, user, DNS name,
+hash), so the work is getting every source into that schema. In phases:
+1. **Decoder registry and common formats.** Replace the hardcoded dispatch in the syslog
+   package with a registry of decoders (match and decode). Add generic decoders for CEF,
+   LEEF, key=value, CSV and JSON, driven by a table that maps vendor field names to ours
+   and normalizes actions to allowed/denied. Always compute the Community ID for network
+   events. Let an admin bind a sender IP to a parser on Data health; auto-detection stays
+   the fallback.
+2. **More ways in.** An authenticated HTTP endpoint for JSON/NDJSON and syslog over TLS, so
+   shippers such as Vector, Fluent Bit and Logstash can deliver anything.
+3. **Parsers as data.** Declarative YAML parsers (how to recognize, extract and map) with
+   sample lines as their tests, shared through the rule repository so the community can
+   add vendors without writing Go. A "paste a line, see the event" tester in the console,
+   and per-source parse rates on Data health so unparsed sources are visible.
+4. **Better entity resolution.** IP-to-host mapping at the time of the event (agent
+   addresses, DHCP leases, ARP), NAT-aware fields (pre-NAT addresses, interface
+   direction), more join keys (user, domain, file hash, MAC) so identity, DNS and proxy
+   logs correlate too, and detection rules written against the normalized fields so they
+   work for every vendor.
+
 ## Vulnerability scanner (agent + network)
 
 A scanner in the style of commercial vulnerability management tools, in four steps.
