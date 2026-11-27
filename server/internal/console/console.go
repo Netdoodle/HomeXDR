@@ -128,6 +128,7 @@ func New(c *core.Core) *Handler {
 	h.route("DELETE /api/users/{id}", admin, h.deleteUser)
 	h.route("GET /api/audit", admin, h.listAudit)
 	h.route("GET /api/integrations", viewer, h.integrations)
+	h.route("PUT /api/integrations/syslog/bindings", admin, h.putSyslogBinding)
 	h.route("GET /api/settings/ai", admin, h.getAISettings)
 	h.route("PUT /api/settings/ai", admin, h.putAISettings)
 	h.route("POST /api/settings/ai/test", admin, h.testAISettings)

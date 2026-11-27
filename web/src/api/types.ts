@@ -1155,6 +1155,13 @@ export interface SyslogSource {
   kind: string;
   last_seen: string;
   count: number;
+  /** The parser an admin bound this sender to; "" means auto-detect. */
+  parser: string;
+}
+
+export interface SyslogParser {
+  kind: string;
+  label: string;
 }
 
 export interface Integrations {
@@ -1165,6 +1172,7 @@ export interface Integrations {
     parsed: number;
     failed: number;
     sources: SyslogSource[];
+    parsers: SyslogParser[];
   };
   netflow?: NetFlowStats;
 }

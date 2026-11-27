@@ -250,7 +250,9 @@ export async function handleMockRequest(
     } catch (e) {
       if (e instanceof HttpError) return json(e.status, { error: e.message });
       console.error("[mock]", e);
-      return json(500, { error: "mock server error (details in the browser console)" });
+      return json(500, {
+        error: "mock server error (details in the browser console)",
+      });
     }
   }
   return json(404, { error: `no mock route for ${method} ${path}` });
@@ -860,8 +862,9 @@ route(
         "set up two-factor authentication first (Account > Two-factor), then try again",
       );
     if (
-      String(b.confirm_hostname ?? "").trim().toLowerCase() !==
-      h.hostname.toLowerCase()
+      String(b.confirm_hostname ?? "")
+        .trim()
+        .toLowerCase() !== h.hostname.toLowerCase()
     )
       fail(400, "type the host's name exactly to confirm");
     if (String(b.totp_code ?? "").replace(/\s+/g, "") !== MOCK_TOTP_CODE)
@@ -936,8 +939,14 @@ function validateCommand(h: Host, req: CommandRequest) {
     case "host.reboot":
     case "host.shutdown": {
       const d = p.delay_sec;
-      if (d !== undefined && (!Number.isInteger(d) || (d as number) < 0 || (d as number) > 3600))
-        fail(400, "params.delay_sec must be a whole number of seconds from 0 to 3600");
+      if (
+        d !== undefined &&
+        (!Number.isInteger(d) || (d as number) < 0 || (d as number) > 3600)
+      )
+        fail(
+          400,
+          "params.delay_sec must be a whole number of seconds from 0 to 3600",
+        );
       if (p.message !== undefined && typeof p.message !== "string")
         fail(400, "params.message must be a string");
       break;
@@ -1034,7 +1043,11 @@ function finishCommand(c: MockCommand, h: Host) {
           c.error = `no running process with PID ${pid}`;
           break;
         }
-        if (typeof p.entity_id === "string" && p.entity_id && p.entity_id !== lp.entity_id) {
+        if (
+          typeof p.entity_id === "string" &&
+          p.entity_id &&
+          p.entity_id !== lp.entity_id
+        ) {
           c.status = "failed";
           c.error = "PID was reused by a different process; nothing was killed";
           break;
@@ -1044,7 +1057,9 @@ function finishCommand(c: MockCommand, h: Host) {
           const walk = (ppid: number) =>
             listed
               .filter((x) => Number(x.ppid) === ppid)
-              .forEach((x) => (killed.push(Number(x.pid)), walk(Number(x.pid))));
+              .forEach(
+                (x) => (killed.push(Number(x.pid)), walk(Number(x.pid))),
+              );
           walk(pid);
         }
         killed.forEach((k) => killedListPids.add(`${h.id}|${k}`));
@@ -1408,9 +1423,35 @@ route("GET", "/api/process-tree", ({ query }) => {
 
 // Storyline: the focus process's lineage up to the first system process (shown as context),
 // then its descendants. A simplified version of server/internal/storyline.
-const BOUNDARY = new Set(["system", "smss.exe", "csrss.exe", "wininit.exe", "winlogon.exe", "services.exe", "lsass.exe", "svchost.exe", "explorer.exe", "userinit.exe", "wmiprvse.exe", "taskhostw.exe", "systemd", "init", "launchd", "cron", "crond", "sshd", "login"]);
+const BOUNDARY = new Set([
+  "system",
+  "smss.exe",
+  "csrss.exe",
+  "wininit.exe",
+  "winlogon.exe",
+  "services.exe",
+  "lsass.exe",
+  "svchost.exe",
+  "explorer.exe",
+  "userinit.exe",
+  "wmiprvse.exe",
+  "taskhostw.exe",
+  "systemd",
+  "init",
+  "launchd",
+  "cron",
+  "crond",
+  "sshd",
+  "login",
+]);
 const isBoundary = (p: MockProcess) => BOUNDARY.has(p.name.toLowerCase());
-const SEV_ORDER: Severity[] = ["informational", "low", "medium", "high", "critical"];
+const SEV_ORDER: Severity[] = [
+  "informational",
+  "low",
+  "medium",
+  "high",
+  "critical",
+];
 
 route("GET", "/api/storyline", ({ query }) => {
   let hostId = query.get("host_id") ?? "";
@@ -1422,15 +1463,21 @@ route("GET", "/api/storyline", ({ query }) => {
     entityId = a.process_entity_id ?? fail(404, "this alert has no process");
   }
   const depth = Math.min(10, Math.max(0, Number(query.get("depth") ?? 6) || 6));
-  const focus = processes.find((p) => p.entity_id === entityId && p.host_id === hostId) ?? fail(404, "process not found");
-  const byId = (id?: string) => (id ? processes.find((p) => p.entity_id === id) : undefined);
+  const focus =
+    processes.find((p) => p.entity_id === entityId && p.host_id === hostId) ??
+    fail(404, "process not found");
+  const byId = (id?: string) =>
+    id ? processes.find((p) => p.entity_id === id) : undefined;
 
   const chain: MockProcess[] = [focus];
   let ctx: MockProcess | undefined;
   if (isBoundary(focus)) ctx = byId(focus.parent);
   else {
     for (let p = byId(focus.parent); p; p = byId(p.parent)) {
-      if (isBoundary(p)) { ctx = p; break; }
+      if (isBoundary(p)) {
+        ctx = p;
+        break;
+      }
       chain.push(p);
     }
   }
@@ -1440,7 +1487,9 @@ route("GET", "/api/storyline", ({ query }) => {
   const below: MockProcess[] = [];
   let frontier = [focus];
   for (let level = 0; level < depth && frontier.length; level++) {
-    const next = processes.filter((p) => frontier.some((f) => f.entity_id === p.parent)).sort((a, b) => a.start - b.start);
+    const next = processes
+      .filter((p) => frontier.some((f) => f.entity_id === p.parent))
+      .sort((a, b) => a.start - b.start);
     for (const n of next) depthOf.set(n.entity_id, depthOf.get(n.parent!)! + 1);
     below.push(...next);
     frontier = next;
@@ -1448,11 +1497,27 @@ route("GET", "/api/storyline", ({ query }) => {
   const all = [...(ctx ? [ctx] : []), ...chain.slice().reverse(), ...below];
   if (ctx) depthOf.set(ctx.entity_id, -1);
 
-  const hostAlerts = alerts.filter((a) => a.host_id === hostId && all.some((p) => p.entity_id === a.process_entity_id));
-  const tacticsOf = (a: Alert) => [...new Set(a.mitre.filter((m) => m.tactic).map((m) => m.tactic!.toLowerCase().replace(/\s+/g, "-")))];
+  const hostAlerts = alerts.filter(
+    (a) =>
+      a.host_id === hostId &&
+      all.some((p) => p.entity_id === a.process_entity_id),
+  );
+  const tacticsOf = (a: Alert) => [
+    ...new Set(
+      a.mitre
+        .filter((m) => m.tactic)
+        .map((m) => m.tactic!.toLowerCase().replace(/\s+/g, "-")),
+    ),
+  ];
   const nodes = all.map((p) => {
     const mine = hostAlerts.filter((a) => a.process_entity_id === p.entity_id);
-    const max = mine.reduce<"" | Severity>((m, a) => (m === "" || SEV_ORDER.indexOf(a.severity) > SEV_ORDER.indexOf(m) ? a.severity : m), "");
+    const max = mine.reduce<"" | Severity>(
+      (m, a) =>
+        m === "" || SEV_ORDER.indexOf(a.severity) > SEV_ORDER.indexOf(m)
+          ? a.severity
+          : m,
+      "",
+    );
     return {
       entity_id: p.entity_id,
       pid: p.pid,
@@ -1480,7 +1545,14 @@ route("GET", "/api/storyline", ({ query }) => {
   });
   const edges = all
     .filter((p) => p.parent && all.some((q) => q.entity_id === p.parent))
-    .map((p) => ({ from: p.parent!, to: p.entity_id, kind: "parent" as const, at: new Date(p.start).toISOString(), event_id: "", detail: "" }));
+    .map((p) => ({
+      from: p.parent!,
+      to: p.entity_id,
+      kind: "parent" as const,
+      at: new Date(p.start).toISOString(),
+      event_id: "",
+      detail: "",
+    }));
   return {
     host_id: hostId,
     hostname: hostById(hostId)?.hostname ?? "",
@@ -1489,7 +1561,16 @@ route("GET", "/api/storyline", ({ query }) => {
     truncated: false,
     nodes,
     edges,
-    alerts: hostAlerts.map((a) => ({ id: a.id, title: a.rule.title, severity: a.severity, status: a.status, first_seen: a.first_seen, last_seen: a.last_seen, entity_id: a.process_entity_id ?? "", tactics: tacticsOf(a) })),
+    alerts: hostAlerts.map((a) => ({
+      id: a.id,
+      title: a.rule.title,
+      severity: a.severity,
+      status: a.status,
+      first_seen: a.first_seen,
+      last_seen: a.last_seen,
+      entity_id: a.process_entity_id ?? "",
+      tactics: tacticsOf(a),
+    })),
   };
 });
 
@@ -2986,6 +3067,19 @@ route(
 );
 
 route("GET", "/api/integrations", () => integrations);
+route(
+  "PUT",
+  "/api/integrations/syslog/bindings",
+  ({ body }) => {
+    const b = obj(body) as { ip?: string; parser?: string };
+    const parser = b.parser ?? "";
+    for (const s of integrations.syslog.sources) {
+      if (s.ip === b.ip) s.parser = parser;
+    }
+    return { ip: b.ip ?? "", parser };
+  },
+  { role: "admin" },
+);
 registerHealthMocks(route);
 registerHealthCheckMocks(route);
 registerListMocks(route);

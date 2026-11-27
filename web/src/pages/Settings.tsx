@@ -143,7 +143,8 @@ function InstallCommands({
   } catch (e) {
     return (
       <p className="error">
-        Cannot show install commands: {e instanceof Error ? e.message : String(e)}.
+        Cannot show install commands:{" "}
+        {e instanceof Error ? e.message : String(e)}.
       </p>
     );
   }
@@ -202,13 +203,14 @@ function InstallCommands({
       </div>
       <p className="muted xsmall" style={{ margin: 0 }}>
         The <span className="mono">--ca-pin</span> makes the agent verify it is
-        talking to this server before it sends the token. The install
-        scripts are fetched without checking the certificate (
-        <span className="mono">-k</span> on Linux and macOS) because the CA is not
-        installed yet, so each command checks the script against a SHA-256 from
-        this console before running it. The script checks the CA against the pin
-        before it downloads the agent, and the agent then pins it. On Windows the agent is
-        installed to <span className="mono">C:\Program Files\HomeXDR</span>.
+        talking to this server before it sends the token. The install scripts
+        are fetched without checking the certificate (
+        <span className="mono">-k</span> on Linux and macOS) because the CA is
+        not installed yet, so each command checks the script against a SHA-256
+        from this console before running it. The script checks the CA against
+        the pin before it downloads the agent, and the agent then pins it. On
+        Windows the agent is installed to{" "}
+        <span className="mono">C:\Program Files\HomeXDR</span>.
         {settings.agent_release.signed && settings.update_key ? (
           <>
             {" "}
@@ -834,6 +836,23 @@ function IntegrationsTab() {
     queryFn: api.integrations,
     refetchInterval: 15_000,
   });
+  const isAdmin = useCan("admin");
+  const qc = useQueryClient();
+  const toast = useToast();
+  const bind = useMutation({
+    mutationFn: (v: { ip: string; parser: string }) =>
+      api.setSyslogParser(v.ip, v.parser),
+    onSuccess: (r) => {
+      const label = q.data?.syslog.parsers.find(
+        (p) => p.kind === r.parser,
+      )?.label;
+      toast.success(
+        label ? `${r.ip} now uses ${label}` : `${r.ip} is auto-detected again`,
+      );
+      void qc.invalidateQueries({ queryKey: queryKeys.integrations });
+    },
+    onError: (e) => toast.error(e),
+  });
   const settingsQ = useQuery({
     queryKey: queryKeys.serverSettings,
     queryFn: api.serverSettings,
@@ -892,6 +911,9 @@ function IntegrationsTab() {
                         <th>Source</th>
                         <th>IP</th>
                         <th>Decoder</th>
+                        <th title="Pick a parser when auto-detection is wrong, or to name pfSense instead of OPNsense">
+                          Parser
+                        </th>
                         <th className="right">Messages</th>
                         <th>Last message</th>
                       </tr>
@@ -903,6 +925,32 @@ function IntegrationsTab() {
                           <td className="mono">{s.ip}</td>
                           <td>
                             <span className="tag">{s.kind}</span>
+                          </td>
+                          <td>
+                            {isAdmin ? (
+                              <select
+                                className="select"
+                                aria-label={`Parser for ${s.ip}`}
+                                value={s.parser}
+                                disabled={bind.isPending}
+                                onChange={(e) =>
+                                  bind.mutate({
+                                    ip: s.ip,
+                                    parser: e.target.value,
+                                  })
+                                }
+                              >
+                                <option value="">Auto-detect</option>
+                                {d.syslog.parsers.map((p) => (
+                                  <option key={p.kind} value={p.kind}>
+                                    {p.label}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              (d.syslog.parsers.find((p) => p.kind === s.parser)
+                                ?.label ?? "Auto-detect")
+                            )}
                           </td>
                           <td className="right num">{formatNumber(s.count)}</td>
                           <td>

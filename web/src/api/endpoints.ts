@@ -252,6 +252,8 @@ export const totpNewRecovery = (password: string, code: string) =>
 export const audit = (limit = 100, offset = 0) =>
   http.get<{ entries: AuditEntry[]; total: number }>('/api/audit', { limit, offset })
 export const integrations = () => http.get<Integrations>('/api/integrations')
+export const setSyslogParser = (ip: string, parser: string) =>
+  http.put<{ ip: string; parser: string }>('/api/integrations/syslog/bindings', { ip, parser })
 export const health = () => http.get<Health>('/healthz')
 
 // Storyline ------------------------------------------------------------------------------

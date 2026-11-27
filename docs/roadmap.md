@@ -76,6 +76,9 @@ work for every vendor. Any product that can send CEF or LEEF is also read: a lin
 addresses and an allow/deny verdict becomes a firewall event, anything else keeps its fields
 as `cef.<vendor>` or `leef.<vendor>`. Other formats are still stored as plain syslog lines
 that cannot be correlated.
+An admin can bind a sender to one parser under Settings → Integrations (for example to
+show pfSense instead of OPNsense, or to stop decoding a noisy device); a line that parser
+cannot read still goes through auto-detection.
 The goal is to bring in any source and join it to endpoint activity. Correlation already
 works on normalized fields (5-tuple, Community ID, IP/MAC, host name, user, DNS name,
 hash), so the work is getting every source into that schema. In phases:

@@ -124,6 +124,15 @@ func decodeFilterlog(m *Message) *event.Event {
 	return ev
 }
 
+// decodePfSense reads filterlog like OPNsense, and names pfSense as the device.
+func decodePfSense(m *Message) *event.Event {
+	ev := decodeFilterlog(m)
+	if ev != nil {
+		ev.Observer.Vendor, ev.Observer.Product = "Netgate", "pfSense"
+	}
+	return ev
+}
+
 func joinHostPort(ip string, port int) string {
 	if port == 0 {
 		return ip

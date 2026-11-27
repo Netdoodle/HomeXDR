@@ -292,8 +292,9 @@ type SyslogStats struct {
 	Parsed    atomic.Uint64
 	Failed    atomic.Uint64
 
-	mu      sync.Mutex
-	sources map[string]*SyslogSource
+	mu       sync.Mutex
+	sources  map[string]*SyslogSource
+	bindings map[string]string // sender IP -> parser kind, see syslogbind.go
 }
 
 // SyslogSource is one device sending syslog.
@@ -303,6 +304,8 @@ type SyslogSource struct {
 	Kind     string    `json:"kind"`
 	LastSeen time.Time `json:"last_seen"`
 	Count    uint64    `json:"count"`
+	// Parser is the decoder an admin bound this sender to, "" when auto-detected.
+	Parser string `json:"parser"`
 }
 
 // NewSyslogStats returns empty stats.
@@ -337,7 +340,9 @@ func (s *SyslogStats) Sources() []SyslogSource {
 	defer s.mu.Unlock()
 	out := make([]SyslogSource, 0, len(s.sources))
 	for _, src := range s.sources {
-		out = append(out, *src)
+		v := *src
+		v.Parser = s.bindings[src.IP]
+		out = append(out, v)
 	}
 	return out
 }

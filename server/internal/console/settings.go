@@ -10,6 +10,7 @@ import (
 
 	"github.com/Netdoodle/homexdr/server/internal/agentapi"
 	"github.com/Netdoodle/homexdr/server/internal/store"
+	"github.com/Netdoodle/homexdr/server/internal/syslog"
 	"github.com/Netdoodle/homexdr/shared/api"
 	"github.com/Netdoodle/homexdr/shared/version"
 )
@@ -279,6 +280,33 @@ func (h *Handler) integrations(w http.ResponseWriter, r *http.Request, _ *store.
 	writeJSON(w, http.StatusOK, map[string]any{"syslog": map[string]any{
 		"listening": s.Listening.Load(), "addr": s.Addr.Load(),
 		"received": s.Received.Load(), "parsed": s.Parsed.Load(), "failed": s.Failed.Load(),
-		"sources": s.Sources(),
+		"sources": s.Sources(), "parsers": syslog.Parsers(),
 	}, "netflow": h.netflowStats()})
+}
+
+// putSyslogBinding binds a syslog sender to one parser, or back to auto-detection when
+// parser is "".
+func (h *Handler) putSyslogBinding(w http.ResponseWriter, r *http.Request, u *store.User) {
+	var req struct {
+		IP     string `json:"ip"`
+		Parser string `json:"parser"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if req.Parser != "" && !syslog.IsParser(req.Parser) {
+		writeErr(w, http.StatusBadRequest, "unknown parser: "+req.Parser)
+		return
+	}
+	ip, err := h.c.SetSyslogBinding(r.Context(), req.IP, req.Parser)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	detail := "auto-detect"
+	if req.Parser != "" {
+		detail = req.Parser
+	}
+	h.c.Audit(r.Context(), u.Username, "syslog.parser.bind", ip, detail)
+	writeJSON(w, http.StatusOK, map[string]string{"ip": ip, "parser": req.Parser})
 }

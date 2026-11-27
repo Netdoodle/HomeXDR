@@ -56,6 +56,7 @@ func (l *Listener) Run(ctx context.Context, addr string) error {
 		pc.Close()
 		return err
 	}
+	l.c.LoadSyslogBindings(ctx)
 	l.c.Syslog.Listening.Store(true)
 	l.c.Syslog.Addr.Store(addr)
 	l.c.Log.Info("syslog listening", "addr", addr)
@@ -206,7 +207,7 @@ func (l *Listener) handle(ip, raw string) {
 		st.Failed.Add(1)
 		return
 	}
-	ev, kind := Decode(m)
+	ev, kind := DecodeAs(m, st.Binding(ip))
 	st.Parsed.Add(1)
 	st.Seen(ip, m.Hostname, kind)
 	select {
@@ -273,7 +274,11 @@ func (l *Listener) flush(ctx context.Context, src string, items []item) {
 func hostOf(addr string) string {
 	h, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		return addr
+		h = addr
+	}
+	// The same form the parser bindings are saved in: no IPv4-in-IPv6 or zone.
+	if a, err := netip.ParseAddr(h); err == nil {
+		return a.Unmap().WithZone("").String()
 	}
 	return h
 }
