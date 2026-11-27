@@ -72,8 +72,10 @@ parsed into network events. Built from each vendor's documented log format, and 
 tested against real devices ("community tested" once someone confirms them), are FortiGate,
 Palo Alto, Sophos, MikroTik and Ubiquiti (UniFi gateways and EdgeRouters) firewall logs. They
 all become `event.module:firewall` with the same fields, so detections and the exposure views
-work for every vendor. Anything else is still stored as a plain syslog line that cannot be
-correlated.
+work for every vendor. Any product that can send CEF or LEEF is also read: a line with
+addresses and an allow/deny verdict becomes a firewall event, anything else keeps its fields
+as `cef.<vendor>` or `leef.<vendor>`. Other formats are still stored as plain syslog lines
+that cannot be correlated.
 The goal is to bring in any source and join it to endpoint activity. Correlation already
 works on normalized fields (5-tuple, Community ID, IP/MAC, host name, user, DNS name,
 hash), so the work is getting every source into that schema. In phases:

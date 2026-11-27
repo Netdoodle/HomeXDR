@@ -26,6 +26,9 @@ var decoders = []decoder{
 	{kind: "syslog", match: func(m *Message) bool { return m.AppName == "sshd" || strings.HasPrefix(m.AppName, "sshd-") }, decode: decodeSSHD},
 	{kind: "unbound", match: func(m *Message) bool { return m.AppName == "unbound" }, decode: decodeUnbound},
 	{kind: "dhcp", match: func(m *Message) bool { return isDHCPApp(m.AppName) }, decode: decodeDHCP},
+	// CEF and LEEF name their vendor in the header, so they come before content guesses.
+	{kind: "cef", match: matchCEF, decode: decodeCEF},
+	{kind: "leef", match: matchLEEF, decode: decodeLEEF},
 	{kind: "fortigate", vendor: "Fortinet", match: matchFortiGate, decode: decodeFortiGate},
 	{kind: "paloalto", vendor: "Palo Alto Networks", match: matchPaloAlto, decode: decodePaloAlto},
 	{kind: "sophos", vendor: "Sophos", match: matchSophos, decode: decodeSophos},
