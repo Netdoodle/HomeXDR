@@ -3,10 +3,18 @@
 # To update automatically from git instead of rebuilding by hand, see deploy/update/.
 name: homexdr
 
+# Container log rotation, so Docker's own logs cannot fill the disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: ${HOMEXDR_LOG_MAX_SIZE:-10m}
+    max-file: "${HOMEXDR_LOG_MAX_FILES:-3}"
+
 services:
   clickhouse:
     image: clickhouse/clickhouse-server:25.8
     restart: unless-stopped
+    logging: *default-logging
     environment:
       CLICKHOUSE_DB: homexdr
       CLICKHOUSE_USER: homexdr
@@ -17,6 +25,8 @@ services:
       # on a particular disk.
       - ${HOMEXDR_CLICKHOUSE_DIR:-clickhouse}:/var/lib/clickhouse
       - ./clickhouse/system-logs.xml:/etc/clickhouse-server/config.d/homexdr-system-logs.xml:ro
+    # Uncomment to cap ClickHouse memory on a small box.
+    # mem_limit: 4g
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     healthcheck:
@@ -32,6 +42,7 @@ services:
     # scanning; hash lookups still work. Needs about 1.5 GB of memory.
     image: clamav/clamav:1.4.6
     restart: unless-stopped
+    logging: *default-logging
     environment:
       CLAMD_CONF_StreamMaxLength: 100M
     volumes:
@@ -48,6 +59,7 @@ services:
       context: ..
       dockerfile: deploy/yara/Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - yara:/var/lib/homexdr-yara
       - ./yara-rules:/rules:ro
@@ -61,6 +73,7 @@ services:
     build:
       context: ..
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -71,6 +84,10 @@ services:
       HOMEXDR_AGENT_URL: ${HOMEXDR_AGENT_URL:-}
       # Certificate-only agent listener for a port forward (docs/away-from-home.md).
       HOMEXDR_AGENT_EXTERNAL_ADDR: ${HOMEXDR_AGENT_EXTERNAL_ADDR:-}
+      # Storage limits. Events older than HOMEXDR_RETENTION_DAYS are deleted (0 = keep
+      # forever). HOMEXDR_RETENTION_MAX_SIZE also caps the event store on disk, for example
+      # 500GB or 250GiB: when it is reached the oldest days go first. Whichever limit is hit
+      # first wins. Empty = no size cap.
       HOMEXDR_RETENTION_DAYS: ${HOMEXDR_RETENTION_DAYS:-30}
       HOMEXDR_RETENTION_MAX_SIZE: ${HOMEXDR_RETENTION_MAX_SIZE:-}
       HOMEXDR_SECURE_COOKIES: ${HOMEXDR_SECURE_COOKIES:-false}
@@ -105,7 +122,9 @@ services:
       - "${HOMEXDR_SYSLOG_PORT:-514}:5514/tcp"
       - "${HOMEXDR_NETFLOW_PORT:-2055}:2055/udp"
     volumes:
-      - data:/data
+      # Certificates, settings and (lite) the database. A named volume by default; set
+      # HOMEXDR_DATA_DIR to a path to keep them on a particular disk.
+      - ${HOMEXDR_DATA_DIR:-data}:/data
       # Agent release signatures and the release public key, written by the host's update
       # script (deploy/update). Read-only: the server never holds the signing key.
       - ${HOMEXDR_SIGNATURES_DIR:-./signatures}:/usr/share/homexdr/signatures:ro

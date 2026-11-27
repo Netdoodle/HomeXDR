@@ -3,16 +3,27 @@
 #   docker compose -f docker-compose.lite.yml up -d
 name: homexdr-lite
 
+# Container log rotation, so Docker's own logs cannot fill the disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: ${HOMEXDR_LOG_MAX_SIZE:-10m}
+    max-file: "${HOMEXDR_LOG_MAX_FILES:-3}"
+
 services:
   homexdr:
     image: ${HOMEXDR_IMAGE_REGISTRY:-ghcr.io/netdoodle}/homexdr:${HOMEXDR_VERSION:-v0.1.1}
     build:
       context: ..
     restart: unless-stopped
+    logging: *default-logging
     environment:
       HOMEXDR_EVENT_STORE: sqlite
       HOMEXDR_SERVER_NAMES: ${HOMEXDR_SERVER_NAMES:?set HOMEXDR_SERVER_NAMES in .env}
       HOMEXDR_AGENT_URL: ${HOMEXDR_AGENT_URL:-}
+      # Storage limits. Events older than HOMEXDR_RETENTION_DAYS are deleted (0 = keep
+      # forever). HOMEXDR_RETENTION_MAX_SIZE also caps the SQLite database on disk, for
+      # example 20GB: when it is reached the oldest days go first. Empty = no size cap.
       HOMEXDR_RETENTION_DAYS: ${HOMEXDR_RETENTION_DAYS:-14}
       HOMEXDR_RETENTION_MAX_SIZE: ${HOMEXDR_RETENTION_MAX_SIZE:-}
       HOMEXDR_SECURE_COOKIES: ${HOMEXDR_SECURE_COOKIES:-false}
@@ -33,6 +44,7 @@ services:
       HOMEXDR_OPENAI_API_KEY: ${HOMEXDR_OPENAI_API_KEY:-}
       HOMEXDR_GEMINI_API_KEY: ${HOMEXDR_GEMINI_API_KEY:-}
       HOMEXDR_LOCAL_AI_API_KEY: ${HOMEXDR_LOCAL_AI_API_KEY:-}
+      HOMEXDR_LOG_LEVEL: ${HOMEXDR_LOG_LEVEL:-info}
     ports:
       - "${HOMEXDR_CONSOLE_PORT:-8080}:8080/tcp"
       - "${HOMEXDR_CONSOLE_HTTPS_PORT:-8448}:8448/tcp"
@@ -41,7 +53,9 @@ services:
       - "${HOMEXDR_SYSLOG_PORT:-514}:5514/tcp"
       - "${HOMEXDR_NETFLOW_PORT:-2055}:2055/udp"
     volumes:
-      - data:/data
+      # Certificates, settings and (lite) the database. A named volume by default; set
+      # HOMEXDR_DATA_DIR to a path to keep them on a particular disk.
+      - ${HOMEXDR_DATA_DIR:-data}:/data
       - ${HOMEXDR_SIGNATURES_DIR:-./signatures}:/usr/share/homexdr/signatures:ro
 
 volumes:
