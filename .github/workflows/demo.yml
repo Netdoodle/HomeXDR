@@ -1,0 +1,55 @@
+# Publishes the live demo: the web console built in mock mode (in-browser sample data, no
+# server) to GitHub Pages at https://netdoodle.github.io/HomeXDR/. Runs when the console
+# changes on main, or by hand.
+name: Demo
+
+on:
+  push:
+    branches: [main]
+    paths: ['web/**', '.github/workflows/demo.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build the console in demo mode
+        working-directory: web
+        env:
+          VITE_BASE: /HomeXDR/
+          VITE_DEMO: '1'
+        run: |
+          npm ci
+          npm run build:mock
+          # Pages has no SPA fallback: serve the app for deep links too.
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

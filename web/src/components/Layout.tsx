@@ -28,7 +28,7 @@ const NAV2: { to: string; label: string; icon: IconName }[] = [
 
 function BrandMark() {
   return (
-    <img className="brand-mark" src="/favicon.svg?v=2" width={28} height={28} alt="" aria-hidden="true" />
+    <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg?v=2`} width={28} height={28} alt="" aria-hidden="true" />
   )
 }
 
@@ -215,6 +215,12 @@ export function Layout() {
         </div>
       </aside>
       <div className="main">
+        {import.meta.env.VITE_DEMO === '1' ? (
+          <div className="callout info" role="note" style={{ borderRadius: 0, margin: 0 }}>
+            Live demo with sample data. Nothing here is real, and your changes reset when you reload.{' '}
+            <a href="https://github.com/Netdoodle/HomeXDR#quick-start">Install HomeXDR</a>
+          </div>
+        ) : null}
         <header className="topbar">
           <PlatformSearch />
           <div className="spacer" />

@@ -2,6 +2,11 @@
 
 Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
 
+**[Try the live demo](https://netdoodle.github.io/HomeXDR/)**: the full console in your browser, running on
+sample data. Nothing to install, and nothing you do there leaves your browser.
+
+![The HomeXDR dashboard](docs/images/dashboard.png)
+
 - **Endpoint detection and response without a kernel driver.** Windows telemetry from ETW
   and the Event Log; Linux telemetry from eBPF with netlink/procfs fallbacks; macOS (Intel and Apple
   silicon) telemetry from Endpoint Security through `eslogger`, with polling fallbacks.
@@ -53,6 +58,17 @@ Self-hosted EDR/XDR with a built-in SIEM, built for homelabs.
 > Status: beta, starting with v0.1.0. Meant for homelabs that can live with rough edges;
 > not for production. See the [release notes](https://github.com/Netdoodle/HomeXDR/releases)
 > for known limitations.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![An alert with its rule, MITRE mapping and response buttons](docs/images/alert.png) | ![The storyline graph of an alert's process chain](docs/images/storyline.png) |
+| **Alert detail:** triage, rule context, MITRE ATT&CK and one-click response. | **Storyline:** the process chain behind an alert, with alerts and tactics on each node. |
+| ![A process tree with the selected process's details](docs/images/process-tree.png) | ![The response actions on a Windows host](docs/images/host-actions.png) |
+| **Process tree:** ancestors and children, with per-process network, file and registry activity. | **Response actions:** isolate, kill, quarantine, fetch files, Defender scans and more. |
+| ![Network devices seen through DHCP, DNS, NetFlow and the firewall](docs/images/devices.png) | |
+| **Devices:** every device on the network, from DHCP, DNS, NetFlow and firewall logs, with behaviour detection. | |
 
 ## Why this was built
 

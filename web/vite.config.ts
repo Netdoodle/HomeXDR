@@ -11,7 +11,8 @@ export default defineConfig(({ mode }) => {
   const target = env.HOMEXDR_API ?? 'http://localhost:8080'
 
   return {
-    base: '/',
+    // VITE_BASE serves the console under a subpath (the GitHub Pages demo is /HomeXDR/).
+    base: env.VITE_BASE || '/',
     plugins: [react()],
     define: {
       __HOMEXDR_MOCK__: JSON.stringify(mock),

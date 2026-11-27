@@ -449,7 +449,7 @@ export const hunts: MockHunt[] = [
 // --- settings ---------------------------------------------------------------------------
 
 export const serverSettings: ServerSettings = {
-  version: '0.1.0-dev',
+  version: '0.1.1',
   agent_url: 'https://homexdr.lan:8443',
   ca_pin: 'sha256:' + hex(64, mulberry32(42)),
   server_names: ['homexdr.lan', '192.168.1.10'],
@@ -459,7 +459,7 @@ export const serverSettings: ServerSettings = {
   event_store_bytes: 48_300_000_000,
   syslog_addr: ':5514',
   update_key: 'ed25519:' + btoa(hex(32, mulberry32(7))).slice(0, 43) + '=',
-  agent_release: { version: '0.1.0-dev', signed: true },
+  agent_release: { version: '0.1.1', signed: true },
   install_sha256: { unix: hex(64, mulberry32(11)), windows: hex(64, mulberry32(12)) },
 }
 

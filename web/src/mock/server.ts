@@ -1406,6 +1406,93 @@ route("GET", "/api/process-tree", ({ query }) => {
   return { root: node };
 });
 
+// Storyline: the focus process's lineage up to the first system process (shown as context),
+// then its descendants. A simplified version of server/internal/storyline.
+const BOUNDARY = new Set(["system", "smss.exe", "csrss.exe", "wininit.exe", "winlogon.exe", "services.exe", "lsass.exe", "svchost.exe", "explorer.exe", "userinit.exe", "wmiprvse.exe", "taskhostw.exe", "systemd", "init", "launchd", "cron", "crond", "sshd", "login"]);
+const isBoundary = (p: MockProcess) => BOUNDARY.has(p.name.toLowerCase());
+const SEV_ORDER: Severity[] = ["informational", "low", "medium", "high", "critical"];
+
+route("GET", "/api/storyline", ({ query }) => {
+  let hostId = query.get("host_id") ?? "";
+  let entityId = query.get("entity_id") ?? "";
+  const alertId = query.get("alert_id");
+  if (alertId) {
+    const a = getAlertOr404(alertId);
+    hostId = a.host_id;
+    entityId = a.process_entity_id ?? fail(404, "this alert has no process");
+  }
+  const depth = Math.min(10, Math.max(0, Number(query.get("depth") ?? 6) || 6));
+  const focus = processes.find((p) => p.entity_id === entityId && p.host_id === hostId) ?? fail(404, "process not found");
+  const byId = (id?: string) => (id ? processes.find((p) => p.entity_id === id) : undefined);
+
+  const chain: MockProcess[] = [focus];
+  let ctx: MockProcess | undefined;
+  if (isBoundary(focus)) ctx = byId(focus.parent);
+  else {
+    for (let p = byId(focus.parent); p; p = byId(p.parent)) {
+      if (isBoundary(p)) { ctx = p; break; }
+      chain.push(p);
+    }
+  }
+  const root = chain[chain.length - 1];
+  const depthOf = new Map<string, number>();
+  chain.forEach((p, i) => depthOf.set(p.entity_id, chain.length - 1 - i));
+  const below: MockProcess[] = [];
+  let frontier = [focus];
+  for (let level = 0; level < depth && frontier.length; level++) {
+    const next = processes.filter((p) => frontier.some((f) => f.entity_id === p.parent)).sort((a, b) => a.start - b.start);
+    for (const n of next) depthOf.set(n.entity_id, depthOf.get(n.parent!)! + 1);
+    below.push(...next);
+    frontier = next;
+  }
+  const all = [...(ctx ? [ctx] : []), ...chain.slice().reverse(), ...below];
+  if (ctx) depthOf.set(ctx.entity_id, -1);
+
+  const hostAlerts = alerts.filter((a) => a.host_id === hostId && all.some((p) => p.entity_id === a.process_entity_id));
+  const tacticsOf = (a: Alert) => [...new Set(a.mitre.filter((m) => m.tactic).map((m) => m.tactic!.toLowerCase().replace(/\s+/g, "-")))];
+  const nodes = all.map((p) => {
+    const mine = hostAlerts.filter((a) => a.process_entity_id === p.entity_id);
+    const max = mine.reduce<"" | Severity>((m, a) => (m === "" || SEV_ORDER.indexOf(a.severity) > SEV_ORDER.indexOf(m) ? a.severity : m), "");
+    return {
+      entity_id: p.entity_id,
+      pid: p.pid,
+      name: p.name,
+      executable: p.executable,
+      command_line: p.command_line,
+      user: p.user,
+      start: new Date(p.start).toISOString(),
+      end: p.end ? new Date(p.end).toISOString() : null,
+      exit_code: p.end ? (p.exit_code ?? 0) : null,
+      signed: p.signed ?? null,
+      integrity_level: p.integrity ?? "",
+      parent_entity_id: p.parent ?? "",
+      depth: depthOf.get(p.entity_id) ?? 0,
+      focus: p.entity_id === focus.entity_id,
+      root: p.entity_id === root.entity_id,
+      context: p === ctx,
+      outside: false,
+      stub: false,
+      alert_count: mine.length,
+      max_severity: max,
+      tactics: [...new Set(mine.flatMap(tacticsOf))],
+      event_counts: eventCounts(p.entity_id),
+    };
+  });
+  const edges = all
+    .filter((p) => p.parent && all.some((q) => q.entity_id === p.parent))
+    .map((p) => ({ from: p.parent!, to: p.entity_id, kind: "parent" as const, at: new Date(p.start).toISOString(), event_id: "", detail: "" }));
+  return {
+    host_id: hostId,
+    hostname: hostById(hostId)?.hostname ?? "",
+    focus_entity_id: focus.entity_id,
+    root_entity_id: root.entity_id,
+    truncated: false,
+    nodes,
+    edges,
+    alerts: hostAlerts.map((a) => ({ id: a.id, title: a.rule.title, severity: a.severity, status: a.status, first_seen: a.first_seen, last_seen: a.last_seen, entity_id: a.process_entity_id ?? "", tactics: tacticsOf(a) })),
+  };
+});
+
 route("GET", "/api/process-events", ({ query }) => {
   const entityId = query.get("entity_id") ?? "";
   const cat = query.get("category");

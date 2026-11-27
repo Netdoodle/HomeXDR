@@ -30,7 +30,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
               <button type="button" className="btn" onClick={() => this.setState({ error: null })}>
                 Try again
               </button>
-              <button type="button" className="btn primary" onClick={() => window.location.assign('/')}>
+              <button type="button" className="btn primary" onClick={() => window.location.assign(import.meta.env.BASE_URL)}>
                 Reload dashboard
               </button>
             </div>

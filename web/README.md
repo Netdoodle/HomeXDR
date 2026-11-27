@@ -20,7 +20,7 @@ npm ci
 | `npm run dev` | Dev server on <http://localhost:5173>. `/api` and `/healthz` are proxied to `http://localhost:8080`. |
 | `npm run dev:mock` | Same, but every API call is answered in the browser from fixtures (no server needed). |
 | `npm run build` | Typecheck (`tsc -b`) and production build into `dist/`. |
-| `npm run build:mock` | A static demo build with the mock backend included. |
+| `npm run build:mock` | A static demo build with the mock backend included. Set `VITE_BASE=/sub/path/` to serve it under a subpath and `VITE_DEMO=1` for the "sample data" banner; the GitHub Pages demo (`.github/workflows/demo.yml`) uses both. |
 | `npm test` | Vitest unit tests (`src/**/*.test.ts`). |
 | `npm run typecheck` | Typecheck only. |
 | `npm run preview` | Serve `dist/` locally. |
