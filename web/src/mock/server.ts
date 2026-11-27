@@ -1136,6 +1136,23 @@ function finishCommand(c: MockCommand, h: Host) {
     case "agent.flush_queue":
       c.output = {};
       break;
+    case "defender.action":
+      if (p.action === "status") {
+        const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+        c.output = {
+          message: "Defender is on and up to date",
+          status: {
+            antivirus_enabled: true,
+            real_time_protection_enabled: true,
+            behavior_monitor_enabled: true,
+            tamper_protected: true,
+            signature_age_days: 0,
+            quick_scan_end: ago(5 * HOUR),
+            full_scan_end: "",
+          },
+        };
+      } else c.output = { message: `${String(p.action)} requested (mock)` };
+      break;
     case "artifact.collect": {
       const rows = artifactRows(
         String(p.name),

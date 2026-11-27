@@ -9,7 +9,7 @@ import {
   type DefenderParams,
   type Host,
 } from "../api";
-import { ActionConfirmDialog } from "../components/ActionDialog";
+import { ActionConfirmDialog, useHostAction } from "../components/ActionDialog";
 import { ArtifactParamsForm } from "../components/ArtifactParams";
 import { useCan } from "../components/Auth";
 import { Icon, type IconName } from "../components/Icon";
@@ -25,6 +25,7 @@ import {
 import { actionAllowed, COMMAND_LABEL } from "../lib/commands";
 import { plural, splitList } from "../lib/format";
 import { useUrlState } from "../lib/hooks";
+import { formatDateTime } from "../lib/time";
 
 function ActionCard({
   anchor,
@@ -528,6 +529,51 @@ export function HostActions({ host }: { host: Host }) {
   );
 }
 
+/** Defender reports a scan that never ran as an empty time or year 1 (0001-01-01). */
+function scanTime(iso: string | undefined): string {
+  if (!iso || iso.startsWith("0001")) return "Never";
+  return formatDateTime(iso);
+}
+
+/** Last quick/full scan end times, from the host's newest completed Defender status
+ * command; refresh() asks the agent for a fresh one. */
+function useDefenderScans(host: Host) {
+  const send = useHostAction(host.id);
+  const [pending, setPending] = useState<string | null>(null);
+  const cmds = useQuery({
+    queryKey: queryKeys.hostCommands(host.id),
+    queryFn: () => api.hostCommands(host.id),
+    refetchInterval: pending ? 1500 : false,
+  });
+  const latest = (cmds.data?.commands ?? [])
+    .filter(
+      (c) =>
+        c.type === "defender.action" &&
+        c.params?.action === "status" &&
+        c.status === "completed" &&
+        (c.output as { status?: unknown } | undefined)?.status,
+    )
+    .sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""))[0];
+  const st = (latest?.output as { status?: { quick_scan_end?: string; full_scan_end?: string } } | undefined)?.status;
+  const mine = pending ? cmds.data?.commands.find((c) => c.id === pending) : undefined;
+  const settled = !!mine && ["completed", "failed", "rejected", "expired"].includes(mine.status);
+  useEffect(() => {
+    if (settled) setPending(null);
+  }, [settled]);
+  return {
+    known: !!st,
+    quick: st?.quick_scan_end,
+    full: st?.full_scan_end,
+    checkedAt: latest?.completed_at,
+    busy: send.isPending || !!pending,
+    refresh: () =>
+      send.mutate(
+        { type: "defender.action", params: { action: "status" } },
+        { onSuccess: (c) => setPending(c.id) },
+      ),
+  };
+}
+
 function DefenderCard({
   host,
   onRequest,
@@ -541,6 +587,7 @@ function DefenderCard({
   const idValid = /^\d+$/.test(threat) && id > 0;
   const d = (params: DefenderParams) =>
     onRequest({ type: "defender.action", params });
+  const scans = useDefenderScans(host);
   return (
     <ActionCard
       anchor="defender"
@@ -550,6 +597,31 @@ function DefenderCard({
       host={host}
       description="Drive Defender on this PC: status, scans, signature updates, and what Defender does with a threat it detected. The threat ID is in the Defender alert's data (Threat ID)."
     >
+      <div className="stack" style={{ gap: 4 }}>
+        <div className="small">
+          <span className="muted">Last quick scan: </span>
+          <strong>{scans.known ? scanTime(scans.quick) : "Unknown"}</strong>
+          <span className="muted"> · Last full scan: </span>
+          <strong>{scans.known ? scanTime(scans.full) : "Unknown"}</strong>
+        </div>
+        <div className="row hint" style={{ gap: 8 }}>
+          <button
+            type="button"
+            className="btn sm"
+            onClick={scans.refresh}
+            disabled={scans.busy}
+          >
+            <Icon name="refresh" size={12} /> Check scan times
+          </button>
+          <span>
+            {scans.busy
+              ? "Asking the agent…"
+              : scans.checkedAt
+                ? `As of ${formatDateTime(scans.checkedAt)}. Check again after a scan finishes.`
+                : "Not checked yet. Scans send no completion message, so check again once one is done."}
+          </span>
+        </div>
+      </div>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
         <button
           type="button"
