@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/Netdoodle/HomeXDR/discussions
+    about: Ask how something works or float an idea in Discussions.
+  - name: Report a security vulnerability
+    url: https://github.com/Netdoodle/HomeXDR/security/advisories/new
+    about: Report it privately. Please do not open a public issue.

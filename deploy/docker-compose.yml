@@ -43,7 +43,7 @@ services:
     # YARA scanner for the antivirus, next to ClamAV (docs/antivirus.md). Downloads the
     # YARA Forge "core" rule package daily; put your own *.yar files in ./yara-rules.
     # Remove this service (and HOMEXDR_YARA_ADDR) to go without YARA. About 100 MB of memory.
-    image: ${HOMEXDR_IMAGE_REGISTRY:-ghcr.io/netdoodle}/homexdr-yara:${HOMEXDR_VERSION:-v0.1.0}
+    image: ${HOMEXDR_IMAGE_REGISTRY:-ghcr.io/netdoodle}/homexdr-yara:${HOMEXDR_VERSION:-v0.1.1}
     build:
       context: ..
       dockerfile: deploy/yara/Dockerfile
@@ -57,7 +57,7 @@ services:
   homexdr:
     # The published image for HOMEXDR_VERSION; `docker compose build` builds this checkout
     # under the same name instead.
-    image: ${HOMEXDR_IMAGE_REGISTRY:-ghcr.io/netdoodle}/homexdr:${HOMEXDR_VERSION:-v0.1.0}
+    image: ${HOMEXDR_IMAGE_REGISTRY:-ghcr.io/netdoodle}/homexdr:${HOMEXDR_VERSION:-v0.1.1}
     build:
       context: ..
     restart: unless-stopped
