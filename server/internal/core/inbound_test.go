@@ -52,10 +52,10 @@ func TestInboundThreats(t *testing.T) {
 		row("rdr", "198.51.100.7", 27015, 4*time.Hour),
 		inside(row("block", "198.51.100.7", 27015, 4*time.Hour)),
 		dhcp(row("pass", "198.51.99.39", 68, 2*time.Hour)), // the ISP renewing the WAN lease
-		row("block", "192.168.120.151", 445, time.Hour),      // a LAN device: not the internet
+		row("block", "192.168.120.151", 445, time.Hour),    // a LAN device: not the internet
 		row("block", "100.64.7.1", 22, time.Hour),          // Tailscale
-		row("block", "203.0.113.9", 80, 60*time.Hour),       // outside both windows
-		row("block", "203.0.113.10", 80, 30*time.Hour),      // the window before: the trend
+		row("block", "203.0.113.9", 80, 60*time.Hour),      // outside both windows
+		row("block", "203.0.113.10", 80, 30*time.Hour),     // the window before: the trend
 		row("block", "203.0.113.11", 80, 31*time.Hour),
 	)
 	if err := c.Events.Insert(ctx, evs); err != nil {

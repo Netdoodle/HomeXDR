@@ -30,13 +30,13 @@ func TestDirection(t *testing.T) {
 func TestScopeAutomatic(t *testing.T) {
 	s := New(Config{}, []netip.Addr{addr("192.168.120.1"), addr("203.0.113.9")})
 	home := map[string]bool{
-		"192.168.120.5":    true,
-		"192.168.110.77":   true,
+		"192.168.120.5":   true,
+		"192.168.110.77":  true,
 		"10.1.2.3":        true,
-		"192.168.120.1":    false, // the firewall
-		"192.168.110.1":    false, // the firewall on another VLAN
-		"192.168.120.255":  false, // broadcast
-		"192.168.120.0":    false,
+		"192.168.120.1":   false, // the firewall
+		"192.168.110.1":   false, // the firewall on another VLAN
+		"192.168.120.255": false, // broadcast
+		"192.168.120.0":   false,
 		"172.17.0.2":      false, // container bridge
 		"239.255.255.250": false,
 		"224.0.0.251":     false,
@@ -72,14 +72,14 @@ func TestScopeConfigured(t *testing.T) {
 	s := New(cfg, []netip.Addr{addr("192.168.120.1")})
 	home := map[string]bool{
 		"192.168.120.5":   true,
-		"172.20.3.4":     true, // listed, so a bridge range is fine
-		"fd00::1":        true,
+		"172.20.3.4":      true, // listed, so a bridge range is fine
+		"fd00::1":         true,
 		"192.168.110.5":   false, // not listed
 		"192.168.120.200": false, // excluded
 		"192.168.120.254": false, // firewall
 		"192.168.120.1":   false, // firewall, learned
-		"172.20.255.255": false, // broadcast of the /16
-		"172.20.0.0":     false,
+		"172.20.255.255":  false, // broadcast of the /16
+		"172.20.0.0":      false,
 	}
 	for ip, want := range home {
 		if got := s.Home(addr(ip)); got != want {

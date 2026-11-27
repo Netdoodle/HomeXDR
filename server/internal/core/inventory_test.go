@@ -170,8 +170,8 @@ func TestInventoryIgnoresWhatIsNotADevice(t *testing.T) {
 	inv.Observe(fwHost, []*event.Event{
 		flowRow("172.17.0.2", "1.1.1.1"),          // a container bridge
 		flowRow("8.8.8.8", "239.255.255.250"),     // public and multicast
-		flowRow("192.168.120.1", "1.1.1.1"),        // the firewall, once learned below
-		flowRow("192.168.120.255", "1.1.1.1"),      // broadcast
+		flowRow("192.168.120.1", "1.1.1.1"),       // the firewall, once learned below
+		flowRow("192.168.120.255", "1.1.1.1"),     // broadcast
 		dnsRow("127.0.0.1"),                       // loopback
 		dnsRow("fe80::1"),                         // link-local
 		dhcpAck(realMAC, "172.17.0.9", "dockery"), // a lease outside the home subnets

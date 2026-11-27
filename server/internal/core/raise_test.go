@@ -54,8 +54,8 @@ func TestNetworkFindingsNameTheDevice(t *testing.T) {
 	want := map[string]string{
 		"Possible beaconing from 192.168.120.62": "192.168.120.62",
 		"Possible beaconing from 192.168.120.89": "192.168.120.89",
-		"Exposed":                               "192.168.120.20",
-		"Feed silent":                           ServerHostname,
+		"Exposed":                                "192.168.120.20",
+		"Feed silent":                            ServerHostname,
 	}
 	for title, host := range want {
 		if names[title] != host {

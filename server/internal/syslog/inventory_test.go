@@ -78,9 +78,9 @@ func TestDecodedLogsFillTheInventory(t *testing.T) {
 		}
 	}
 	for q, want := range map[string]int64{
-		"event.module:dhcp":                                     3,
-		"event.module:dhcp source.mac:00:11*":                   3,
-		"event.dataset:dhcp.isc hostname:printer":               1,
+		"event.module:dhcp":                                      3,
+		"event.module:dhcp source.mac:00:11*":                    3,
+		"event.dataset:dhcp.isc hostname:printer":                1,
 		"dns.question.name:example.com source.ip:192.168.120.60": 1,
 	} {
 		res, err := c.Events.Search(ctx, events.SearchQuery{Query: q})

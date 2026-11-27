@@ -59,7 +59,7 @@ func TestVulnExposureFromFirewallLog(t *testing.T) {
 		row("pass", "198.51.100.7", "192.168.120.22", 443, time.Hour),        // a port forward to web
 		row("pass", "198.51.100.8", "192.168.120.22", 443, 2*time.Hour),      // same port again
 		row("block", "198.51.100.7", "192.168.120.30", 445, time.Hour),       // blocked: not exposure
-		row("pass", "192.168.120.151", "192.168.120.30", 22, time.Hour),       // from the LAN: not the internet
+		row("pass", "192.168.120.151", "192.168.120.30", 22, time.Hour),      // from the LAN: not the internet
 		row("pass", "198.51.100.7", "192.168.120.22", 8080, 10*24*time.Hour), // too old
 	}
 	if err := c.Events.Insert(ctx, evs); err != nil {

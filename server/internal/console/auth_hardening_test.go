@@ -91,11 +91,11 @@ func TestClientIP(t *testing.T) {
 	}
 	c.Cfg.TrustedProxies = []netip.Prefix{netip.MustParsePrefix("192.168.120.10/32")}
 	for xff, want := range map[string]string{
-		"1.2.3.4":                "1.2.3.4",
-		"9.9.9.9, 1.2.3.4":       "1.2.3.4", // the first entry is the visitor's own claim
+		"1.2.3.4":                 "1.2.3.4",
+		"9.9.9.9, 1.2.3.4":        "1.2.3.4", // the first entry is the visitor's own claim
 		"1.2.3.4, 192.168.120.10": "1.2.3.4",
-		"":                       "192.168.120.10",
-		"junk":                   "192.168.120.10",
+		"":                        "192.168.120.10",
+		"junk":                    "192.168.120.10",
 	} {
 		if got := h.clientIP(req("192.168.120.10:5555", xff)); got != want {
 			t.Errorf("xff %q: %s, want %s", xff, got, want)

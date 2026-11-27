@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"github.com/Netdoodle/homexdr/agent/internal/safefile"
 	"os"
 	"os/exec"
@@ -302,9 +303,15 @@ func collectAutoruns(ctx context.Context, hc *lru[fileKey, string], emit func(pl
 	}
 	// Login items and background tasks from Background Task Management (macOS 13+).
 	// sfltool can take half a minute when the BTM daemon is busy, so it gets more time.
-	btmCtx, btmCancel := context.WithTimeout(ctx, 3*time.Minute)
-	btmOut, btmErr := exec.CommandContext(btmCtx, "/usr/bin/sfltool", "dumpbtm").Output()
-	btmCancel()
+	// It needs root: run as anyone else it waits for an admin authorization that never
+	// comes, so it is skipped then (the agent itself runs as root).
+	var btmOut []byte
+	btmErr := errors.New("not root")
+	if os.Geteuid() == 0 {
+		btmCtx, btmCancel := context.WithTimeout(ctx, 3*time.Minute)
+		btmOut, btmErr = exec.CommandContext(btmCtx, "/usr/bin/sfltool", "dumpbtm").Output()
+		btmCancel()
+	}
 	if out, err := btmOut, btmErr; err == nil {
 		names := map[int]string{0: "root"}
 		us, _ := directoryUsers(ctx)

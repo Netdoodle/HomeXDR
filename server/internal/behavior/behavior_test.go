@@ -442,13 +442,13 @@ func TestDNSTunnelBenign(t *testing.T) {
 	var evs []*event.Event
 	for i := range 150 {
 		evs = append(evs,
-			dnsRow(ts, "192.168.120.5", fmt.Sprintf("%s%d.cloudfront.net", long, i)),  // a CDN numbers its hosts
-			dnsRow(ts, "192.168.120.5", fmt.Sprintf("%s%d.popular.example", long, i)), // popular list
-			dnsRow(ts, "192.168.120.5", fmt.Sprintf("%s%d.local", long, i)),           // local only
+			dnsRow(ts, "192.168.120.5", fmt.Sprintf("%s%d.cloudfront.net", long, i)),   // a CDN numbers its hosts
+			dnsRow(ts, "192.168.120.5", fmt.Sprintf("%s%d.popular.example", long, i)),  // popular list
+			dnsRow(ts, "192.168.120.5", fmt.Sprintf("%s%d.local", long, i)),            // local only
 			dnsRow(ts, "192.168.120.5", fmt.Sprintf("%d.120.168.192.in-addr.arpa", i)), // reverse lookups
-			dnsRow(ts, "192.168.120.5", fmt.Sprintf("img%d.photos.example", i)),       // many names, none random
-			dnsRow(ts, "203.0.113.7", fmt.Sprintf("%s%d.outsider.example", long, i)), // not a device here
-			dnsRow(ts, "192.168.120.5", fmt.Sprintf("%s%d.listed.example", long, i)),  // listed below
+			dnsRow(ts, "192.168.120.5", fmt.Sprintf("img%d.photos.example", i)),        // many names, none random
+			dnsRow(ts, "203.0.113.7", fmt.Sprintf("%s%d.outsider.example", long, i)),   // not a device here
+			dnsRow(ts, "192.168.120.5", fmt.Sprintf("%s%d.listed.example", long, i)),   // listed below
 		)
 	}
 	// A handful of long names is not a tunnel.
@@ -478,12 +478,12 @@ func TestDNSBypass(t *testing.T) {
 	h.now = h.now.AddDate(0, 0, 4)
 	h.keepFlowsVisible()
 	h.insert(
-		flow(ts(), "192.168.120.40", 50000, "8.8.8.8", 53, "udp", 80),      // learned
+		flow(ts(), "192.168.120.40", 50000, "8.8.8.8", 53, "udp", 80),       // learned
 		flow(ts(), "192.168.120.5", 50000, "192.168.120.1", 53, "udp", 80),  // the firewall
 		flow(ts(), "192.168.120.5", 50000, "192.168.110.1", 53, "udp", 80),  // the firewall on another VLAN
 		flow(ts(), "192.168.120.5", 50000, "192.168.120.53", 53, "udp", 80), // approved below
-		flow(ts(), "8.8.8.8", 53, "192.168.120.5", 50000, "udp", 80),       // a reply
-		flow(ts(), "203.0.113.9", 50000, "8.8.8.8", 53, "udp", 80),        // the firewall's own lookups
+		flow(ts(), "8.8.8.8", 53, "192.168.120.5", 50000, "udp", 80),        // a reply
+		flow(ts(), "203.0.113.9", 50000, "8.8.8.8", 53, "udp", 80),          // the firewall's own lookups
 		fwRow(ts(), "block", event.DirectionInbound, "192.168.120.6", 50000, "9.9.9.9", 853, "tcp"),
 		fwRow(ts(), "block", event.DirectionInbound, "192.168.120.6", 50001, "9.9.9.9", 853, "tcp"),
 		flow(ts(), "192.168.120.7", 50000, "1.1.1.1", 53, "udp", 80),
@@ -574,8 +574,8 @@ func TestUnusualPort(t *testing.T) {
 		flow(ts(), "192.168.120.5", 50000, "198.51.100.1", 443, "tcp", 500),   // always usual
 		flow(ts(), "192.168.120.5", 50000, "198.51.100.1", 40000, "udp", 500), // high UDP: games and calls
 		flow(ts(), "192.168.120.5", 443, "198.51.100.1", 52000, "tcp", 500),   // a reply from a service here
-		flow(ts(), "192.168.120.5", 50000, "192.168.120.9", 4444, "tcp", 500),  // not the internet
-		flow(ts(), "203.0.113.9", 50000, "198.51.100.1", 4445, "tcp", 500),   // the firewall itself
+		flow(ts(), "192.168.120.5", 50000, "192.168.120.9", 4444, "tcp", 500), // not the internet
+		flow(ts(), "203.0.113.9", 50000, "198.51.100.1", 4445, "tcp", 500),    // the firewall itself
 		fwRow(ts(), "block", event.DirectionInbound, "192.168.120.5", 50000, "198.51.100.1", 4446, "tcp"),
 		flow(ts(), "192.168.120.5", 50000, "198.51.100.1", 8883, "tcp", 500), // listed below
 		flow(ts(), "192.168.120.6", 50000, "198.51.100.2", 4444, "tcp", 500),
@@ -757,7 +757,7 @@ func TestExposure(t *testing.T) {
 	h.insert(
 		inbound("pass", "198.51.100.1", "192.168.120.20", 443),               // learned
 		inbound("block", "198.51.100.2", "192.168.120.30", 22),               // blocked
-		inbound("pass", "192.168.110.5", "192.168.120.30", 22),                // from inside
+		inbound("pass", "192.168.110.5", "192.168.120.30", 22),               // from inside
 		inbound("pass", "100.100.1.1", "192.168.120.30", 23),                 // from a Tailscale peer
 		inbound("pass", "203.0.113.9", "192.168.120.30", 24),                 // the firewall's own WAN address: hairpin
 		inbound("pass", "198.51.100.3", "192.168.120.21", 8443),              // listed below
