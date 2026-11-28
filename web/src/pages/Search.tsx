@@ -193,7 +193,7 @@ export function SearchPage() {
                 terms are ANDed.
               </li>
               <li>
-                Splunk names work: <code>index</code> (event.module), <code>sourcetype</code>, <code>host</code>, <code>src</code>, <code>dest</code>, <code>dest_port</code>,{' '}
+                Short names work: <code>index</code> (event.module), <code>sourcetype</code>, <code>host</code>, <code>src</code>, <code>dest</code>, <code>dest_port</code>,{' '}
                 <code>user</code>, <code>action</code>, <code>bytes</code>, <code>_time</code>. A bare unknown name such as <code>LogonType</code> means{' '}
                 <code>data.LogonType</code>.
               </li>

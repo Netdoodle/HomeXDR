@@ -202,7 +202,7 @@ var columnByField = func() map[string]*Column {
 	return m
 }()
 
-// fieldAliases are Splunk and CIM-style names accepted for HomeXDR's fields.
+// fieldAliases are short, common log-field names accepted for HomeXDR's fields.
 var fieldAliases = map[string]string{
 	"index": "event.module", "sourcetype": "event.dataset", "host": "host.name",
 	"category": "event.category", "outcome": "event.outcome",

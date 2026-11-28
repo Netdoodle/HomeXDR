@@ -141,7 +141,7 @@ describe('building queries', () => {
   })
 })
 
-describe('Splunk-style filters and pipelines', () => {
+describe('operator filters and pipelines', () => {
   it('parses field=value, != and bare comparisons like the server', () => {
     expect(parseQuery('index=opnsense')).toMatchObject({ field: 'index', op: ':', value: 'opnsense' })
     expect(parseQuery('user!=root')).toMatchObject({ type: 'not', child: { field: 'user', value: 'root' } })

@@ -7,7 +7,7 @@
 //   field:>10 field:<=443 comparisons; also field>10, field<=443
 //   AND, OR, NOT, ( )    boolean logic (also &&, ||, !, -term); adjacent terms are ANDed
 //   bare words           substring match on message, process.command_line, file.path
-//   ... | command ...    Splunk-style pipeline commands (see PIPE_COMMANDS)
+//   ... | command ...    piped commands (see PIPE_COMMANDS)
 //
 // The server does the real translation to SQL. The UI uses this module to validate input
 // before sending it, to append `field:value` terms safely, and (in mock mode) to filter
@@ -45,7 +45,7 @@ type Token =
 const FIELD_RE = /^[@A-Za-z_][\w.@-]*$/
 const KEYWORDS: Record<string, 'and' | 'or' | 'not'> = { AND: 'and', OR: 'or', NOT: 'not', '&&': 'and', '||': 'or', '!': 'not' }
 
-/** Splunk-style operators inside a word, in the order the server checks them. */
+/** Comparison operators inside a word, in the order the server checks them. */
 const WORD_OPS = /:|!=|<=|>=|=|<|>/
 
 function readQuoted(q: string, start: number): { value: string; end: number } {
@@ -111,12 +111,12 @@ export function tokenize(q: string): Token[] {
     }
     const opMatch = WORD_OPS.exec(word)
     const at = opMatch ? opMatch.index : -1
-    const splunkOp = opMatch && opMatch[0] !== ':' ? opMatch[0] : ''
-    if (splunkOp && at > 0 && FIELD_RE.test(word.slice(0, at))) {
+    const cmpOp = opMatch && opMatch[0] !== ':' ? opMatch[0] : ''
+    if (cmpOp && at > 0 && FIELD_RE.test(word.slice(0, at))) {
       // field=value, field!=value, field>N ... (a bare word when the parts don't fit)
       const field = word.slice(0, at)
-      const rest = word.slice(at + splunkOp.length)
-      if (splunkOp === '=' || splunkOp === '!=') {
+      const rest = word.slice(at + cmpOp.length)
+      if (cmpOp === '=' || cmpOp === '!=') {
         let value = rest
         let quoted = false
         if (rest === '' && q[i] === '"') {
@@ -127,12 +127,12 @@ export function tokenize(q: string): Token[] {
           quoted = true
         }
         if (value !== '' || quoted) {
-          if (splunkOp === '!=') tokens.push({ kind: 'not', pos: start })
+          if (cmpOp === '!=') tokens.push({ kind: 'not', pos: start })
           tokens.push({ kind: 'term', pos: start, term: { type: 'term', field, op: ':', value, quoted } })
           continue
         }
       } else if (isNumeric(rest)) {
-        tokens.push({ kind: 'term', pos: start, term: { type: 'term', field, op: splunkOp as CompareOp, value: rest, quoted: false } })
+        tokens.push({ kind: 'term', pos: start, term: { type: 'term', field, op: cmpOp as CompareOp, value: rest, quoted: false } })
         continue
       }
     }
@@ -327,7 +327,7 @@ export function fieldRef(field: string): string {
   return /^[A-Za-z_@][\w@.]*$/.test(field) ? field : `'${field.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 }
 
-/** Splunk and CIM-style names the server accepts for HomeXDR's fields. */
+/** Short, common field names the server accepts for HomeXDR's fields. */
 export const FIELD_ALIASES: Record<string, string> = {
   index: 'event.module',
   sourcetype: 'event.dataset',

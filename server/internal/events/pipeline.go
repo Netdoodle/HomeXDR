@@ -1,6 +1,6 @@
 package events
 
-// The search pipeline, modelled on Splunk's SPL:
+// The search pipeline:
 //
 //	<filter> | command args | command args ...
 //

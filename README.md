@@ -14,8 +14,8 @@ sample data. Nothing to install, and nothing you do there leaves your browser.
   Import a rule repository such as SigmaHQ from the console (a git repository or a release
   archive) and choose per repository whether new versions install automatically or wait
   for you to click Update ([rules/README.md](rules/README.md)).
-- **Process trees, timelines and search** across every host. Search is Splunk-style:
-  `field=value` filters piped into `stats`, `timechart`, `top`, `table`, `eval`, `where`,
+- **Process trees, timelines and search** across every host. Search uses a piped query
+  language: `field=value` filters piped into `stats`, `timechart`, `top`, `table`, `eval`, `where`,
   `rex` and more, with a histogram, statistics and charts ([docs/search.md](docs/search.md)).
 - **IOC investigation.** Paste an IP, domain, URL or hash to get a score and brief from
   VirusTotal, AbuseIPDB, abuse.ch, GreyNoise, Shodan and others, next to where it appears in

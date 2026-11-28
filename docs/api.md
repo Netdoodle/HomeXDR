@@ -182,7 +182,7 @@ type CommandRecord = {
 }
 ```
 
-`query` is a filter, optionally followed by Splunk-style commands
+`query` is a filter, optionally followed by piped commands
 (`index=opnsense | stats count by src`); see [search.md](search.md) for the full language.
 It is compiled server-side into a single parameterized SQL query; user values never become
 SQL text. `from` defaults to 24 hours ago when neither bound is given. An invalid query, or
@@ -194,7 +194,7 @@ Filter summary:
   `field:"quoted value"` (literal; `\"` and `\\` escape), `field:>10` or `field>10`
 - `AND`, `OR`, `NOT` (uppercase), `&&`, `||`, `!`, `-term`, parentheses; adjacent terms are ANDed
 - Bare words do a substring match on `message`, `process.command_line` and `file.path`
-- Field names are ECS paths from `shared/event`; Splunk names such as `index`, `src`,
+- Field names are ECS paths from `shared/event`; short names such as `index`, `src`,
   `dest_port` are accepted, and bare unknown names mean `data.<name>`
 - An empty query returns the newest events
 

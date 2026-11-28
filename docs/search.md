@@ -1,8 +1,8 @@
 # Search
 
 The console's **Search** page, the `POST /api/events/search` API and the AI analyst's
-`search_events` tool share one search language, modelled on Splunk's SPL: a filter,
-optionally followed by commands separated by `|`.
+`search_events` tool share one piped search language: a filter, optionally followed by
+commands separated by `|`.
 
 ```
 index=opnsense action=block | stats count by src | sort -count | head 10

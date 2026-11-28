@@ -246,7 +246,7 @@ func (p *planner) boolean(v val) (val, error) {
 	return val{}, errors.New(`expected a true/false expression, e.g. x > 5, x = "a" or like(x, "a%")`)
 }
 
-// present is true when a value is there: Splunk drops events without the field from
+// present is true when a value is there: events without the field are dropped from
 // by-clauses and per-field aggregates.
 func (p *planner) present(v val) frag {
 	switch {

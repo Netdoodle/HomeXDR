@@ -13,7 +13,7 @@ import (
 	"github.com/Netdoodle/homexdr/shared/event"
 )
 
-func TestSplunkFilterTerms(t *testing.T) {
+func TestOperatorFilterTerms(t *testing.T) {
 	cases := map[string]Node{
 		`index=opnsense`:   TermNode{Field: "event.module", Op: "eq", Value: "opnsense"},
 		`dest_port>1024`:   TermNode{Field: "destination.port", Op: "gt", Value: "1024"},
@@ -204,7 +204,7 @@ func testPipelines(t *testing.T, s Store, h1, h2 string) {
 		}
 	}
 
-	// Plain filters still return events; Splunk-style terms filter.
+	// Plain filters still return events; operator terms filter.
 	if res := run(`index=opnsense action=block`); res.Mode != "events" || res.Total != 3 || len(res.Events) != 3 {
 		t.Errorf("index=opnsense action=block: mode %s total %d", res.Mode, res.Total)
 	}

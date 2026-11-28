@@ -157,8 +157,8 @@ func lex(q string) ([]token, error) {
 }
 
 // parseTerm parses one term. It splits at the first unquoted, unescaped operator:
-// "field:value" (the original syntax), or Splunk-style "field=value", "field!=value"
-// (negate is set), "field>N", "field>=N", "field<N", "field<=N". The Splunk-style forms
+// "field:value" (the original syntax), or "field=value", "field!=value"
+// (negate is set), "field>N", "field>=N", "field<N", "field<=N". The newer operator forms
 // fall back to a bare word when the field or value part does not fit, so words that
 // merely contain those characters still search as before.
 func parseTerm(text string) (TermNode, bool, error) {
