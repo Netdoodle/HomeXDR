@@ -165,6 +165,97 @@ confirmed or likely. The macOS OS release itself is covered by Apple's security 
 - Not planned: Slackware and Unraid packages (no advisory feed has fixed versions) and Red Hat
   Enterprise Linux itself.
 
+## Active Directory
+
+Domain controller visibility, directory-aware detections, and later a directory connector.
+Phases 1 and 2 need only the agent and the firewall log, so they come first. Each phase
+ships on its own and has a "done when" line. Phase 3 uses the GOAD lab
+(github.com/Orange-Cyberdefense/GOAD) as the test target.
+
+| Phase | What | Status |
+|---|---|---|
+| 1 | DC audit setup and event coverage | Not started |
+| 2 | AD detection rule pack | Not started |
+| 3 | Test lab and walkthrough | Not started |
+| 4 | Directory sync (identity inventory) | Not started |
+| 5 | Identity view and attack paths | Not started |
+| 6 | Domain-aware response actions | Not started |
+| 7 | Entra ID and hybrid sources | Not started |
+
+### Phase 1: DC audit setup and event coverage
+- **Detect domain controllers:** the agent sees the NTDS service and tags the host
+  "Domain controller".
+- **Audit gaps:** the console lists which audit subcategories are off on a DC (Kerberos
+  service ticket operations, directory service access and changes, account management,
+  logon) with the exact `auditpol` and GPO settings. HomeXDR does not change policy.
+- **Missing events:** map 4662 (object access, used by DCSync), 4742 (computer account
+  changed), 4741 (computer created), 4729, 4733 and 4757 (group member removed), 5136
+  (directory object modified), 4738 field detail, 4771 (Kerberos pre-auth failed), and
+  4673.
+- **Kerberos fields:** parse ticket encryption type, service name, client address and
+  failure code into searchable ECS-style fields.
+- **Optional channels:** Directory Service, DNS Server and AD CS (certificate services) logs.
+- **Done when:** a DC shows the tag, the audit-gap check, and parsed Kerberos and directory
+  events, verified on a real DC.
+
+### Phase 2: AD detection rule pack
+- **Credential and ticket abuse:** Kerberoasting (4769 with RC4 tickets for user accounts),
+  AS-REP roasting (4768 without pre-auth), DCSync (4662 with replication rights from a
+  non-DC), password spraying (many 4625 or 4771 across accounts from one source), golden
+  ticket indicators, and NTLM relay or coercion indicators.
+- **Directory changes:** privileged group changes (Domain Admins, Enterprise Admins, Schema
+  Admins, AdminSDHolder), computer account creation and abuse (4741, 4742), GPO changes
+  (5136), SID history, unconstrained delegation changes, AD CS template abuse (ESC1 and
+  similar), and audit log cleared on a DC.
+- **Each rule** has a false-positive note and an ATT&CK tag.
+- **Public rules:** a documented, tested import path for public Sigma AD rules, with a list of
+  which ones work and which need fields HomeXDR does not map yet.
+- **Done when:** each rule fires on its attack in the test lab and stays quiet on normal DC
+  traffic.
+
+### Phase 3: Test lab and walkthrough
+- A write-up for running GOAD with HomeXDR agents on its domain controllers and servers, in
+  `docs/`.
+- A table of GOAD attack techniques: what HomeXDR detects, what it misses, and why.
+- A short list of known gaps that feeds back into Phase 2.
+- **Done when:** the table comes from an actual run, not from reading the code.
+
+### Phase 4: Directory sync (identity inventory)
+- An optional read-only LDAP connector with a service account, set up in the console.
+  Credentials are stored encrypted, like other secrets.
+- Imports users, groups, computers, OUs, trusts and GPO links on a schedule, with change
+  tracking, so an admin can see who was added to a group and when.
+- Matches imported computers to enrolled hosts, and users to logon events.
+- LDAPS or Kerberos bind only. Plain LDAP is refused unless explicitly allowed.
+- **Done when:** an alert shows the account's groups and last logon, and the host list shows
+  which machines are domain joined.
+
+### Phase 5: Identity view and attack paths
+- A user page with logons by host, group memberships, privileged status and recent alerts.
+- Flags for risky accounts: stale privileged accounts, accounts with SPNs, accounts without
+  pre-auth, unconstrained delegation, and passwords that never expire.
+- A simple path view built from sessions and group membership, such as "this admin logged
+  on to this workstation". It is not a BloodHound replacement, and the docs say so.
+- **Done when:** the lab shows a path from a compromised workstation to a Domain Admin session.
+
+### Phase 6: Domain-aware response actions
+- Disable an account, force a password reset, remove an account from a group, and revoke a
+  user's sessions.
+- Each action needs the admin role, is written to the audit log, needs confirmation in the
+  console, and is off by default.
+- **Done when:** each action works end to end in the lab, and the audit log records who ran it.
+
+### Phase 7: Entra ID and hybrid sources
+- Ingest Entra ID sign-in and audit logs and Microsoft 365 audit logs.
+- Overlaps with the cloud and SaaS log ingestion gap, so it shares that work.
+- **Done when:** a hybrid sign-in appears next to the on-prem logon for the same user.
+
+### Cross-cutting
+- An AD health page: audit gaps, DCs without an agent, and rule coverage.
+- Retention guidance for DC logs, which are high volume.
+- Not planned: managing AD itself (creating users or editing GPOs), and replacing
+  PingCastle or Purple Knight for AD misconfiguration scoring.
+
 ## Offline protection
 
 Today an agent without a connection to the server only records: the antivirus verdict, kill
