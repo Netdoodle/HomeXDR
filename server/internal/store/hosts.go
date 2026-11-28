@@ -49,6 +49,12 @@ type Host struct {
 	BootTime       *time.Time         `json:"boot_time,omitempty"`
 	CPUs           int                `json:"cpus,omitempty"`
 	MemoryBytes    uint64             `json:"memory_bytes,omitempty"`
+	// Roles are server roles the agent detected ("domain_controller").
+	Roles []string `json:"roles,omitempty"`
+	// DCAuditGaps are the audit subcategories a domain controller still lacks.
+	DCAuditGaps []api.AuditGap `json:"dc_audit_gaps,omitempty"`
+	// DCAuditError is set when the domain controller could not read its audit policy.
+	DCAuditError string `json:"dc_audit_error,omitempty"`
 	// CertExpires is when the agent's client certificate expires (agents renew it).
 	CertExpires *time.Time `json:"cert_expires,omitempty"`
 	// DecommissionedAt is set while the agent is decommissioned (hidden after being
@@ -110,6 +116,9 @@ func scanHost(row interface{ Scan(...any) error }) (*Host, error) {
 	h.BootTime = hi.BootTime
 	h.CPUs = hi.CPUs
 	h.MemoryBytes = hi.MemoryBytes
+	h.Roles = hi.Roles
+	h.DCAuditGaps = hi.DCAuditGaps
+	h.DCAuditError = hi.DCAuditError
 	h.AgentVersion = st.Version
 	h.Sensors = st.Sensors
 	h.QueueEvents = st.QueueEvents

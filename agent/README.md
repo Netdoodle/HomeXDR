@@ -227,8 +227,36 @@ no mapping. `event.dataset` is `windows.<Sigma service>` (`windows.security`,
 `windows.powershell-classic`, `windows.windefend`, ...), which is how the server matches
 `logsource: service:`; `event.provider` and `event.code` are the provider and event ID.
 Logons (4624, 4625, 4634, 4647, 4648) also get ECS `authentication` fields (`user.*`,
-`source.ip`, outcome), account and group changes (4720-4740, 4728/4732/4756) `iam`
-fields, and service installs (7045, 4697) `service.*`. Left out: 4688/4689 and Sysmon 1/5
+`source.ip`, outcome), account and group changes (4720-4742, 4728/4732/4756 member
+added, 4729/4733/4757 member removed) `iam` fields, and service installs (7045, 4697)
+`service.*`. A 4738 message lists the attributes the change touched (for example
+`UserAccountControl`, `AllowedToDelegateTo`, `SidHistory`).
+
+Directory and Kerberos events from a domain controller get fields too. 5136 (directory
+object modified), 4662 (directory object accessed) and 4673 (sensitive privilege use)
+get `iam` fields and `user.*` for the acting account. A 4662 whose `Properties` names a
+directory replication right (the three GUIDs behind DCSync) also gets
+`data.ds_replication_right: true`, so a rule can match it without parsing the GUIDs;
+`Properties` itself stays verbatim. 4768, 4769, 4771 and 4776 get `authentication`
+fields: `user.name`/`user.domain`/`user.id` (the account asking), `source.ip` (the
+`::ffff:` prefix is stripped) and `event.outcome`, plus `kerberos.*` for the Kerberos
+three: `kerberos.service_name`, `kerberos.ticket_encryption_type` (lowercase hex such
+as `0x17`), `kerberos.encryption` (`rc4-hmac`, `aes256-cts-hmac-sha1-96`, ...),
+`kerberos.status` (the result or failure code, `0x0` is success),
+`kerberos.ticket_options` and `kerberos.pre_auth_type`. These events are only logged
+when the matching audit subcategories are on; see the domain controller note below.
+
+**Domain controllers.** When the NTDS service exists, the agent reports the role
+`domain_controller` in its host info and the console shows a Domain controller badge.
+On a domain controller it also reads the system audit policy (the same Win32 call the
+process sensor uses, at the host-info refresh interval) and lists the subcategories
+that lack auditing: Credential Validation, Kerberos Authentication Service, Kerberos
+Service Ticket Operations, Computer Account Management, Security Group Management,
+User Account Management, Directory Service Access, Directory Service Changes, Logon and
+Sensitive Privilege Use. The host page shows each gap with an
+`auditpol /set /subcategory:{GUID} ...` command. The agent never changes audit policy;
+the same settings can be applied by Group Policy under Advanced Audit Policy
+Configuration. Left out: 4688/4689 and Sysmon 1/5
 while the process sensor runs, Windows Filtering Platform connections (5156-5158),
 Credential Manager reads (5379) and PowerShell console startup notices
 (40961/40962/53504).

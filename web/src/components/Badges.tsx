@@ -1,5 +1,6 @@
 import type { AlertStatus, CommandStatus, Host, HostStatus, HostUpdate, MitreMapping, Severity } from '../api/types'
 import { UPDATE_STATE_LABEL } from '../lib/agents'
+import { isDomainController } from '../lib/domainController'
 import {
   ALERT_STATUS_LABEL,
   COMMAND_STATUS_LABEL,
@@ -99,6 +100,15 @@ export function RiskScore({ score }: { score: number }) {
         <span style={{ width: `${pct}%` }} />
       </span>
       {score}
+    </span>
+  )
+}
+
+export function DomainControllerBadge({ host }: { host: Pick<Host, 'roles'> }) {
+  if (!isDomainController(host)) return null
+  return (
+    <span className="badge" title="Runs Active Directory Domain Services">
+      Domain controller
     </span>
   )
 }

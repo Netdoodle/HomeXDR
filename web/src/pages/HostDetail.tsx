@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { api, isApiError, queryKeys, type Host, type TimelineFilter } from '../api'
 import { useCan } from '../components/Auth'
-import { AlertCount, AlertStatusBadge, OsLabel, SeverityBadge, StatusDot, Tags, UpdateBadge } from '../components/Badges'
+import { AlertCount, AlertStatusBadge, DomainControllerBadge, OsLabel, SeverityBadge, StatusDot, Tags, UpdateBadge } from '../components/Badges'
 import { EventTable } from '../components/EventTable'
 import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
@@ -17,6 +17,7 @@ import { EmptyState, ErrorState, Loading, QueryView, Spinner } from '../componen
 import { TimeRangePicker } from '../components/TimeRangePicker'
 import { useToast } from '../components/Toast'
 import { canUpdateNow, certState, ruleLabel, shortVersion, UPDATE_STATE_LABEL } from '../lib/agents'
+import { auditpolFix, isDomainController } from '../lib/domainController'
 import { formatBytes, formatNumber } from '../lib/format'
 import { useDocumentTitle, useUrlState } from '../lib/hooks'
 import { HOST_STATUS_LABEL } from '../lib/severity'
@@ -149,6 +150,7 @@ function Overview({ host: h }: { host: Host }) {
                 ['Agent ID', <span key="id" className="mono small">{h.id}</span>, h.id],
                 ['Kind', h.kind === 'network' ? 'Network device (syslog source)' : 'Endpoint agent'],
                 ['Operating system', <OsLabel key="os" os={h.os} />, [h.os.name, h.os.version].filter(Boolean).join(' ')],
+                ['Role', isDomainController(h) ? <DomainControllerBadge key="dc" host={h} /> : undefined, isDomainController(h) ? 'Domain controller' : undefined],
                 ['Kernel', h.os.kernel],
                 ['Architecture', h.arch],
                 ['IP addresses', h.ips.length ? <span className="mono">{h.ips.join(', ')}</span> : undefined, h.ips.join(', ')],
@@ -180,6 +182,7 @@ function Overview({ host: h }: { host: Host }) {
             />
           </div>
         </section>
+        {isDomainController(h) ? <DCAuditPanel host={h} /> : null}
         {h.kind === 'endpoint' ? (
           <section className="panel">
             <div className="panel-header">
@@ -539,5 +542,54 @@ function DecommissionButton({ host: h }: { host: Host }) {
     <button type="button" className="btn" disabled={m.isPending} onClick={() => m.mutate()}>
       Decommission
     </button>
+  )
+}
+
+function DCAuditPanel({ host }: { host: Host }) {
+  const gaps = host.dc_audit_gaps ?? []
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <h2>Domain controller auditing</h2>
+        {gaps.length ? <span className="hint">{gaps.length} to turn on</span> : null}
+      </div>
+      <div className="panel-body stack">
+        {host.dc_audit_error ? (
+          <div className="callout warn">
+            The agent could not read the audit policy, so the gaps are unknown: <span className="mono small">{host.dc_audit_error}</span>
+          </div>
+        ) : gaps.length === 0 ? (
+          <div className="callout ok">All required DC auditing is on</div>
+        ) : (
+          <>
+            <p className="small muted" style={{ margin: 0 }}>
+              These audit policy subcategories lack the auditing HomeXDR&apos;s directory and Kerberos detections need. Run the command
+              in an elevated prompt on the domain controller.
+            </p>
+            {gaps.map((g) => {
+              const fix = auditpolFix(g)
+              return (
+                <div key={g.guid} className="stack" style={{ gap: 4 }}>
+                  <div>
+                    <strong>{g.subcategory}</strong>{' '}
+                    <span className="small muted">
+                      needs {g.wanted}, now {g.current}
+                    </span>
+                  </div>
+                  <div className="copy-cell">
+                    <CopyIcon text={fix} label="Command" />
+                    <code className="mono small">{fix}</code>
+                  </div>
+                </div>
+              )
+            })}
+          </>
+        )}
+        <p className="xsmall muted" style={{ margin: 0 }}>
+          The same settings can be applied by Group Policy under Computer Configuration, Policies, Windows Settings, Security Settings,
+          Advanced Audit Policy Configuration. HomeXDR does not change audit policy.
+        </p>
+      </div>
+    </section>
   )
 }

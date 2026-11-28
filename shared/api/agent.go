@@ -86,6 +86,31 @@ type HostInfo struct {
 	CPUs        int        `json:"cpus,omitempty"`
 	MemoryBytes uint64     `json:"memory_bytes,omitempty"`
 	Container   bool       `json:"container,omitempty"` // agent runs inside a container
+	// Roles lists server roles the agent detected; see the HostRole* constants.
+	Roles []string `json:"roles,omitempty"`
+	// DCAuditGaps lists the audit policy subcategories a domain controller still needs
+	// turned on. Only domain controllers report it; empty means no gaps (or not a DC).
+	DCAuditGaps []AuditGap `json:"dc_audit_gaps,omitempty"`
+	// DCAuditError is set when a domain controller could not read its audit policy,
+	// so an empty DCAuditGaps is not mistaken for "no gaps".
+	DCAuditError string `json:"dc_audit_error,omitempty"`
+}
+
+// Host roles reported in HostInfo.Roles.
+const (
+	// HostRoleDomainController marks a Windows host running the Active Directory
+	// Domain Services service (NTDS).
+	HostRoleDomainController = "domain_controller"
+)
+
+// AuditGap is one advanced audit policy subcategory that lacks auditing HomeXDR's
+// directory and Kerberos detections need. HomeXDR only reports it and never changes
+// audit policy.
+type AuditGap struct {
+	Subcategory string `json:"subcategory"` // "Directory Service Changes"
+	GUID        string `json:"guid"`        // "{0CCE923C-69AE-11D9-BED3-505054503030}"
+	Wanted      string `json:"wanted"`      // "success", "failure" or "success and failure"
+	Current     string `json:"current"`     // "none", "success", "failure" or "success and failure"
 }
 
 // Heartbeat is POSTed to PathHeartbeat every AgentConfig.HeartbeatIntervalSec.

@@ -69,6 +69,17 @@ export interface HostSensor {
   events: number;
 }
 
+/** An audit policy subcategory a domain controller needs turned on (HomeXDR only reports it). */
+export interface AuditGap {
+  subcategory: string;
+  /** subcategory GUID, braces included */
+  guid: string;
+  /** "success" or "success and failure" */
+  wanted: string;
+  /** "none", "success" or "failure" */
+  current: string;
+}
+
 export interface Host {
   id: string;
   hostname: string;
@@ -98,6 +109,12 @@ export interface Host {
   boot_time?: string;
   cpus?: number;
   memory_bytes?: number;
+  /** server roles the agent detected; "domain_controller" on a Windows domain controller */
+  roles?: string[];
+  /** domain controllers only: audit subcategories that still lack auditing */
+  dc_audit_gaps?: AuditGap[];
+  /** domain controllers only: set when the agent could not read the audit policy */
+  dc_audit_error?: string;
   /** when the agent's client certificate expires (agents renew it automatically) */
   cert_expires?: string;
   /** set while the agent is decommissioned; cleared when it reconnects */

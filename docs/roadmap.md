@@ -174,7 +174,7 @@ ships on its own and has a "done when" line. Phase 3 uses the GOAD lab
 
 | Phase | What | Status |
 |---|---|---|
-| 1 | DC audit setup and event coverage | Not started |
+| 1 | DC audit setup and event coverage | Built, not yet verified on a real DC |
 | 2 | AD detection rule pack | Not started |
 | 3 | Test lab and walkthrough | Not started |
 | 4 | Directory sync (identity inventory) | Not started |
@@ -197,6 +197,10 @@ ships on its own and has a "done when" line. Phase 3 uses the GOAD lab
 - **Optional channels:** Directory Service, DNS Server and AD CS (certificate services) logs.
 - **Done when:** a DC shows the tag, the audit-gap check, and parsed Kerberos and directory
   events, verified on a real DC.
+- **Status (November 2026):** built and unit tested. The agent tags domain controllers
+  (`roles: ["domain_controller"]`), reports `dc_audit_gaps` with the `auditpol` fix per
+  subcategory on the host page, maps the events above, and fills `kerberos.*` fields.
+  Still to do: check NTDS detection, the audit read and the real EventData names on a DC.
 
 ### Phase 2: AD detection rule pack
 - **Credential and ticket abuse:** Kerberoasting (4769 with RC4 tickets for user accounts),

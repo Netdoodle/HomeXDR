@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { api, queryKeys, type HostFilter } from '../api'
-import { AlertCount, OsLabel, StatusDot, Tags, UpdateBadge } from '../components/Badges'
+import { AlertCount, DomainControllerBadge, OsLabel, StatusDot, Tags, UpdateBadge } from '../components/Badges'
 import { shortVersion } from '../lib/agents'
 import { HostActionsMenu } from '../components/HostActionsMenu'
 import { PageHeader } from '../components/Layout'
@@ -138,6 +138,7 @@ export function HostsPage() {
                         {h.hostname}
                       </Link>
                       {h.kind === 'network' ? <div className="xsmall muted">syslog source</div> : <HostGroupName id={h.group_id} />}
+                      <DomainControllerBadge host={h} />
                     </td>
                     <td className="truncate copy-cell">
                       <CopyIcon text={[h.os.name, h.os.version].filter(Boolean).join(' ')} label="Operating system" />

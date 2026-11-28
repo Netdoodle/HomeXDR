@@ -47,6 +47,10 @@ func (*Platform) HostInfo(context.Context) api.HostInfo {
 	info := api.HostInfo{Hostname: h, OS: event.OS{Platform: event.PlatformWindows, Family: "windows"}, Arch: runtime.GOARCH, CPUs: runtime.NumCPU()}
 	v := windows.RtlGetVersion()
 	info.OS.Version = fmt.Sprintf("%d.%d.%d", v.MajorVersion, v.MinorVersion, v.BuildNumber)
+	if isDomainController() {
+		info.Roles = []string{api.HostRoleDomainController}
+		info.DCAuditGaps, info.DCAuditError = queryDCAuditGaps()
+	}
 	return info
 }
 

@@ -40,6 +40,7 @@ type Event struct {
 	TLS         *TLS           `json:"tls,omitempty"`
 	User        *User          `json:"user,omitempty"`
 	Service     *Service       `json:"service,omitempty"`
+	Kerberos    *Kerberos      `json:"kerberos,omitempty"`
 	Rule        *Rule          `json:"rule,omitempty"`
 	Threat      *Threat        `json:"threat,omitempty"`
 	Observer    *Observer      `json:"observer,omitempty"`
@@ -281,6 +282,23 @@ type User struct {
 	Name   string `json:"name,omitempty"`
 	Domain string `json:"domain,omitempty"`
 	Target *User  `json:"target,omitempty"`
+}
+
+// Kerberos holds the normalized fields of Windows Kerberos events (Security 4768,
+// 4769, 4771). The user is in event.user, the client address in event.source, and the
+// verbatim EventData stays in event.data.
+type Kerberos struct {
+	// ServiceName is the service the ticket is for ("krbtgt" for a TGT request).
+	ServiceName string `json:"service_name,omitempty"`
+	// TicketEncryptionType is the encryption type as lowercase hex ("0x17"), and
+	// Encryption its name ("rc4-hmac", "aes256-cts-hmac-sha1-96") when known.
+	TicketEncryptionType string `json:"ticket_encryption_type,omitempty"`
+	Encryption           string `json:"encryption,omitempty"`
+	// Status is the result or failure code as lowercase hex ("0x0", "0x18").
+	Status        string `json:"status,omitempty"`
+	TicketOptions string `json:"ticket_options,omitempty"`
+	// PreAuthType is the pre-authentication type ("2" encrypted timestamp, "0" none).
+	PreAuthType string `json:"pre_auth_type,omitempty"`
 }
 
 // Service describes an OS service (Windows service, systemd unit, launchd job).

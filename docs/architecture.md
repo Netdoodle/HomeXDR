@@ -187,7 +187,8 @@ Sigma `logsource` maps to event filters:
 | `product: opnsense`, `product: suricata` | `event.module` |
 
 Unknown fields fall back to a case-insensitive lookup in `data.*`, so Windows EventData
-fields work in rules without mapping. For Windows Event Log records (`event.module:
+fields work in rules without mapping. Directory and Kerberos events carry normalized `kerberos.*` fields and, for
+4662 with a replication right, `data.ds_replication_right`. For Windows Event Log records (`event.module:
 eventlog`) the verbatim `data.*` value is tried first, even for fields with an ECS
 mapping, because rules for Windows logs mean the raw EventData (`SubjectUserName` on a
 4624 is not the logged-on `user.name`).

@@ -98,9 +98,18 @@ var knownEvents = map[string]string{
 	"security/4726":                  "user account deleted",
 	"security/4728":                  "member added to a global security group",
 	"security/4732":                  "member added to a local security group",
+	"security/4729":                  "member removed from a global security group",
+	"security/4733":                  "member removed from a local security group",
 	"security/4738":                  "user account changed",
 	"security/4740":                  "user account locked out",
+	"security/4741":                  "computer account created",
+	"security/4742":                  "computer account changed",
 	"security/4756":                  "member added to a universal security group",
+	"security/4757":                  "member removed from a universal security group",
+	"security/4662":                  "directory object accessed",
+	"security/4673":                  "sensitive privilege used",
+	"security/4771":                  "Kerberos pre-authentication failed",
+	"security/5136":                  "directory object modified",
 	"security/4768":                  "Kerberos TGT requested",
 	"security/4769":                  "Kerberos service ticket requested",
 	"security/4776":                  "credential validation",
@@ -217,7 +226,31 @@ func mapSecurityRecord(e *event.Event, r *Record, code string) {
 			e.User.Target = targetUser(d)
 		}
 		setSource(e, d["IpAddress"], d["IpPort"], "")
-	case "4720", "4722", "4723", "4724", "4725", "4726", "4738", "4740":
+	case "4738":
+		e.Event.Category = []string{event.CategoryIAM}
+		e.Event.Type = []string{event.TypeChange}
+		e.Event.Action = "user_account_changed"
+		e.User = subjectUser(d)
+		if e.User != nil {
+			e.User.Target = targetUser(d)
+		}
+		mapAccountChange(e, d)
+	case "4741", "4742":
+		e.Event.Category = []string{event.CategoryIAM}
+		e.Event.Type = []string{event.TypeChange}
+		e.Event.Action = "computer_account_changed"
+		if code == "4741" {
+			e.Event.Type = []string{event.TypeCreation}
+			e.Event.Action = "computer_account_created"
+		}
+		e.User = subjectUser(d)
+		if e.User != nil {
+			e.User.Target = targetUser(d)
+		}
+		if t := clean(d["TargetUserName"]); t != "" {
+			e.Message += ": " + t
+		}
+	case "4720", "4722", "4723", "4724", "4725", "4726", "4740":
 		e.Event.Category = []string{event.CategoryIAM}
 		e.Event.Type = []string{iamType(code)}
 		e.Event.Action = strings.ReplaceAll(knownEvents["security/"+code], " ", "_")
@@ -225,10 +258,14 @@ func mapSecurityRecord(e *event.Event, r *Record, code string) {
 		if e.User != nil {
 			e.User.Target = targetUser(d)
 		}
-	case "4728", "4732", "4756":
+	case "4728", "4732", "4756", "4729", "4733", "4757":
 		e.Event.Category = []string{event.CategoryIAM}
 		e.Event.Type = []string{event.TypeChange}
 		e.Event.Action = "group_member_added"
+		switch code {
+		case "4729", "4733", "4757":
+			e.Event.Action = "group_member_removed"
+		}
 		e.User = subjectUser(d)
 		if e.User != nil {
 			e.User.Target = &event.User{Name: clean(d["MemberName"]), ID: clean(d["MemberSid"])}
@@ -236,8 +273,168 @@ func mapSecurityRecord(e *event.Event, r *Record, code string) {
 		if g := clean(d["TargetUserName"]); g != "" {
 			e.Message += ": " + g
 		}
+	case "4768", "4769", "4771":
+		mapKerberos(e, d, code)
+	case "4776":
+		e.Event.Category = []string{event.CategoryAuthentication}
+		e.Event.Type = []string{event.TypeStart}
+		e.Event.Action = "credential_validation"
+		e.Event.Outcome = event.OutcomeSuccess
+		if st := hexCode(d["Status"]); st != "" && st != "0x0" {
+			e.Event.Outcome = event.OutcomeFailure
+		}
+		e.User = &event.User{Name: clean(d["TargetUserName"])}
+		if e.User.Name == "" {
+			e.User = nil
+		}
+		setSource(e, "", "", d["Workstation"])
+	case "4662":
+		e.Event.Category = []string{event.CategoryIAM}
+		e.Event.Type = []string{event.TypeAccess}
+		e.Event.Action = "directory_object_accessed"
+		e.User = subjectUser(d)
+		if hasReplicationRight(d["Properties"]) {
+			e.Data[dsReplicationKey] = true
+		}
+	case "5136":
+		e.Event.Category = []string{event.CategoryIAM}
+		e.Event.Type = []string{event.TypeChange}
+		e.Event.Action = "directory_object_modified"
+		e.User = subjectUser(d)
+		if dn := clean(d["ObjectDN"]); dn != "" {
+			e.Message += ": " + dn
+			if a := clean(d["AttributeLDAPDisplayName"]); a != "" {
+				e.Message += " (" + a + ")"
+			}
+		}
+	case "4673":
+		e.Event.Category = []string{event.CategoryIAM}
+		e.Event.Type = []string{event.TypeAdmin}
+		e.Event.Action = "sensitive_privilege_used"
+		e.User = subjectUser(d)
+		if p := clean(d["PrivilegeList"]); p != "" {
+			e.Message += ": " + strings.Join(strings.Fields(p), ", ")
+		}
 	case "4697":
 		mapServiceInstall(e, d["ServiceName"], d["ServiceFileName"], d["ServiceStartType"], d["ServiceAccount"])
+	}
+}
+
+// dsReplicationRights are the extended rights GUIDs that let an account replicate
+// directory secrets (DS-Replication-Get-Changes, ...-Get-Changes-All and
+// ...-Get-Changes-In-Filtered-Set). Event 4662 lists them in Properties, and a DCSync
+// attack shows up as that event from an account that is not a domain controller.
+var dsReplicationRights = []string{
+	"1131f6aa-9c07-11d1-f79f-00c04fc2dcd2",
+	"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2",
+	"89e95b76-444d-4c62-991a-0facbeda640c",
+}
+
+// dsReplicationKey is the data key set on a 4662 event that names a replication right.
+const dsReplicationKey = "ds_replication_right"
+
+func hasReplicationRight(properties string) bool {
+	p := strings.ToLower(properties)
+	for _, g := range dsReplicationRights {
+		if strings.Contains(p, g) {
+			return true
+		}
+	}
+	return false
+}
+
+// accountChangeAttrs are the 4738 fields that hold a value only when the change touched
+// them (Windows writes "-" for the rest).
+var accountChangeAttrs = []string{
+	"SamAccountName", "DisplayName", "UserPrincipalName", "HomeDirectory", "HomePath",
+	"ScriptPath", "ProfilePath", "UserWorkstations", "PasswordLastSet", "AccountExpires",
+	"PrimaryGroupId", "AllowedToDelegateTo", "UserAccountControl", "UserParameters",
+	"SidHistory", "LogonHours",
+}
+
+// mapAccountChange names the attributes a 4738 changed in the message.
+func mapAccountChange(e *event.Event, d map[string]string) {
+	var changed []string
+	for _, a := range accountChangeAttrs {
+		if v := clean(d[a]); v != "" && v != "<value not set>" {
+			changed = append(changed, a)
+		}
+	}
+	if t := targetUser(d); t != nil && t.Name != "" {
+		e.Message += ": "
+		if t.Domain != "" {
+			e.Message += t.Domain + `\`
+		}
+		e.Message += t.Name
+	}
+	if len(changed) > 0 {
+		e.Message += " (changed: " + strings.Join(changed, ", ") + ")"
+	}
+}
+
+func firstNonEmpty(a, b string) string {
+	if clean(a) != "" {
+		return a
+	}
+	return b
+}
+
+// encryptionTypes names Kerberos encryption types (RFC 3961, RFC 4757).
+var encryptionTypes = map[string]string{
+	"0x1": "des-cbc-crc", "0x3": "des-cbc-md5", "0x11": "aes128-cts-hmac-sha1-96",
+	"0x12": "aes256-cts-hmac-sha1-96", "0x17": "rc4-hmac", "0x18": "rc4-hmac-exp",
+}
+
+// hexCode normalizes a code Windows prints as "0x17" (or "0X17") to lowercase hex; "-"
+// becomes empty and any other value is returned trimmed and lowercased.
+func hexCode(s string) string {
+	s = clean(s)
+	if strings.HasPrefix(s, "0X") {
+		s = "0x" + s[2:]
+	}
+	return strings.ToLower(s)
+}
+
+// mapKerberos fills the authentication fields and event.kerberos of 4768, 4769 and 4771.
+func mapKerberos(e *event.Event, d map[string]string, code string) {
+	e.Event.Category = []string{event.CategoryAuthentication}
+	e.Event.Type = []string{event.TypeStart}
+	e.Event.Outcome = event.OutcomeSuccess
+	switch code {
+	case "4768":
+		e.Event.Action = "kerberos_tgt_request"
+	case "4769":
+		e.Event.Action = "kerberos_service_ticket"
+	case "4771":
+		e.Event.Action = "kerberos_preauth_failed"
+		e.Event.Outcome = event.OutcomeFailure
+	}
+	k := &event.Kerberos{
+		ServiceName:          clean(d["ServiceName"]),
+		TicketEncryptionType: hexCode(d["TicketEncryptionType"]),
+		Status:               hexCode(d["Status"]),
+		TicketOptions:        hexCode(d["TicketOptions"]),
+		PreAuthType:          clean(d["PreAuthType"]),
+	}
+	if k.Status == "" && code != "4771" {
+		k.Status = hexCode(d["FailureCode"])
+	}
+	if k.Status != "" && k.Status != "0x0" {
+		e.Event.Outcome = event.OutcomeFailure
+	}
+	k.Encryption = encryptionTypes[k.TicketEncryptionType]
+	e.Kerberos = k
+	// Kerberos events name the account's SID TargetSid, not TargetUserSid.
+	e.User = accountFields(d["TargetUserName"], d["TargetDomainName"], firstNonEmpty(d["TargetUserSid"], d["TargetSid"]))
+	setSource(e, d["IpAddress"], d["IpPort"], "")
+	if e.User != nil && e.User.Name != "" {
+		e.Message += ": " + e.User.Name
+		if k.ServiceName != "" && code == "4769" {
+			e.Message += " -> " + k.ServiceName
+		}
+		if k.Encryption != "" {
+			e.Message += " (" + k.Encryption + ")"
+		}
 	}
 }
 
