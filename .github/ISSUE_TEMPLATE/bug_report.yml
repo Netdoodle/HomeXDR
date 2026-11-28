@@ -12,7 +12,7 @@ body:
     attributes:
       label: HomeXDR version
       description: Shown at the bottom of the console, or the image tag.
-      placeholder: v0.1.1
+      placeholder: v0.1.2
     validations:
       required: true
   - type: dropdown

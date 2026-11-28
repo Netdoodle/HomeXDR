@@ -12,7 +12,7 @@ x-logging: &default-logging
 
 services:
   homexdr:
-    image: ${HOMEXDR_IMAGE_REGISTRY:-ghcr.io/netdoodle}/homexdr:${HOMEXDR_VERSION:-v0.1.1}
+    image: ${HOMEXDR_IMAGE_REGISTRY:-ghcr.io/netdoodle}/homexdr:${HOMEXDR_VERSION:-v0.1.2}
     build:
       context: ..
     restart: unless-stopped
