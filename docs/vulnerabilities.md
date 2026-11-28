@@ -128,6 +128,8 @@ Unraid entries on current releases.
 
 ## Not covered yet
 
+The plan for these is in the [roadmap](roadmap.md#vulnerability-scanner-agent--network).
+
 - Docker images: only the image name and tag are known, not the packages inside.
 - Slackware packages and Unraid's own packages: no advisory feed has fixed versions for them. Unraid's OS release is covered by the NVD check above.
 - Windows and macOS applications.

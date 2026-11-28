@@ -102,32 +102,68 @@ hash), so the work is getting every source into that schema. In phases:
 
 ## Vulnerability scanner (agent + network)
 
-A scanner in the style of commercial vulnerability management tools, in four steps.
+A scanner in the style of commercial vulnerability management tools. Linux packages are done
+(shipped 2026-11-26, see [vulnerabilities.md](vulnerabilities.md)): OSV distro advisories for
+Debian, Ubuntu, Alpine, Rocky and AlmaLinux, a risk score from CVSS x likelihood (internet
+exposure from the firewall log, attack vector, EPSS, CISA KEV), and the Vulnerabilities page.
+The rest is split into phases below, in the order we plan to build them. Each phase ships on
+its own and has a "done when" line.
 
-Shipped 2026-11-26: Linux distro packages matched against OSV's distro advisories (Debian,
-Ubuntu, Alpine, Rocky, AlmaLinux), a risk score from CVSS × likelihood (internet exposure from the
-firewall log, attack vector, EPSS, CISA KEV), and the Vulnerabilities page with its own charts
-instead of alerts. See [vulnerabilities.md](vulnerabilities.md). Still open below: Windows,
-Docker image contents, the network scanner, per-port exposure, and configuration checks.
+| Phase | What | Status |
+|---|---|---|
+| 1 | Windows software inventory and matching | Not started |
+| 2 | Docker image contents | Not started |
+| 3 | Network scanner for devices without the agent | Not started |
+| 4 | Per-port exposure | Not started |
+| 5 | Configuration checks | Not started |
+| 6 | macOS applications | Not started |
 
-1. **On-host (agent).** Windows software inventory (registry, Store apps, build and patch
-   level). Linux packages already work; add the kernel and distro release. Matching:
-   - Linux packages: OSV.dev and the distros' security trackers (aware of backported fixes)
-   - Windows: Microsoft's monthly security-update data (build to CVE)
-   - third-party Windows apps: NVD CVEs by product and version, with a confidence level
-2. **Network scanner (server), for devices without the agent.** Targets come from the
-   device inventory (DHCP, NetFlow, ARP). Port scan, banner and TLS detection, CVE matching
-   by product and version, and safe checks only: default-login pages, anonymous FTP,
-   Telnet, old TLS and weak ciphers, exposed UPnP or admin panels. Scheduled per VLAN and
-   rate-limited, written in Go inside HomeXDR (no nmap dependency).
-3. **Console.** Per-host and per-device findings, filters (known exploited, fix available,
-   internet-facing), a risk score per asset from CVSS + CISA KEV + FIRST EPSS, fix
-   guidance, scan schedules and history, and alerts on new known-exploited findings.
-4. **Configuration checks.** A small CIS-style set: SMBv1, RDP without network-level
-   authentication, firewall or Defender off, automatic updates off, blank passwords.
+### Phase 1: Windows
+- **Inventory (agent):** installed programs from the registry (both 32 and 64 bit), Store
+  apps, OS build number and installed patches (KB list). Sent like the Linux package list.
+- **OS matching:** Microsoft's monthly security-update data, mapping build and patch level to
+  CVEs, with the fixing KB shown as the fix.
+- **Third-party apps:** NVD CVEs by product and version (CPE), marked confirmed or likely.
+  Reuses the NVD lookup that already runs for Unraid's release (the privacy switch applies).
+- **Console:** Windows hosts appear on the Vulnerabilities pages with the same risk score,
+  and the per-group Vulnerability management switch covers them.
+- **Done when:** a Windows host shows OS and third-party findings with a fix, tested on the
+  Windows test VM.
 
-Limits: findings on devices without the agent rest mostly on version matching, so they are
-marked confirmed or likely.
+### Phase 2: Docker image contents
+Today only the image name and tag are known. Read the package list inside each running
+image (apk, dpkg, rpm databases) from the agent and match it with the existing Linux
+matcher, so findings name the container and image. Done when a container's vulnerable
+package shows up under its host with the image tag.
+
+### Phase 3: Network scanner (server)
+For devices without an agent. Targets come from the device inventory (DHCP, NetFlow, ARP).
+Port scan, banner and TLS detection, CVE matching by product and version, and safe checks
+only: default-login pages, anonymous FTP, Telnet, old TLS and weak ciphers, exposed UPnP or
+admin panels. Scheduled per VLAN, rate limited, written in Go inside HomeXDR (no nmap
+dependency). Scans only ranges the admin lists. Done when a scheduled scan of one VLAN
+creates findings on agentless devices, each marked confirmed or likely.
+
+### Phase 4: Per-port exposure
+Today exposure is judged per host from the firewall log. Make it per listening port, using
+the agent's listening-socket list and port forwards seen in the firewall log, so a CVE in a
+service that is not reachable from outside is scored lower than one that is.
+
+### Phase 5: Configuration checks
+A small CIS-style set: SMBv1, RDP without network-level authentication, firewall or Defender
+off, automatic updates off, blank passwords. Shown as findings with a fix, not as alerts.
+
+### Phase 6: macOS applications
+App inventory (bundles and Homebrew) matched by product and version through NVD, marked
+confirmed or likely. The macOS OS release itself is covered by Apple's security releases.
+
+### Cross-cutting
+- Per-host and per-device filters (known exploited, fix available, internet-facing), scan
+  schedules and history, and an alert on a new known-exploited finding.
+- Findings on devices without the agent rest mostly on version matching, so they are
+  marked confirmed or likely.
+- Not planned: Slackware and Unraid packages (no advisory feed has fixed versions) and Red Hat
+  Enterprise Linux itself.
 
 ## Offline protection
 
